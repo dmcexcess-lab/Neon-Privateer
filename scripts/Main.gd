@@ -846,9 +846,93 @@ func _input(event: InputEvent) -> void:
             _release_control_touch(-1)
         return
 
+func _hub_button_rect(index: int) -> Rect2:
+    match index:
+        0: return HUB_TRAVEL_RECT
+        1: return HUB_MARKET_RECT
+        2: return HUB_CONTRACTS_RECT
+        3: return HUB_UPGRADES_RECT
+    return Rect2()
+
+func _travel_row_rect(index: int) -> Rect2:
+    return Rect2(30.0, 176.0 + float(index) * 132.0, 330.0, 104.0)
+
+func _market_buy_rect(index: int) -> Rect2:
+    return Rect2(28.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+
+func _market_sell_rect(index: int) -> Rect2:
+    return Rect2(204.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+
+func _contract_row_rect(index: int) -> Rect2:
+    return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
+
+func _handle_hub_tap(pos: Vector2) -> void:
+    if HUB_TRAVEL_RECT.has_point(pos):
+        travel_open = true
+        hub_open = false
+    elif HUB_MARKET_RECT.has_point(pos):
+        market_open = true
+        hub_open = false
+    elif HUB_CONTRACTS_RECT.has_point(pos):
+        contracts_open = true
+        hub_open = false
+    elif HUB_UPGRADES_RECT.has_point(pos):
+        research_open = true
+        hub_open = false
+    queue_redraw()
+
+func _handle_travel_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        travel_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    var destinations := _other_planets(current_planet)
+    for i in destinations.size():
+        if _travel_row_rect(i).has_point(pos):
+            _start_route(destinations[i])
+            return
+
+func _handle_market_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        market_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    for i in commodity_names.size():
+        if _market_buy_rect(i).has_point(pos):
+            _buy_commodity(commodity_names[i])
+            queue_redraw()
+            return
+        if _market_sell_rect(i).has_point(pos):
+            _sell_commodity(commodity_names[i])
+            queue_redraw()
+            return
+
+func _handle_contracts_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        contracts_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    for i in contract_board.size():
+        if _contract_row_rect(i).has_point(pos):
+            _accept_contract(i)
+            queue_redraw()
+            return
+
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
     if run_paused:
         _handle_pause_tap(pos)
+        return
+    if travel_open:
+        _handle_travel_tap(pos)
+        return
+    if market_open:
+        _handle_market_tap(pos)
+        return
+    if contracts_open:
+        _handle_contracts_tap(pos)
         return
     if weapon_research_open:
         _handle_weapon_research_tap(pos)
@@ -863,11 +947,7 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         _handle_shop_tap(pos)
         return
     if not playing:
-        if MAIN_START_RECT.has_point(pos):
-            _start_game()
-        elif MAIN_RESEARCH_RECT.has_point(pos):
-            research_open = true
-            queue_redraw()
+        _handle_hub_tap(pos)
         return
     if PAUSE_RECT.has_point(pos):
         _clear_control_holds()
@@ -1334,6 +1414,7 @@ func _handle_research_tap(pos: Vector2) -> void:
         weapon_research_open = true
     elif RESEARCH_BACK_RECT.has_point(pos):
         research_open = false
+        hub_open = true
     queue_redraw()
 
 func _pause_run() -> void:
