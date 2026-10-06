@@ -2392,18 +2392,23 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
     var at_max := lvl >= max_lvl
     var cost := _research_cost(track)
     var can_buy := not at_max and research_credits >= cost
-    draw_rect(rect, Color("14232f") if can_buy else Color("0d1118"), true)
-    draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
+    var recommended := track == "hits" and lvl == 0
+    var fill := Color("173524") if recommended else (Color("14232f") if can_buy else Color("0d1118"))
+    var border := Color("6bffb0") if recommended else (Color("77f7ff") if can_buy else Color("46515c"))
+    draw_rect(rect, fill, true)
+    draw_rect(rect, border, false, 3.0 if recommended else 2.0)
     _text("%s  L%d" % [label, lvl], rect.position + Vector2(10, 23), 16, Color("f0fbff"))
     _text(effect, rect.position + Vector2(10, 45), 13, Color("8ea9b8"))
     var cost_text := "MAX" if at_max else ("%d" % cost)
-    _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max else Color("ffd166"))
+    _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max or recommended else Color("ffd166"))
+    if recommended:
+        _text("BEST FIRST", rect.position + Vector2(205, 18), 11, Color("6bffb0"))
 
 func _draw_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT ACROSS RUNS", Vector2(87, 145), 15, Color("8ea9b8"))
+    _text("PERMANENT • AUTO-SAVED", Vector2(82, 145), 15, Color("8ea9b8"))
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
@@ -2436,7 +2441,7 @@ func _draw_weapon_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT UNLOCK — 10x RUN PRICE", Vector2(51, 140), 14, Color("8ea9b8"))
+    _text("PERMANENT UNLOCK — 25x RUN PRICE", Vector2(43, 140), 14, Color("8ea9b8"))
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
@@ -2476,27 +2481,54 @@ func _draw_shop_button(rect: Rect2, label: String, cost: int, enabled: bool, own
     _text(label, rect.position + Vector2(10, 24), 15, Color("f0fbff"))
     _text(suffix, rect.position + Vector2(10, 47), 14, Color("6bffb0") if owned else Color("ffd166"))
 
+func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect: String) -> void:
+    var lvl := _run_upgrade_level(track)
+    var max_lvl := _run_upgrade_max(track)
+    var at_max := lvl >= max_lvl
+    var cost := _run_upgrade_cost(track)
+    var can_buy := not at_max and score >= cost
+    draw_rect(rect, Color("14232f") if can_buy else Color("0d1118"), true)
+    draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
+    _text("%s  +%d" % [label, lvl], rect.position + Vector2(10, 20), 15, Color("f0fbff"))
+    _text(effect, rect.position + Vector2(10, 40), 12, Color("8ea9b8"))
+    var cost_text := "MAX" if at_max else ("%d" % cost)
+    _text(cost_text, rect.position + Vector2(250, 32), 14, Color("6bffb0") if at_max else Color("ffd166"))
+
 func _draw_shop() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("LEVEL %d CLEAR" % level, Vector2(92, 82), 28, Color("77f7ff"))
-    _text("+%d CLEAR BONUS" % last_level_bonus, Vector2(112, 112), 16, Color("6bffb0"))
-    _text("SCORE / CREDITS  %06d" % score, Vector2(75, 154), 20, Color("ffd166"))
-    _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 187), 16, Color("bdeef4"))
+    _text("LEVEL %d CLEAR" % level, Vector2(92, 72), 28, Color("77f7ff"))
+    _text("+%d CLEAR BONUS" % last_level_bonus, Vector2(112, 102), 16, Color("6bffb0"))
+    _text("RUN SCORE %06d" % score, Vector2(102, 138), 20, Color("ffd166"))
+    _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 171), 16, Color("bdeef4"))
 
-    var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
-    _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1 HIT", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
-
-    _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
-    _draw_shop_button(SHOP_DUAL_RECT, "DUAL D1x2", SHOP_DUAL_COST, score >= SHOP_DUAL_COST and current_weapon != "dual", current_weapon == "dual")
-    _draw_shop_button(SHOP_CONE_RECT, "CONE D3x3", SHOP_CONE_COST, score >= SHOP_CONE_COST and current_weapon != "cone", current_weapon == "cone")
-    _draw_shop_button(SHOP_SEEKER_RECT, "SEEKER D7", SHOP_SEEKER_COST, score >= SHOP_SEEKER_COST and current_weapon != "seeker", current_weapon == "seeker")
-    _draw_shop_button(SHOP_LASER_RECT, "THIN LASER 3 DPS", SHOP_LASER_COST, score >= SHOP_LASER_COST and current_weapon != "laser", current_weapon == "laser")
+    if shop_page == 0:
+        _text("RUN UPGRADES", Vector2(122, 203), 15, Color("b56cff"))
+        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll / +8% near")
+        _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "+35px / +40 speed")
+        _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3% weapon damage")
+        _draw_run_upgrade_button(SHOP_RUN_HITS_RECT, "hits", "MAX HITS", "+1 max hit + heal 1")
+        _draw_run_upgrade_button(SHOP_RUN_SHIELD_RECT, "shield", "SHIELD", "+1 shield charge")
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("231835"), true)
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("b56cff"), false, 2.0)
+        _text("WEAPONS / REPAIR", SHOP_PAGE_TOGGLE_RECT.position + Vector2(73, 34), 17, Color("f1dcff"))
+    else:
+        _text("WEAPONS / REPAIR", Vector2(106, 203), 15, Color("b56cff"))
+        var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
+        _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1 HIT", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
+        _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
+        _draw_shop_button(SHOP_DUAL_RECT, "DUAL D1x2", SHOP_DUAL_COST, score >= SHOP_DUAL_COST and current_weapon != "dual", current_weapon == "dual")
+        _draw_shop_button(SHOP_CONE_RECT, "CONE D3x3", SHOP_CONE_COST, score >= SHOP_CONE_COST and current_weapon != "cone", current_weapon == "cone")
+        _draw_shop_button(SHOP_SEEKER_RECT, "SEEKER D7", SHOP_SEEKER_COST, score >= SHOP_SEEKER_COST and current_weapon != "seeker", current_weapon == "seeker")
+        _draw_shop_button(SHOP_LASER_RECT, "THIN LASER 3 DPS", SHOP_LASER_COST, score >= SHOP_LASER_COST and current_weapon != "laser", current_weapon == "laser")
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("17303b"), true)
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("77f7ff"), false, 2.0)
+        _text("RUN UPGRADES", SHOP_PAGE_TOGGLE_RECT.position + Vector2(91, 34), 17, Color("f0fbff"))
 
     draw_rect(SHOP_CONTINUE_RECT, Color("123544"), true)
     draw_rect(SHOP_CONTINUE_RECT, Color("77f7ff"), false, 3.0)
-    _text("START LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(71, 43), 21, Color("f0fbff"))
-    _text("NEXT LEVEL: MORE SPEED + DENSITY", Vector2(62, 680), 15, Color("ffb347"))
-    _text("FIELD REPAIRS ARE RARE", Vector2(92, 710), 15, Color("8ea9b8"))
+    _text("START LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(71, 41), 21, Color("f0fbff"))
+    _text("STORE UPGRADES LAST THIS RUN ONLY", Vector2(63, 710), 14, Color("ffb347"))
+    _text("PERMANENT RESEARCH AUTO-SAVES", Vector2(69, 738), 14, Color("8ea9b8"))
 
 func _draw_results() -> void:
     draw_rect(Rect2(Vector2(30, 210), Vector2(330, 410)), Color(0.03,0.05,0.09,0.94), true)
