@@ -758,6 +758,7 @@ func _process(delta: float) -> void:
     fire_clock -= game_delta
     repair_clock -= game_delta
     var difficulty := _level_difficulty()
+    _update_pirate_attack(world_delta)
 
     if current_weapon == "laser":
         _apply_laser_damage(game_delta)
@@ -769,6 +770,18 @@ func _process(delta: float) -> void:
         if hp < max_hp and rng.randf() < FIELD_REPAIR_CHANCE:
             _spawn_repair()
         repair_clock = rng.randf_range(REPAIR_INTERVAL_MIN, REPAIR_INTERVAL_MAX) if hp < max_hp else REPAIR_RETRY_FULL
+
+    if boss_active:
+        _move_shots(game_delta)
+        _move_objects(world_delta)
+        _move_enemy_shots(game_delta)
+        _move_particles(delta)
+        if boss_defeated_pending:
+            bounty_completed_this_route = true
+            boss_defeated_pending = false
+            _arrive_at_destination()
+        queue_redraw()
+        return
 
     if lane_event_active:
         station_top += STATION_SPEED * world_delta
@@ -806,7 +819,10 @@ func _process(delta: float) -> void:
     _move_particles(delta)
 
     if elapsed >= _level_duration() and playing:
-        _open_shop()
+        if route_active:
+            _handle_route_end()
+        else:
+            _open_shop()
         queue_redraw()
         return
     queue_redraw()
@@ -985,6 +1001,8 @@ func _near_miss_research_multiplier(is_dash: bool) -> float:
     return mult
 
 func _level_duration() -> float:
+    if route_active:
+        return route_duration
     return minf(LEVEL_TIME_MAX, LEVEL_TIME_BASE + float(level - 1) * LEVEL_TIME_STEP)
 
 func _split_count_for_level() -> int:
@@ -1135,6 +1153,12 @@ func _handle_shop_tap(pos: Vector2) -> void:
     queue_redraw()
 
 func _finish(success: bool) -> void:
+    if route_active:
+        if success:
+            _arrive_at_destination()
+        else:
+            _fail_route(result_reason if not result_reason.is_empty() else "SHIP LOST")
+        return
     playing = false
     game_over = true
     won = success
@@ -1618,9 +1642,18 @@ func _enemy_kind_cap_for_level() -> int:
 
 func _choose_enemy_kind(hard_lane: bool) -> int:
     var cap := _enemy_kind_cap_for_level()
+    var roll := rng.randf()
+    if route_active:
+        if pirate_attack_active:
+            if route_danger >= 4 and roll < (0.18 if hard_lane else 0.12):
+                return 4
+            if roll < (0.48 if hard_lane else 0.36):
+                return 3
+            cap = mini(cap, 2)
+        else:
+            cap = mini(cap, 2)
     if cap <= 0:
         return 0
-    var roll := rng.randf()
     if cap == 1:
         return 1 if roll < (0.42 if hard_lane else 0.30) else 0
     if cap == 2:
@@ -1907,7 +1940,10 @@ func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
     obj.hp = maxf(0.0, float(obj.hp) - damage)
     if float(obj.hp) <= 0.0:
         score += int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
-        _queue_kill_drop(obj)
+        if bool(obj.get("boss", false)):
+            boss_defeated_pending = true
+        else:
+            _queue_kill_drop(obj)
         _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
         _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
         return true
@@ -2207,13 +2243,17 @@ func _move_objects(delta: float) -> void:
                     obj.shoot_clock = rng.randf_range(1.45, 2.10)
 
             elif kind == 4:
-                # Pentagon turret has no steering or evasive movement; it simply scrolls by with the level.
                 obj.drift = 0.0
-                motion_y = float(obj.speed)
+                if bool(obj.get("boss", false)):
+                    motion_y = 0.0
+                else:
+                    # Random pirate pentagons are fixed in world-space and scroll past with the route.
+                    motion_y = float(obj.speed)
                 obj.shoot_clock = float(obj.shoot_clock) - delta
                 if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 55.0 and float(obj.y) < player_y - 85.0:
                     _fire_enemy_missile(obj)
-                    obj.shoot_clock = rng.randf_range(1.8, 2.5)
+                    var boss_rate := maxf(0.65, 1.55 - float(active_contract.get("difficulty", 1)) * 0.12) if bool(obj.get("boss", false)) else rng.randf_range(1.8, 2.5)
+                    obj.shoot_clock = boss_rate
 
         obj.y += motion_y * delta
         obj.x += float(obj.drift) * delta
@@ -2296,8 +2336,8 @@ func _register_near_miss() -> void:
     combo = mini(combo + 1, 8)
     best_combo = maxi(best_combo, combo)
     var dash_near := dash_score_timer > 0.0
-    var near_score := 100 + combo * 10 if dash_near else 10 + combo * 5
-    near_score = int(round(float(near_score) * _near_miss_research_multiplier(dash_near) * _lane_score_multiplier()))
+    var near_score := 4 + int(combo / 3) if dash_near else 1 + int(combo / 4)
+    near_score = maxi(1, int(round(float(near_score) * _near_miss_research_multiplier(dash_near) * _lane_score_multiplier())))
     score += near_score
     near_miss_text = ("DASH NEAR +%d" if dash_near else "NEAR +%d") % near_score
     near_miss_timer = 0.62
