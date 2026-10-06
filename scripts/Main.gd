@@ -2810,6 +2810,14 @@ func _draw() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
 
+    if career_slots_open:
+        _draw_career_slots_menu()
+        return
+
+    if profile_menu_open:
+        _draw_profile_menu()
+        return
+
     if travel_open:
         _draw_travel_menu()
         return
@@ -3154,6 +3162,83 @@ func _draw_controls() -> void:
     draw_rect(RIGHT_CONTROL_RECT, held_border if right_control_held else move_border, false, 3.0)
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
+func _draw_profile_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("NEON PRIVATEER", Vector2(48, 92), 34, Color("77f7ff"))
+    _text("CAREERS", Vector2(126, 142), 24, Color("bdeef4"))
+
+    var can_continue := last_career_slot > 0 and _career_slot_exists(last_career_slot)
+    var continue_fill := Color("123544") if can_continue else Color("11161d")
+    var continue_border := Color("6bffb0") if can_continue else Color("46515c")
+    draw_rect(PROFILE_CONTINUE_RECT, continue_fill, true)
+    draw_rect(PROFILE_CONTINUE_RECT, continue_border, false, 3.0)
+    _text("CONTINUE", PROFILE_CONTINUE_RECT.position + Vector2(85, 40), 21, Color("f0fbff") if can_continue else Color("71808a"))
+
+    draw_rect(PROFILE_NEW_RECT, Color("102633"), true)
+    draw_rect(PROFILE_NEW_RECT, Color("77f7ff"), false, 3.0)
+    _text("NEW CAREER", PROFILE_NEW_RECT.position + Vector2(69, 40), 21, Color("f0fbff"))
+
+    draw_rect(PROFILE_LOAD_RECT, Color("102633"), true)
+    draw_rect(PROFILE_LOAD_RECT, Color("b56cff"), false, 3.0)
+    _text("LOAD CAREER", PROFILE_LOAD_RECT.position + Vector2(62, 40), 21, Color("f0fbff"))
+
+    if can_continue:
+        var summary := _career_slot_summary(last_career_slot)
+        var location := String(summary.planet)
+        if bool(summary.in_flight):
+            location = "%s > %s" % [String(summary.planet), String(summary.destination)]
+        _text("LAST: SLOT %d   %s" % [last_career_slot, location], Vector2(73, 618), 14, Color("8ea9b8"))
+        _text("%d CR" % int(summary.credits), Vector2(169, 644), 14, Color("ffd166"))
+    else:
+        _text("NO CAREER SAVES YET", Vector2(105, 626), 14, Color("8ea9b8"))
+
+    if active_career_slot > 0:
+        draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+        draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
+        _text("BACK TO CAREER", PROFILE_SLOT_BACK_RECT.position + Vector2(63, 37), 19, Color("f0fbff"))
+
+func _draw_career_slots_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("NEW CAREER" if career_new_mode else "LOAD CAREER", Vector2(77 if career_new_mode else 72, 78), 30, Color("77f7ff"))
+    _text("3 CAREER SLOTS", Vector2(118, 116), 15, Color("8ea9b8"))
+
+    for i in CAREER_SLOT_COUNT:
+        var slot := i + 1
+        var rect := _career_slot_rect(i)
+        var summary := _career_slot_summary(slot)
+        var exists := bool(summary.exists)
+        var selected_warning := career_new_mode and exists and pending_overwrite_slot == slot
+        var fill := Color("111c28") if exists else Color("0d141b")
+        var border := Color("ff8fa6") if selected_warning else (Color("77f7ff") if exists else Color("46515c"))
+        draw_rect(rect, fill, true)
+        draw_rect(rect, border, false, 3.0)
+
+        _text("SLOT %d" % slot, rect.position + Vector2(14, 28), 20, Color("f0fbff"))
+        if not exists:
+            _text("EMPTY", rect.position + Vector2(14, 62), 16, Color("71808a"))
+            if career_new_mode:
+                _text("START NEW", rect.position + Vector2(213, 62), 14, Color("6bffb0"))
+            continue
+
+        var location := String(summary.planet)
+        if bool(summary.in_flight):
+            location = "IN FLIGHT > %s" % String(summary.destination)
+        _text(location, rect.position + Vector2(14, 58), 15, Color("bdeef4"))
+        _text("%d CR" % int(summary.credits), rect.position + Vector2(14, 86), 14, Color("ffd166"))
+
+        if career_new_mode:
+            if selected_warning:
+                _text("TAP AGAIN", rect.position + Vector2(220, 48), 13, Color("ff8fa6"))
+                _text("OVERWRITE", rect.position + Vector2(217, 72), 13, Color("ff8fa6"))
+            else:
+                _text("OVERWRITE", rect.position + Vector2(218, 62), 13, Color("ff8fa6"))
+        else:
+            _text("LOAD", rect.position + Vector2(257, 62), 14, Color("6bffb0"))
+
+    draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+    draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
+    _text("BACK", PROFILE_SLOT_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
+
 func _draw_title() -> void:
     _text("NEON PRIVATEER", Vector2(48, 82), 34, Color("77f7ff"))
     _text(current_planet, Vector2(132, 132), 26, Color("f0fbff"))
@@ -3169,6 +3254,7 @@ func _draw_title() -> void:
         _text("NO ACTIVE CONTRACT", Vector2(105, 255), 15, Color("8ea9b8"))
 
     _text(last_trip_summary, Vector2(44, 310), 14, Color("8ea9b8"))
+    _text("CAREER %d" % active_career_slot, Vector2(291, 112), 12, Color("8ea9b8"))
 
     var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
     for i in 4:
@@ -3176,6 +3262,10 @@ func _draw_title() -> void:
         draw_rect(rect, Color("102633"), true)
         draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
         _text(labels[i], rect.position + Vector2(78 if i != 3 else 55, 38), 21, Color("f0fbff"))
+
+    draw_rect(HUB_CAREERS_RECT, Color("151d2d"), true)
+    draw_rect(HUB_CAREERS_RECT, Color("b56cff"), false, 3.0)
+    _text("CAREERS", HUB_CAREERS_RECT.position + Vector2(83, 38), 20, Color("f0fbff"))
 
 func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color("123544"), true)
