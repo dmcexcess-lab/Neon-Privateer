@@ -206,6 +206,9 @@ func _initialize() -> void:
         _fail("permanent research was not raised enough")
         return
 
+    scene.research_ship_speed = 1
+    scene.research_dash = 1
+    scene.research_damage = 1
     scene.research_hits = 1
     var hits_second: int = scene._research_cost("hits")
     if hits_second <= hits_first or hits_second >= hits_first * 2:
@@ -1124,6 +1127,12 @@ func _initialize() -> void:
         _fail("run snapshot did not preserve temporary store upgrades")
         return
     scene.run_paused = false
+    scene.run_ship_speed = 0
+    scene.run_dash = 0
+    scene.run_damage = 0
+    scene.run_hits = 0
+    scene.run_shield = 0
+    scene.research_dash = 0
 
     # Baseline dash is deliberately short; research grows distance faster than speed.
     scene._start_next_level()
