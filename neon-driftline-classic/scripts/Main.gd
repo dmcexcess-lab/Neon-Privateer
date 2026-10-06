@@ -661,6 +661,78 @@ func _buy_weapon(weapon: String) -> bool:
     _save_run_snapshot()
     return true
 
+func _run_upgrade_level(track: String) -> int:
+    match track:
+        "ship":
+            return run_ship_speed
+        "dash":
+            return run_dash
+        "damage":
+            return run_damage
+        "hits":
+            return run_hits
+        "shield":
+            return run_shield
+    return 0
+
+func _run_upgrade_max(track: String) -> int:
+    return _research_max(track)
+
+func _run_upgrade_base_cost(track: String) -> int:
+    match track:
+        "ship":
+            return SHOP_RUN_SHIP_COST
+        "dash":
+            return SHOP_RUN_DASH_COST
+        "damage":
+            return SHOP_RUN_DAMAGE_COST
+        "hits":
+            return SHOP_RUN_HITS_COST
+        "shield":
+            return SHOP_RUN_SHIELD_COST
+    return 999999
+
+func _run_upgrade_cost(track: String) -> int:
+    var lvl := _run_upgrade_level(track)
+    var growth := 1.55
+    if track == "damage":
+        growth = 1.60
+    elif track == "hits":
+        growth = 1.70
+    elif track == "shield":
+        growth = 1.90
+    return int(round(float(_run_upgrade_base_cost(track)) * pow(growth, lvl)))
+
+func _buy_run_upgrade(track: String) -> bool:
+    if not shop_open:
+        return false
+    var lvl := _run_upgrade_level(track)
+    if lvl >= _run_upgrade_max(track):
+        return false
+    var cost := _run_upgrade_cost(track)
+    if score < cost:
+        return false
+    score -= cost
+    match track:
+        "ship":
+            run_ship_speed += 1
+        "dash":
+            run_dash += 1
+        "damage":
+            run_damage += 1
+        "hits":
+            run_hits += 1
+            max_hp += 1
+            hp += 1
+        "shield":
+            run_shield += 1
+            shield_charges += 1
+        _:
+            return false
+    _play_sfx(buy_sfx, 1.04, -2.0)
+    _save_run_snapshot()
+    return true
+
 func _start_next_level() -> void:
     if not shop_open:
         return
@@ -706,20 +778,41 @@ func _start_next_level() -> void:
     _play_sfx(finale_sfx, 1.12, -2.0)
 
 func _handle_shop_tap(pos: Vector2) -> void:
-    if SHOP_REPAIR_RECT.has_point(pos):
-        _buy_repair()
-    elif SHOP_SINGLE_RECT.has_point(pos):
-        _buy_weapon("single")
-    elif SHOP_DUAL_RECT.has_point(pos):
-        _buy_weapon("dual")
-    elif SHOP_CONE_RECT.has_point(pos):
-        _buy_weapon("cone")
-    elif SHOP_SEEKER_RECT.has_point(pos):
-        _buy_weapon("seeker")
-    elif SHOP_LASER_RECT.has_point(pos):
-        _buy_weapon("laser")
-    elif SHOP_CONTINUE_RECT.has_point(pos):
+    if SHOP_PAGE_TOGGLE_RECT.has_point(pos):
+        shop_page = 1 - shop_page
+        _save_run_snapshot()
+        queue_redraw()
+        return
+
+    if SHOP_CONTINUE_RECT.has_point(pos):
         _start_next_level()
+        queue_redraw()
+        return
+
+    if shop_page == 0:
+        if SHOP_RUN_SHIP_RECT.has_point(pos):
+            _buy_run_upgrade("ship")
+        elif SHOP_RUN_DASH_RECT.has_point(pos):
+            _buy_run_upgrade("dash")
+        elif SHOP_RUN_DAMAGE_RECT.has_point(pos):
+            _buy_run_upgrade("damage")
+        elif SHOP_RUN_HITS_RECT.has_point(pos):
+            _buy_run_upgrade("hits")
+        elif SHOP_RUN_SHIELD_RECT.has_point(pos):
+            _buy_run_upgrade("shield")
+    else:
+        if SHOP_REPAIR_RECT.has_point(pos):
+            _buy_repair()
+        elif SHOP_SINGLE_RECT.has_point(pos):
+            _buy_weapon("single")
+        elif SHOP_DUAL_RECT.has_point(pos):
+            _buy_weapon("dual")
+        elif SHOP_CONE_RECT.has_point(pos):
+            _buy_weapon("cone")
+        elif SHOP_SEEKER_RECT.has_point(pos):
+            _buy_weapon("seeker")
+        elif SHOP_LASER_RECT.has_point(pos):
+            _buy_weapon("laser")
     queue_redraw()
 
 func _finish(success: bool) -> void:
@@ -1001,6 +1094,12 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "exists", true)
     cfg.set_value("run", "playing", playing)
     cfg.set_value("run", "shop_open", shop_open)
+    cfg.set_value("run", "shop_page", shop_page)
+    cfg.set_value("run", "run_ship_speed", run_ship_speed)
+    cfg.set_value("run", "run_dash", run_dash)
+    cfg.set_value("run", "run_damage", run_damage)
+    cfg.set_value("run", "run_hits", run_hits)
+    cfg.set_value("run", "run_shield", run_shield)
     cfg.set_value("run", "level", level)
     cfg.set_value("run", "elapsed", elapsed)
     cfg.set_value("run", "score", score)
@@ -1047,6 +1146,12 @@ func _load_run_snapshot() -> bool:
         return false
     playing = bool(cfg.get_value("run", "playing", true))
     shop_open = bool(cfg.get_value("run", "shop_open", false))
+    shop_page = int(cfg.get_value("run", "shop_page", 0))
+    run_ship_speed = int(cfg.get_value("run", "run_ship_speed", 0))
+    run_dash = int(cfg.get_value("run", "run_dash", 0))
+    run_damage = int(cfg.get_value("run", "run_damage", 0))
+    run_hits = int(cfg.get_value("run", "run_hits", 0))
+    run_shield = int(cfg.get_value("run", "run_shield", 0))
     level = int(cfg.get_value("run", "level", 1))
     elapsed = float(cfg.get_value("run", "elapsed", 0.0))
     score = int(cfg.get_value("run", "score", 0))
