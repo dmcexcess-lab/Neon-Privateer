@@ -49,9 +49,16 @@ const WEAPON_RESEARCH_BACK_RECT := Rect2(54.0, 620.0, 282.0, 58.0)
 const PAUSE_RECT := Rect2(300.0, 16.0, 72.0, 38.0)
 const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
-const META_SAVE_PATH := "user://neon_meta.cfg"
-const RUN_SAVE_PATH := "user://neon_run.cfg"
-const PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const LEGACY_META_SAVE_PATH := "user://neon_meta.cfg"
+const LEGACY_RUN_SAVE_PATH := "user://neon_run.cfg"
+const LEGACY_PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const CAREER_INDEX_PATH := "user://neon_careers.cfg"
+const CAREER_SLOT_COUNT := 3
+const PROFILE_CONTINUE_RECT := Rect2(54.0, 352.0, 282.0, 64.0)
+const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
+const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
+const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
+const HUB_CAREERS_RECT := Rect2(35.0, 700.0, 320.0, 58.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
 const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
 const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
@@ -123,7 +130,13 @@ var research_start_seeker := false
 var starting_weapon := "none"
 var research_open := false
 var weapon_research_open := false
-var hub_open := true
+var profile_menu_open := true
+var career_slots_open := false
+var career_new_mode := false
+var pending_overwrite_slot := 0
+var active_career_slot := 0
+var last_career_slot := 0
+var hub_open := false
 var market_open := false
 var contracts_open := false
 var travel_open := false
@@ -232,20 +245,21 @@ var laser_sfx_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
-    _init_privateer_world()
-    _load_meta()
-    _load_privateer_state()
     _setup_audio()
+    _load_career_index()
+    _migrate_legacy_career_if_needed()
+    profile_menu_open = true
+    career_slots_open = false
+    hub_open = false
     set_process(true)
-    if _load_run_snapshot():
-        run_paused = true
     queue_redraw()
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
         if (playing or shop_open) and not game_over:
             _pause_run()
-        _save_meta()
+        if active_career_slot > 0:
+            _save_all_state()
 
 func _setup_audio() -> void:
     for i in 10:
@@ -312,6 +326,218 @@ func _play_sfx(stream: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.
     player.pitch_scale = pitch
     player.volume_db = volume_db
     player.play()
+
+func _career_meta_path(slot: int) -> String:
+    return "user://career_%d_meta.cfg" % slot
+
+func _career_world_path(slot: int) -> String:
+    return "user://career_%d_world.cfg" % slot
+
+func _career_run_path(slot: int) -> String:
+    return "user://career_%d_run.cfg" % slot
+
+func _active_meta_path() -> String:
+    return _career_meta_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _active_world_path() -> String:
+    return _career_world_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _active_run_path() -> String:
+    return _career_run_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _career_slot_exists(slot: int) -> bool:
+    if slot < 1 or slot > CAREER_SLOT_COUNT:
+        return false
+    return FileAccess.file_exists(_career_meta_path(slot)) or FileAccess.file_exists(_career_world_path(slot))
+
+func _load_career_index() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(CAREER_INDEX_PATH) != OK:
+        last_career_slot = 0
+        return
+    last_career_slot = clampi(int(cfg.get_value("careers", "last_slot", 0)), 0, CAREER_SLOT_COUNT)
+    if last_career_slot > 0 and not _career_slot_exists(last_career_slot):
+        last_career_slot = 0
+
+func _save_career_index() -> void:
+    var cfg := ConfigFile.new()
+    cfg.set_value("careers", "last_slot", last_career_slot)
+    cfg.save(CAREER_INDEX_PATH)
+
+func _copy_user_file(source_path: String, destination_path: String) -> bool:
+    if not FileAccess.file_exists(source_path):
+        return false
+    var source := FileAccess.open(source_path, FileAccess.READ)
+    if source == null:
+        return false
+    var bytes := source.get_buffer(source.get_length())
+    var destination := FileAccess.open(destination_path, FileAccess.WRITE)
+    if destination == null:
+        return false
+    destination.store_buffer(bytes)
+    return true
+
+func _migrate_legacy_career_if_needed() -> void:
+    for slot in range(1, CAREER_SLOT_COUNT + 1):
+        if _career_slot_exists(slot):
+            return
+    var has_legacy := FileAccess.file_exists(LEGACY_META_SAVE_PATH) or FileAccess.file_exists(LEGACY_PRIVATEER_SAVE_PATH)
+    if not has_legacy:
+        return
+    _copy_user_file(LEGACY_META_SAVE_PATH, _career_meta_path(1))
+    _copy_user_file(LEGACY_PRIVATEER_SAVE_PATH, _career_world_path(1))
+    _copy_user_file(LEGACY_RUN_SAVE_PATH, _career_run_path(1))
+    last_career_slot = 1
+    _save_career_index()
+
+func _reset_career_state() -> void:
+    research_credits = 1200
+    research_ship_speed = 0
+    research_dash = 0
+    research_damage = 0
+    research_hits = 0
+    research_shield = 0
+    research_start_single = false
+    research_start_dual = false
+    research_start_laser = false
+    research_start_cone = false
+    research_start_seeker = false
+    starting_weapon = "none"
+
+    current_planet = "Aster"
+    destination_planet = ""
+    route_origin = ""
+    route_distance = 1
+    route_danger = 1
+    route_duration = 18.0
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    bounty_completed_this_route = false
+    pirate_attack_active = false
+    pirate_attack_timer = 0.0
+    pirate_attack_clock = 999.0
+    pirate_banner_timer = 0.0
+    last_trip_summary = "Docked at Aster"
+    markets.clear()
+    cargo.clear()
+    contract_board.clear()
+    active_contract.clear()
+    passengers = 0
+    economy_tick = 0
+
+    playing = false
+    game_over = false
+    won = false
+    elapsed = 0.0
+    level = 1
+    shop_open = false
+    score = 0
+    energy = 0
+    combo = 1
+    best_combo = 1
+    max_hp = 2
+    hp = 2
+    shield_charges = 0
+    run_paused = false
+    banked_this_run = false
+    world_scroll = 0.0
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    particles.clear()
+    last_near_ids.clear()
+    research_open = false
+    weapon_research_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    _clear_control_holds()
+    _init_privateer_world()
+
+func _create_new_career(slot: int) -> bool:
+    if slot < 1 or slot > CAREER_SLOT_COUNT:
+        return false
+    active_career_slot = slot
+    _reset_career_state()
+    _clear_run_snapshot()
+    _save_all_state()
+    last_career_slot = slot
+    _save_career_index()
+    profile_menu_open = false
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    hub_open = true
+    queue_redraw()
+    return true
+
+func _load_career(slot: int) -> bool:
+    if not _career_slot_exists(slot):
+        return false
+    active_career_slot = slot
+    _reset_career_state()
+    _load_meta()
+    _load_privateer_state()
+    profile_menu_open = false
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    last_career_slot = slot
+    _save_career_index()
+    if _load_run_snapshot():
+        run_paused = true
+        hub_open = false
+    else:
+        run_paused = false
+        hub_open = true
+    queue_redraw()
+    return true
+
+func _continue_career() -> bool:
+    if last_career_slot <= 0 or not _career_slot_exists(last_career_slot):
+        return false
+    return _load_career(last_career_slot)
+
+func _career_slot_summary(slot: int) -> Dictionary:
+    var result := {
+        "exists": _career_slot_exists(slot),
+        "planet": "",
+        "credits": 0,
+        "in_flight": false,
+        "destination": ""
+    }
+    if not bool(result.exists):
+        return result
+    var meta := ConfigFile.new()
+    if meta.load(_career_meta_path(slot)) == OK:
+        result.credits = int(meta.get_value("meta", "credits", 0))
+    var world := ConfigFile.new()
+    if world.load(_career_world_path(slot)) == OK:
+        result.planet = String(world.get_value("world", "planet", "Aster"))
+    var run := ConfigFile.new()
+    if run.load(_career_run_path(slot)) == OK and bool(run.get_value("run", "exists", false)):
+        result.in_flight = bool(run.get_value("run", "route_active", false))
+        result.destination = String(run.get_value("run", "destination_planet", ""))
+        if bool(result.in_flight):
+            result.planet = String(run.get_value("run", "route_origin", result.planet))
+    return result
+
+func _open_profile_menu() -> void:
+    if active_career_slot > 0:
+        _save_all_state()
+    profile_menu_open = true
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    hub_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    research_open = false
+    weapon_research_open = false
+    queue_redraw()
 
 func _init_privateer_world() -> void:
     if cargo.is_empty():
@@ -698,11 +924,15 @@ func _save_privateer_state() -> void:
     cfg.set_value("world", "passengers", passengers)
     cfg.set_value("world", "economy_tick", economy_tick)
     cfg.set_value("world", "summary", last_trip_summary)
-    cfg.save(PRIVATEER_SAVE_PATH)
+    var path := _active_world_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_privateer_state() -> void:
     var cfg := ConfigFile.new()
-    if cfg.load(PRIVATEER_SAVE_PATH) != OK:
+    var path := _active_world_path()
+    if path.is_empty() or cfg.load(path) != OK:
         return
     current_planet = String(cfg.get_value("world", "planet", current_planet))
     markets = cfg.get_value("world", "markets", markets)
@@ -862,6 +1092,54 @@ func _hub_button_rect(index: int) -> Rect2:
         3: return HUB_UPGRADES_RECT
     return Rect2()
 
+func _career_slot_rect(index: int) -> Rect2:
+    return Rect2(32.0, 178.0 + float(index) * 144.0, 326.0, 112.0)
+
+func _handle_profile_tap(pos: Vector2) -> void:
+    if PROFILE_CONTINUE_RECT.has_point(pos):
+        _continue_career()
+        return
+    if PROFILE_NEW_RECT.has_point(pos):
+        profile_menu_open = false
+        career_slots_open = true
+        career_new_mode = true
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    if PROFILE_LOAD_RECT.has_point(pos):
+        profile_menu_open = false
+        career_slots_open = true
+        career_new_mode = false
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    if active_career_slot > 0 and PROFILE_SLOT_BACK_RECT.has_point(pos):
+        profile_menu_open = false
+        hub_open = true
+        queue_redraw()
+
+func _handle_career_slots_tap(pos: Vector2) -> void:
+    if PROFILE_SLOT_BACK_RECT.has_point(pos):
+        career_slots_open = false
+        profile_menu_open = true
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    for i in CAREER_SLOT_COUNT:
+        var slot := i + 1
+        if not _career_slot_rect(i).has_point(pos):
+            continue
+        if career_new_mode:
+            if _career_slot_exists(slot) and pending_overwrite_slot != slot:
+                pending_overwrite_slot = slot
+                queue_redraw()
+                return
+            _create_new_career(slot)
+            return
+        if _career_slot_exists(slot):
+            _load_career(slot)
+            return
+
 func _travel_row_rect(index: int) -> Rect2:
     return Rect2(30.0, 176.0 + float(index) * 132.0, 330.0, 104.0)
 
@@ -887,6 +1165,9 @@ func _handle_hub_tap(pos: Vector2) -> void:
     elif HUB_UPGRADES_RECT.has_point(pos):
         research_open = true
         hub_open = false
+    elif HUB_CAREERS_RECT.has_point(pos):
+        _open_profile_menu()
+        return
     queue_redraw()
 
 func _handle_travel_tap(pos: Vector2) -> void:
@@ -930,6 +1211,12 @@ func _handle_contracts_tap(pos: Vector2) -> void:
             return
 
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
+    if career_slots_open:
+        _handle_career_slots_tap(pos)
+        return
+    if profile_menu_open:
+        _handle_profile_tap(pos)
+        return
     if run_paused:
         _handle_pause_tap(pos)
         return
@@ -1504,11 +1791,15 @@ func _save_meta() -> void:
     cfg.set_value("meta", "start_cone", research_start_cone)
     cfg.set_value("meta", "start_seeker", research_start_seeker)
     cfg.set_value("meta", "starting_weapon", starting_weapon)
-    cfg.save(META_SAVE_PATH)
+    var path := _active_meta_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_meta() -> void:
     var cfg := ConfigFile.new()
-    if cfg.load(META_SAVE_PATH) != OK:
+    var path := _active_meta_path()
+    if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
     research_ship_speed = int(cfg.get_value("meta", "ship_speed", 0))
@@ -1582,11 +1873,15 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "enemy_shots", enemy_shots)
     cfg.set_value("run", "last_near_ids", last_near_ids)
     cfg.set_value("run", "rng_state", rng.state)
-    cfg.save(RUN_SAVE_PATH)
+    var path := _active_run_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_run_snapshot() -> bool:
     var cfg := ConfigFile.new()
-    if cfg.load(RUN_SAVE_PATH) != OK or not bool(cfg.get_value("run", "exists", false)):
+    var path := _active_run_path()
+    if path.is_empty() or cfg.load(path) != OK or not bool(cfg.get_value("run", "exists", false)):
         return false
     playing = bool(cfg.get_value("run", "playing", true))
     shop_open = bool(cfg.get_value("run", "shop_open", false))
@@ -1654,9 +1949,12 @@ func _load_run_snapshot() -> bool:
     return true
 
 func _clear_run_snapshot() -> void:
+    var path := _active_run_path()
+    if path.is_empty():
+        return
     var cfg := ConfigFile.new()
     cfg.set_value("run", "exists", false)
-    cfg.save(RUN_SAVE_PATH)
+    cfg.save(path)
 
 func _lane_score_multiplier() -> float:
     return 1.35 if _station_at_player() and _is_hard_position(player_x) else 1.0
@@ -2512,6 +2810,14 @@ func _draw() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
 
+    if career_slots_open:
+        _draw_career_slots_menu()
+        return
+
+    if profile_menu_open:
+        _draw_profile_menu()
+        return
+
     if travel_open:
         _draw_travel_menu()
         return
@@ -2856,6 +3162,83 @@ func _draw_controls() -> void:
     draw_rect(RIGHT_CONTROL_RECT, held_border if right_control_held else move_border, false, 3.0)
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
+func _draw_profile_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("NEON PRIVATEER", Vector2(48, 92), 34, Color("77f7ff"))
+    _text("CAREERS", Vector2(126, 142), 24, Color("bdeef4"))
+
+    var can_continue := last_career_slot > 0 and _career_slot_exists(last_career_slot)
+    var continue_fill := Color("123544") if can_continue else Color("11161d")
+    var continue_border := Color("6bffb0") if can_continue else Color("46515c")
+    draw_rect(PROFILE_CONTINUE_RECT, continue_fill, true)
+    draw_rect(PROFILE_CONTINUE_RECT, continue_border, false, 3.0)
+    _text("CONTINUE", PROFILE_CONTINUE_RECT.position + Vector2(85, 40), 21, Color("f0fbff") if can_continue else Color("71808a"))
+
+    draw_rect(PROFILE_NEW_RECT, Color("102633"), true)
+    draw_rect(PROFILE_NEW_RECT, Color("77f7ff"), false, 3.0)
+    _text("NEW CAREER", PROFILE_NEW_RECT.position + Vector2(69, 40), 21, Color("f0fbff"))
+
+    draw_rect(PROFILE_LOAD_RECT, Color("102633"), true)
+    draw_rect(PROFILE_LOAD_RECT, Color("b56cff"), false, 3.0)
+    _text("LOAD CAREER", PROFILE_LOAD_RECT.position + Vector2(62, 40), 21, Color("f0fbff"))
+
+    if can_continue:
+        var summary := _career_slot_summary(last_career_slot)
+        var location := String(summary.planet)
+        if bool(summary.in_flight):
+            location = "%s > %s" % [String(summary.planet), String(summary.destination)]
+        _text("LAST: SLOT %d   %s" % [last_career_slot, location], Vector2(73, 618), 14, Color("8ea9b8"))
+        _text("%d CR" % int(summary.credits), Vector2(169, 644), 14, Color("ffd166"))
+    else:
+        _text("NO CAREER SAVES YET", Vector2(105, 626), 14, Color("8ea9b8"))
+
+    if active_career_slot > 0:
+        draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+        draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
+        _text("BACK TO CAREER", PROFILE_SLOT_BACK_RECT.position + Vector2(63, 37), 19, Color("f0fbff"))
+
+func _draw_career_slots_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("NEW CAREER" if career_new_mode else "LOAD CAREER", Vector2(77 if career_new_mode else 72, 78), 30, Color("77f7ff"))
+    _text("3 CAREER SLOTS", Vector2(118, 116), 15, Color("8ea9b8"))
+
+    for i in CAREER_SLOT_COUNT:
+        var slot := i + 1
+        var rect := _career_slot_rect(i)
+        var summary := _career_slot_summary(slot)
+        var exists := bool(summary.exists)
+        var selected_warning := career_new_mode and exists and pending_overwrite_slot == slot
+        var fill := Color("111c28") if exists else Color("0d141b")
+        var border := Color("ff8fa6") if selected_warning else (Color("77f7ff") if exists else Color("46515c"))
+        draw_rect(rect, fill, true)
+        draw_rect(rect, border, false, 3.0)
+
+        _text("SLOT %d" % slot, rect.position + Vector2(14, 28), 20, Color("f0fbff"))
+        if not exists:
+            _text("EMPTY", rect.position + Vector2(14, 62), 16, Color("71808a"))
+            if career_new_mode:
+                _text("START NEW", rect.position + Vector2(213, 62), 14, Color("6bffb0"))
+            continue
+
+        var location := String(summary.planet)
+        if bool(summary.in_flight):
+            location = "IN FLIGHT > %s" % String(summary.destination)
+        _text(location, rect.position + Vector2(14, 58), 15, Color("bdeef4"))
+        _text("%d CR" % int(summary.credits), rect.position + Vector2(14, 86), 14, Color("ffd166"))
+
+        if career_new_mode:
+            if selected_warning:
+                _text("TAP AGAIN", rect.position + Vector2(220, 48), 13, Color("ff8fa6"))
+                _text("OVERWRITE", rect.position + Vector2(217, 72), 13, Color("ff8fa6"))
+            else:
+                _text("OVERWRITE", rect.position + Vector2(218, 62), 13, Color("ff8fa6"))
+        else:
+            _text("LOAD", rect.position + Vector2(257, 62), 14, Color("6bffb0"))
+
+    draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+    draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
+    _text("BACK", PROFILE_SLOT_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
+
 func _draw_title() -> void:
     _text("NEON PRIVATEER", Vector2(48, 82), 34, Color("77f7ff"))
     _text(current_planet, Vector2(132, 132), 26, Color("f0fbff"))
@@ -2871,6 +3254,7 @@ func _draw_title() -> void:
         _text("NO ACTIVE CONTRACT", Vector2(105, 255), 15, Color("8ea9b8"))
 
     _text(last_trip_summary, Vector2(44, 310), 14, Color("8ea9b8"))
+    _text("CAREER %d" % active_career_slot, Vector2(291, 112), 12, Color("8ea9b8"))
 
     var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
     for i in 4:
@@ -2878,6 +3262,10 @@ func _draw_title() -> void:
         draw_rect(rect, Color("102633"), true)
         draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
         _text(labels[i], rect.position + Vector2(78 if i != 3 else 55, 38), 21, Color("f0fbff"))
+
+    draw_rect(HUB_CAREERS_RECT, Color("151d2d"), true)
+    draw_rect(HUB_CAREERS_RECT, Color("b56cff"), false, 3.0)
+    _text("CAREERS", HUB_CAREERS_RECT.position + Vector2(83, 38), 20, Color("f0fbff"))
 
 func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color("123544"), true)

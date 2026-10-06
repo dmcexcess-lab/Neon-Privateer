@@ -26,11 +26,65 @@ func _initialize() -> void:
         "_arrive_at_destination", "_fail_route", "_save_privateer_state",
         "_load_privateer_state", "_save_all_state", "_start_game", "_dash",
         "_fire_weapon", "_choose_enemy_kind", "_apply_damage_to_hazard",
-        "_save_run_snapshot", "_load_run_snapshot", "_pause_run"
+        "_save_run_snapshot", "_load_run_snapshot", "_pause_run",
+        "_create_new_career", "_load_career", "_continue_career",
+        "_career_slot_exists", "_career_slot_summary", "_open_profile_menu"
     ]:
         if not scene.has_method(method_name):
             _fail("missing method " + method_name)
             return
+
+    # Career menu boots before any career is loaded.
+    if not scene.profile_menu_open or scene.active_career_slot != 0:
+        _fail("game should boot at career menu with no active slot")
+        return
+
+    # Three slots are isolated: credits/world/cargo cannot leak between careers.
+    if not scene._create_new_career(1):
+        _fail("could not create career slot 1")
+        return
+    scene.research_credits = 4321
+    scene.current_planet = "Cinder"
+    scene.cargo["Food"] = 2
+    scene._save_all_state()
+
+    if not scene._create_new_career(2):
+        _fail("could not create career slot 2")
+        return
+    if scene.research_credits != 1200 or scene.current_planet != "Aster" or int(scene.cargo.get("Food", 0)) != 0:
+        _fail("new career inherited data from another slot")
+        return
+    scene.research_credits = 2222
+    scene._save_all_state()
+
+    if not scene._load_career(1):
+        _fail("could not reload career slot 1")
+        return
+    if scene.research_credits != 4321 or scene.current_planet != "Cinder" or int(scene.cargo.get("Food", 0)) != 2:
+        _fail("career slot 1 did not restore its own state")
+        return
+
+    var slot_one_summary: Dictionary = scene._career_slot_summary(1)
+    var slot_two_summary: Dictionary = scene._career_slot_summary(2)
+    if not bool(slot_one_summary.exists) or not bool(slot_two_summary.exists):
+        _fail("career slot summaries did not detect saves")
+        return
+    if int(slot_one_summary.credits) != 4321 or int(slot_two_summary.credits) != 2222:
+        _fail("career slot summaries mixed credits")
+        return
+
+    scene._open_profile_menu()
+    if not scene.profile_menu_open or scene.hub_open:
+        _fail("career menu did not open from active career")
+        return
+    if not scene._continue_career() or scene.active_career_slot != 1:
+        _fail("continue did not restore the most recently loaded career")
+        return
+
+    # Reset slot 1 to a clean career for the gameplay smoke below.
+    if not scene._create_new_career(1):
+        _fail("could not reset career slot 1 for gameplay smoke")
+        return
 
     # Hub/world baseline.
     if scene.playing:
