@@ -14,6 +14,11 @@ const SHOP_DUAL_COST := 1000
 const SHOP_CONE_COST := 5000
 const SHOP_SEEKER_COST := 10000
 const SHOP_LASER_COST := 2500
+const SHOP_RUN_SHIP_COST := 250
+const SHOP_RUN_DASH_COST := 350
+const SHOP_RUN_DAMAGE_COST := 500
+const SHOP_RUN_HITS_COST := 650
+const SHOP_RUN_SHIELD_COST := 900
 const LANE_SPLIT := W * 0.5
 const LEFT_LANE_MIN := LEFT
 const LEFT_LANE_MAX := LANE_SPLIT - 7.0
@@ -23,13 +28,19 @@ const LEFT_CONTROL_RECT := Rect2(20.0, 748.0, 105.0, 64.0)
 const DASH_RECT := Rect2(142.5, 748.0, 105.0, 64.0)
 const RIGHT_CONTROL_RECT := Rect2(265.0, 748.0, 105.0, 64.0)
 const CONTROL_TARGET_SPEED := 285.0
-const SHOP_REPAIR_RECT := Rect2(35.0, 236.0, 320.0, 56.0)
-const SHOP_SINGLE_RECT := Rect2(35.0, 318.0, 150.0, 58.0)
-const SHOP_DUAL_RECT := Rect2(205.0, 318.0, 150.0, 58.0)
-const SHOP_CONE_RECT := Rect2(35.0, 394.0, 150.0, 58.0)
-const SHOP_SEEKER_RECT := Rect2(205.0, 394.0, 150.0, 58.0)
-const SHOP_LASER_RECT := Rect2(35.0, 470.0, 320.0, 58.0)
-const SHOP_CONTINUE_RECT := Rect2(35.0, 562.0, 320.0, 72.0)
+const SHOP_REPAIR_RECT := Rect2(35.0, 220.0, 320.0, 54.0)
+const SHOP_SINGLE_RECT := Rect2(35.0, 292.0, 150.0, 56.0)
+const SHOP_DUAL_RECT := Rect2(205.0, 292.0, 150.0, 56.0)
+const SHOP_CONE_RECT := Rect2(35.0, 364.0, 150.0, 56.0)
+const SHOP_SEEKER_RECT := Rect2(205.0, 364.0, 150.0, 56.0)
+const SHOP_LASER_RECT := Rect2(35.0, 436.0, 320.0, 56.0)
+const SHOP_PAGE_TOGGLE_RECT := Rect2(35.0, 550.0, 320.0, 48.0)
+const SHOP_CONTINUE_RECT := Rect2(35.0, 615.0, 320.0, 62.0)
+const SHOP_RUN_SHIP_RECT := Rect2(35.0, 220.0, 320.0, 54.0)
+const SHOP_RUN_DASH_RECT := Rect2(35.0, 286.0, 320.0, 54.0)
+const SHOP_RUN_DAMAGE_RECT := Rect2(35.0, 352.0, 320.0, 54.0)
+const SHOP_RUN_HITS_RECT := Rect2(35.0, 418.0, 320.0, 54.0)
+const SHOP_RUN_SHIELD_RECT := Rect2(35.0, 484.0, 320.0, 54.0)
 const MAIN_START_RECT := Rect2(54.0, 560.0, 282.0, 64.0)
 const MAIN_RESEARCH_RECT := Rect2(54.0, 640.0, 282.0, 64.0)
 const RESEARCH_SHIP_RECT := Rect2(35.0, 188.0, 320.0, 64.0)
@@ -99,6 +110,7 @@ var won := false
 var elapsed := 0.0
 var level := 1
 var shop_open := false
+var shop_page := 0 # 0 = run upgrades, 1 = weapons/repair
 var last_level_bonus := 0
 var score := 0
 var research_credits := 0
@@ -107,6 +119,11 @@ var research_dash := 0
 var research_damage := 0
 var research_hits := 0
 var research_shield := 0
+var run_ship_speed := 0
+var run_dash := 0
+var run_damage := 0
+var run_hits := 0
+var run_shield := 0
 var research_start_single := false
 var research_start_dual := false
 var research_start_laser := false
@@ -477,6 +494,12 @@ func _start_game() -> void:
     energy = 0
     combo = 1
     best_combo = 1
+    run_ship_speed = 0
+    run_dash = 0
+    run_damage = 0
+    run_hits = 0
+    run_shield = 0
+    shop_page = 0
     max_hp = 2 + research_hits
     hp = max_hp
     shield_charges = research_shield
@@ -528,23 +551,24 @@ func _start_game() -> void:
     particles.clear()
     last_near_ids.clear()
     _clear_run_snapshot()
+    _autosave_permanent_progress()
 
 func _ship_speed_multiplier() -> float:
-    return 0.72 + float(research_ship_speed) * 0.04
+    return 0.72 + float(research_ship_speed + run_ship_speed) * 0.04
 
 func _dash_distance() -> float:
-    return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash) * 35.0)
+    return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash + run_dash) * 35.0)
 
 func _dash_speed() -> float:
-    return DASH_FORWARD_SPEED + float(research_dash) * 40.0
+    return DASH_FORWARD_SPEED + float(research_dash + run_dash) * 40.0
 
 func _damage_multiplier() -> float:
-    return 1.0 + float(research_damage) * 0.03
+    return 1.0 + float(research_damage + run_damage) * 0.03
 
 func _near_miss_research_multiplier(is_dash: bool) -> float:
-    var mult := 1.0 + float(research_ship_speed) * 0.08
+    var mult := 1.0 + float(research_ship_speed + run_ship_speed) * 0.08
     if is_dash:
-        mult += float(research_dash) * 0.12
+        mult += float(research_dash + run_dash) * 0.12
     return mult
 
 func _level_duration() -> float:
@@ -598,6 +622,7 @@ func _open_shop() -> void:
         return
     playing = false
     shop_open = true
+    shop_page = 0
     last_level_bonus = 30 + level * 10
     score += last_level_bonus
     combo = 1
@@ -633,6 +658,78 @@ func _buy_weapon(weapon: String) -> bool:
     score -= cost
     current_weapon = weapon
     _play_sfx(buy_sfx)
+    _save_run_snapshot()
+    return true
+
+func _run_upgrade_level(track: String) -> int:
+    match track:
+        "ship":
+            return run_ship_speed
+        "dash":
+            return run_dash
+        "damage":
+            return run_damage
+        "hits":
+            return run_hits
+        "shield":
+            return run_shield
+    return 0
+
+func _run_upgrade_max(track: String) -> int:
+    return _research_max(track)
+
+func _run_upgrade_base_cost(track: String) -> int:
+    match track:
+        "ship":
+            return SHOP_RUN_SHIP_COST
+        "dash":
+            return SHOP_RUN_DASH_COST
+        "damage":
+            return SHOP_RUN_DAMAGE_COST
+        "hits":
+            return SHOP_RUN_HITS_COST
+        "shield":
+            return SHOP_RUN_SHIELD_COST
+    return 999999
+
+func _run_upgrade_cost(track: String) -> int:
+    var lvl := _run_upgrade_level(track)
+    var growth := 1.55
+    if track == "damage":
+        growth = 1.60
+    elif track == "hits":
+        growth = 1.70
+    elif track == "shield":
+        growth = 1.90
+    return int(round(float(_run_upgrade_base_cost(track)) * pow(growth, lvl)))
+
+func _buy_run_upgrade(track: String) -> bool:
+    if not shop_open:
+        return false
+    var lvl := _run_upgrade_level(track)
+    if lvl >= _run_upgrade_max(track):
+        return false
+    var cost := _run_upgrade_cost(track)
+    if score < cost:
+        return false
+    score -= cost
+    match track:
+        "ship":
+            run_ship_speed += 1
+        "dash":
+            run_dash += 1
+        "damage":
+            run_damage += 1
+        "hits":
+            run_hits += 1
+            max_hp += 1
+            hp += 1
+        "shield":
+            run_shield += 1
+            shield_charges += 1
+        _:
+            return false
+    _play_sfx(buy_sfx, 1.04, -2.0)
     _save_run_snapshot()
     return true
 
@@ -681,20 +778,41 @@ func _start_next_level() -> void:
     _play_sfx(finale_sfx, 1.12, -2.0)
 
 func _handle_shop_tap(pos: Vector2) -> void:
-    if SHOP_REPAIR_RECT.has_point(pos):
-        _buy_repair()
-    elif SHOP_SINGLE_RECT.has_point(pos):
-        _buy_weapon("single")
-    elif SHOP_DUAL_RECT.has_point(pos):
-        _buy_weapon("dual")
-    elif SHOP_CONE_RECT.has_point(pos):
-        _buy_weapon("cone")
-    elif SHOP_SEEKER_RECT.has_point(pos):
-        _buy_weapon("seeker")
-    elif SHOP_LASER_RECT.has_point(pos):
-        _buy_weapon("laser")
-    elif SHOP_CONTINUE_RECT.has_point(pos):
+    if SHOP_PAGE_TOGGLE_RECT.has_point(pos):
+        shop_page = 1 - shop_page
+        _save_run_snapshot()
+        queue_redraw()
+        return
+
+    if SHOP_CONTINUE_RECT.has_point(pos):
         _start_next_level()
+        queue_redraw()
+        return
+
+    if shop_page == 0:
+        if SHOP_RUN_SHIP_RECT.has_point(pos):
+            _buy_run_upgrade("ship")
+        elif SHOP_RUN_DASH_RECT.has_point(pos):
+            _buy_run_upgrade("dash")
+        elif SHOP_RUN_DAMAGE_RECT.has_point(pos):
+            _buy_run_upgrade("damage")
+        elif SHOP_RUN_HITS_RECT.has_point(pos):
+            _buy_run_upgrade("hits")
+        elif SHOP_RUN_SHIELD_RECT.has_point(pos):
+            _buy_run_upgrade("shield")
+    else:
+        if SHOP_REPAIR_RECT.has_point(pos):
+            _buy_repair()
+        elif SHOP_SINGLE_RECT.has_point(pos):
+            _buy_weapon("single")
+        elif SHOP_DUAL_RECT.has_point(pos):
+            _buy_weapon("dual")
+        elif SHOP_CONE_RECT.has_point(pos):
+            _buy_weapon("cone")
+        elif SHOP_SEEKER_RECT.has_point(pos):
+            _buy_weapon("seeker")
+        elif SHOP_LASER_RECT.has_point(pos):
+            _buy_weapon("laser")
     queue_redraw()
 
 func _finish(success: bool) -> void:
@@ -735,15 +853,15 @@ func _research_cost(track: String) -> int:
     var lvl := _research_level(track)
     match track:
         "ship":
-            return int(round(500.0 * pow(1.75, lvl)))
+            return int(round(7500.0 * pow(1.85, lvl)))
         "dash":
-            return int(round(750.0 * pow(1.75, lvl)))
+            return int(round(9000.0 * pow(1.90, lvl)))
         "damage":
-            return int(round(1000.0 * pow(1.80, lvl)))
+            return int(round(12000.0 * pow(1.90, lvl)))
         "hits":
-            return int(round(5000.0 * pow(1.35, lvl)))
+            return int(round(2500.0 * pow(1.65, lvl)))
         "shield":
-            return int(round(500.0 * pow(5.0, lvl)))
+            return int(round(15000.0 * pow(2.50, lvl)))
     return 99999999
 
 func _buy_research(track: String) -> bool:
@@ -766,11 +884,11 @@ func _buy_research(track: String) -> bool:
         "shield":
             research_shield += 1
     _play_sfx(buy_sfx, 1.08)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _weapon_research_cost(weapon: String) -> int:
-    return _shop_weapon_cost(weapon) * 10
+    return _shop_weapon_cost(weapon) * 25
 
 func _weapon_start_unlocked(weapon: String) -> bool:
     match weapon:
@@ -813,7 +931,7 @@ func _buy_start_weapon_research(weapon: String) -> bool:
             return false
     starting_weapon = weapon
     _play_sfx(weapon_pickup_sfx, 0.96)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _select_start_weapon(weapon: String) -> bool:
@@ -821,7 +939,7 @@ func _select_start_weapon(weapon: String) -> bool:
         return false
     starting_weapon = weapon
     _play_sfx(buy_sfx, 1.16, -3.0)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _handle_weapon_research_tap(pos: Vector2) -> void:
@@ -881,7 +999,7 @@ func _pause_run() -> void:
     _clear_control_holds()
     run_paused = true
     _save_run_snapshot()
-    _save_meta()
+    _autosave_permanent_progress()
     queue_redraw()
 
 func _resume_run() -> void:
@@ -931,6 +1049,9 @@ func _bank_run_score() -> void:
     banked_this_run = true
     _save_meta()
 
+func _autosave_permanent_progress() -> void:
+    _save_meta()
+
 func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
@@ -973,6 +1094,12 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "exists", true)
     cfg.set_value("run", "playing", playing)
     cfg.set_value("run", "shop_open", shop_open)
+    cfg.set_value("run", "shop_page", shop_page)
+    cfg.set_value("run", "run_ship_speed", run_ship_speed)
+    cfg.set_value("run", "run_dash", run_dash)
+    cfg.set_value("run", "run_damage", run_damage)
+    cfg.set_value("run", "run_hits", run_hits)
+    cfg.set_value("run", "run_shield", run_shield)
     cfg.set_value("run", "level", level)
     cfg.set_value("run", "elapsed", elapsed)
     cfg.set_value("run", "score", score)
@@ -1019,6 +1146,12 @@ func _load_run_snapshot() -> bool:
         return false
     playing = bool(cfg.get_value("run", "playing", true))
     shop_open = bool(cfg.get_value("run", "shop_open", false))
+    shop_page = int(cfg.get_value("run", "shop_page", 0))
+    run_ship_speed = int(cfg.get_value("run", "run_ship_speed", 0))
+    run_dash = int(cfg.get_value("run", "run_dash", 0))
+    run_damage = int(cfg.get_value("run", "run_damage", 0))
+    run_hits = int(cfg.get_value("run", "run_hits", 0))
+    run_shield = int(cfg.get_value("run", "run_shield", 0))
     level = int(cfg.get_value("run", "level", 1))
     elapsed = float(cfg.get_value("run", "elapsed", 0.0))
     score = int(cfg.get_value("run", "score", 0))
@@ -2259,18 +2392,23 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
     var at_max := lvl >= max_lvl
     var cost := _research_cost(track)
     var can_buy := not at_max and research_credits >= cost
-    draw_rect(rect, Color("14232f") if can_buy else Color("0d1118"), true)
-    draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
+    var recommended := track == "hits" and lvl == 0
+    var fill := Color("173524") if recommended else (Color("14232f") if can_buy else Color("0d1118"))
+    var border := Color("6bffb0") if recommended else (Color("77f7ff") if can_buy else Color("46515c"))
+    draw_rect(rect, fill, true)
+    draw_rect(rect, border, false, 3.0 if recommended else 2.0)
     _text("%s  L%d" % [label, lvl], rect.position + Vector2(10, 23), 16, Color("f0fbff"))
     _text(effect, rect.position + Vector2(10, 45), 13, Color("8ea9b8"))
     var cost_text := "MAX" if at_max else ("%d" % cost)
-    _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max else Color("ffd166"))
+    _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max or recommended else Color("ffd166"))
+    if recommended:
+        _text("BEST FIRST", rect.position + Vector2(205, 18), 11, Color("6bffb0"))
 
 func _draw_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT ACROSS RUNS", Vector2(87, 145), 15, Color("8ea9b8"))
+    _text("PERMANENT • AUTO-SAVED", Vector2(82, 145), 15, Color("8ea9b8"))
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
@@ -2303,7 +2441,7 @@ func _draw_weapon_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT UNLOCK — 10x RUN PRICE", Vector2(51, 140), 14, Color("8ea9b8"))
+    _text("PERMANENT UNLOCK — 25x RUN PRICE", Vector2(43, 140), 14, Color("8ea9b8"))
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
@@ -2343,27 +2481,54 @@ func _draw_shop_button(rect: Rect2, label: String, cost: int, enabled: bool, own
     _text(label, rect.position + Vector2(10, 24), 15, Color("f0fbff"))
     _text(suffix, rect.position + Vector2(10, 47), 14, Color("6bffb0") if owned else Color("ffd166"))
 
+func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect: String) -> void:
+    var lvl := _run_upgrade_level(track)
+    var max_lvl := _run_upgrade_max(track)
+    var at_max := lvl >= max_lvl
+    var cost := _run_upgrade_cost(track)
+    var can_buy := not at_max and score >= cost
+    draw_rect(rect, Color("14232f") if can_buy else Color("0d1118"), true)
+    draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
+    _text("%s  +%d" % [label, lvl], rect.position + Vector2(10, 20), 15, Color("f0fbff"))
+    _text(effect, rect.position + Vector2(10, 40), 12, Color("8ea9b8"))
+    var cost_text := "MAX" if at_max else ("%d" % cost)
+    _text(cost_text, rect.position + Vector2(250, 32), 14, Color("6bffb0") if at_max else Color("ffd166"))
+
 func _draw_shop() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("LEVEL %d CLEAR" % level, Vector2(92, 82), 28, Color("77f7ff"))
-    _text("+%d CLEAR BONUS" % last_level_bonus, Vector2(112, 112), 16, Color("6bffb0"))
-    _text("SCORE / CREDITS  %06d" % score, Vector2(75, 154), 20, Color("ffd166"))
-    _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 187), 16, Color("bdeef4"))
+    _text("LEVEL %d CLEAR" % level, Vector2(92, 72), 28, Color("77f7ff"))
+    _text("+%d CLEAR BONUS" % last_level_bonus, Vector2(112, 102), 16, Color("6bffb0"))
+    _text("RUN SCORE %06d" % score, Vector2(102, 138), 20, Color("ffd166"))
+    _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 171), 16, Color("bdeef4"))
 
-    var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
-    _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1 HIT", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
-
-    _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
-    _draw_shop_button(SHOP_DUAL_RECT, "DUAL D1x2", SHOP_DUAL_COST, score >= SHOP_DUAL_COST and current_weapon != "dual", current_weapon == "dual")
-    _draw_shop_button(SHOP_CONE_RECT, "CONE D3x3", SHOP_CONE_COST, score >= SHOP_CONE_COST and current_weapon != "cone", current_weapon == "cone")
-    _draw_shop_button(SHOP_SEEKER_RECT, "SEEKER D7", SHOP_SEEKER_COST, score >= SHOP_SEEKER_COST and current_weapon != "seeker", current_weapon == "seeker")
-    _draw_shop_button(SHOP_LASER_RECT, "THIN LASER 3 DPS", SHOP_LASER_COST, score >= SHOP_LASER_COST and current_weapon != "laser", current_weapon == "laser")
+    if shop_page == 0:
+        _text("RUN UPGRADES", Vector2(122, 203), 15, Color("b56cff"))
+        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll / +8% near")
+        _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "+35px / +40 speed")
+        _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3% weapon damage")
+        _draw_run_upgrade_button(SHOP_RUN_HITS_RECT, "hits", "MAX HITS", "+1 max hit + heal 1")
+        _draw_run_upgrade_button(SHOP_RUN_SHIELD_RECT, "shield", "SHIELD", "+1 shield charge")
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("231835"), true)
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("b56cff"), false, 2.0)
+        _text("WEAPONS / REPAIR", SHOP_PAGE_TOGGLE_RECT.position + Vector2(73, 34), 17, Color("f1dcff"))
+    else:
+        _text("WEAPONS / REPAIR", Vector2(106, 203), 15, Color("b56cff"))
+        var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
+        _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1 HIT", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
+        _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
+        _draw_shop_button(SHOP_DUAL_RECT, "DUAL D1x2", SHOP_DUAL_COST, score >= SHOP_DUAL_COST and current_weapon != "dual", current_weapon == "dual")
+        _draw_shop_button(SHOP_CONE_RECT, "CONE D3x3", SHOP_CONE_COST, score >= SHOP_CONE_COST and current_weapon != "cone", current_weapon == "cone")
+        _draw_shop_button(SHOP_SEEKER_RECT, "SEEKER D7", SHOP_SEEKER_COST, score >= SHOP_SEEKER_COST and current_weapon != "seeker", current_weapon == "seeker")
+        _draw_shop_button(SHOP_LASER_RECT, "THIN LASER 3 DPS", SHOP_LASER_COST, score >= SHOP_LASER_COST and current_weapon != "laser", current_weapon == "laser")
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("17303b"), true)
+        draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("77f7ff"), false, 2.0)
+        _text("RUN UPGRADES", SHOP_PAGE_TOGGLE_RECT.position + Vector2(91, 34), 17, Color("f0fbff"))
 
     draw_rect(SHOP_CONTINUE_RECT, Color("123544"), true)
     draw_rect(SHOP_CONTINUE_RECT, Color("77f7ff"), false, 3.0)
-    _text("START LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(71, 43), 21, Color("f0fbff"))
-    _text("NEXT LEVEL: MORE SPEED + DENSITY", Vector2(62, 680), 15, Color("ffb347"))
-    _text("FIELD REPAIRS ARE RARE", Vector2(92, 710), 15, Color("8ea9b8"))
+    _text("START LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(71, 41), 21, Color("f0fbff"))
+    _text("STORE UPGRADES LAST THIS RUN ONLY", Vector2(63, 710), 14, Color("ffb347"))
+    _text("PERMANENT RESEARCH AUTO-SAVES", Vector2(69, 738), 14, Color("8ea9b8"))
 
 func _draw_results() -> void:
     draw_rect(Rect2(Vector2(30, 210), Vector2(330, 410)), Color(0.03,0.05,0.09,0.94), true)

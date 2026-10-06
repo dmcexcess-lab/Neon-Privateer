@@ -33,11 +33,12 @@ func _initialize() -> void:
         "_dash_score_multiplier", "_level_duration", "_split_count_for_level",
         "_station_height_for_level", "_first_split_time", "_level_difficulty", "_spawn_interval",
         "_shop_weapon_cost", "_open_shop", "_buy_repair", "_buy_weapon",
+        "_run_upgrade_level", "_run_upgrade_max", "_run_upgrade_cost", "_buy_run_upgrade",
         "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_dash_distance",
         "_dash_speed", "_damage_multiplier", "_near_miss_research_multiplier",
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon",
-        "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_save_meta", "_save_run_snapshot",
+        "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
         "_load_run_snapshot", "_clear_run_snapshot", "_make_tone", "_make_sweep", "_play_sfx"
     ]:
         if not scene.has_method(method_name):
@@ -184,35 +185,54 @@ func _initialize() -> void:
         _fail("dash speed research should increase speed only slightly")
         return
 
-    # Defense curves: shield begins cheap then explodes; hits begin expensive but climb gently.
+    # Permanent research is deliberately expensive; first +1 hit is the cheapest obvious entry upgrade.
+    scene.research_ship_speed = 0
+    scene.research_dash = 0
+    scene.research_damage = 0
+    scene.research_hits = 0
     scene.research_shield = 0
-    if scene._research_cost("shield") != 500:
-        _fail("first shield research should be cheap")
+    var hits_first: int = scene._research_cost("hits")
+    var ship_first: int = scene._research_cost("ship")
+    var dash_first: int = scene._research_cost("dash")
+    var damage_first: int = scene._research_cost("damage")
+    var shield_first: int = scene._research_cost("shield")
+    if hits_first != 2500:
+        _fail("first permanent hit upgrade should cost 2500")
         return
+    if hits_first >= ship_first or hits_first >= dash_first or hits_first >= damage_first or hits_first >= shield_first:
+        _fail("first hit is not the cheapest permanent upgrade")
+        return
+    if ship_first < 7000 or dash_first < 8000 or damage_first < 10000 or shield_first < 12000:
+        _fail("permanent research was not raised enough")
+        return
+
+    scene.research_ship_speed = 1
+    scene.research_dash = 1
+    scene.research_damage = 1
+    scene.research_hits = 1
+    var hits_second: int = scene._research_cost("hits")
+    if hits_second <= hits_first or hits_second >= hits_first * 2:
+        _fail("hit research should rise steadily without exploding")
+        return
+
     scene.research_shield = 1
     var shield_second: int = scene._research_cost("shield")
     scene.research_shield = 2
     var shield_third: int = scene._research_cost("shield")
-    if shield_second != 2500 or shield_third != 12500 or shield_third <= shield_second * 4:
-        _fail("shield research does not rise steeply enough")
+    if shield_second != 37500 or shield_third != 93750 or shield_third <= shield_second * 2:
+        _fail("shield research should remain a high-cost permanent track")
         return
-    scene.research_hits = 0
-    var hits_first: int = scene._research_cost("hits")
-    scene.research_hits = 1
-    var hits_second: int = scene._research_cost("hits")
-    if hits_first != 5000 or hits_second <= hits_first or hits_second >= hits_first * 2:
-        _fail("hit research should start expensive and rise gently")
-        return
+
     scene.research_hits = 1
     scene.research_shield = 1
     var credits_before_second_shield: int = scene.research_credits
-    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 2500:
+    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 37500:
         _fail("second shield charge research purchase failed")
         return
 
-    # Starting-weapon research costs at least 10x the normal run-shop price.
-    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 10     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 10     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 10     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 10     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 10:
-        _fail("starting weapon research is not at least 10x run price")
+    # Starting-weapon permanent research costs 25x the normal run-shop price.
+    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 25     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 25     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 25     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 25     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 25:
+        _fail("starting weapon research is not 25x run price")
         return
     for weapon in ["single", "dual", "laser", "cone", "seeker"]:
         if not scene._buy_start_weapon_research(weapon):
@@ -220,6 +240,29 @@ func _initialize() -> void:
             return
     if not scene._select_start_weapon("single") or scene._valid_starting_weapon() != "single":
         _fail("researched starting weapon could not be selected")
+        return
+
+    # Permanent progression is autosaved immediately and survives a fresh in-memory reset.
+    var saved_credits: int = scene.research_credits
+    var saved_ship: int = scene.research_ship_speed
+    var saved_dash: int = scene.research_dash
+    var saved_damage: int = scene.research_damage
+    var saved_hits: int = scene.research_hits
+    var saved_shield: int = scene.research_shield
+    scene.research_credits = 0
+    scene.research_ship_speed = 0
+    scene.research_dash = 0
+    scene.research_damage = 0
+    scene.research_hits = 0
+    scene.research_shield = 0
+    scene.research_start_single = false
+    scene.starting_weapon = "none"
+    scene._load_meta()
+    if scene.research_credits != saved_credits or scene.research_ship_speed != saved_ship or scene.research_dash != saved_dash or scene.research_damage != saved_damage or scene.research_hits != saved_hits or scene.research_shield != saved_shield:
+        _fail("permanent research did not autosave/reload")
+        return
+    if not scene.research_start_single or scene.starting_weapon != "single":
+        _fail("permanent starting weapon did not autosave/reload")
         return
 
     scene._start_game()
@@ -960,9 +1003,36 @@ func _initialize() -> void:
         _fail("shop did not freeze and clear active gameplay objects")
         return
 
+    # Shop defaults to run-only upgrades and exposes every permanent research track as a temporary version.
+    if scene.shop_page != 0:
+        _fail("between-level store did not default to run upgrades")
+        return
+    var base_run_ship_speed: float = scene._ship_speed_multiplier()
+    var base_run_dash_distance: float = scene._dash_distance()
+    var base_run_dash_speed: float = scene._dash_speed()
+    var base_run_damage: float = scene._damage_multiplier()
+    if not scene._buy_run_upgrade("ship") or not scene._buy_run_upgrade("dash") or not scene._buy_run_upgrade("damage") or not scene._buy_run_upgrade("hits") or not scene._buy_run_upgrade("shield"):
+        _fail("run-upgrade store purchase flow failed")
+        return
+    if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
+        _fail("run-only upgrade levels did not increment")
+        return
+    if scene._ship_speed_multiplier() <= base_run_ship_speed or scene._dash_distance() <= base_run_dash_distance or scene._dash_speed() <= base_run_dash_speed or scene._damage_multiplier() <= base_run_damage:
+        _fail("run-only upgrades did not affect active ship")
+        return
+    if scene.max_hp != 3 or scene.hp != 2 or scene.shield_charges != 1:
+        _fail("run-only hit/shield upgrades applied incorrectly")
+        return
+
+    # Switch to weapons/repair page.
+    scene._handle_shop_tap(scene.SHOP_PAGE_TOGGLE_RECT.get_center())
+    if scene.shop_page != 1:
+        _fail("shop page toggle did not open weapons/repair")
+        return
+
     # Shop repair spends score and restores one hit.
     var before_repair: int = scene.score
-    if not scene._buy_repair() or scene.hp != 2 or scene.score != before_repair - scene.SHOP_REPAIR_COST:
+    if not scene._buy_repair() or scene.hp != 3 or scene.score != before_repair - scene.SHOP_REPAIR_COST:
         _fail("shop repair purchase failed")
         return
 
@@ -1005,6 +1075,9 @@ func _initialize() -> void:
     if scene.hp != hp_before_next or scene.current_weapon != weapon_before_next or scene.score != 777:
         _fail("next level did not preserve run state")
         return
+    if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
+        _fail("next level did not preserve temporary run upgrades")
+        return
     if scene._level_difficulty() <= difficulty_before_next:
         _fail("next level did not become harder")
         return
@@ -1024,8 +1097,21 @@ func _initialize() -> void:
         _fail("level timer did not transition into shop")
         return
 
-    # Durable run snapshot preserves an active paused run.
+    # A brand-new run wipes store upgrades while permanent research remains separate.
     scene._start_game()
+    if scene.run_ship_speed != 0 or scene.run_dash != 0 or scene.run_damage != 0 or scene.run_hits != 0 or scene.run_shield != 0:
+        _fail("new run did not clear temporary store upgrades")
+        return
+
+    # Durable run snapshot preserves temporary upgrades as part of the current run.
+    scene.run_ship_speed = 2
+    scene.run_dash = 1
+    scene.run_damage = 3
+    scene.run_hits = 1
+    scene.run_shield = 2
+    scene.max_hp = 3
+    scene.hp = 3
+    scene.shield_charges = 2
     scene.score = 432
     scene.level = 3
     scene.elapsed = 7.5
@@ -1037,7 +1123,16 @@ func _initialize() -> void:
     if scene.score != 432 or scene.level != 3 or absf(scene.elapsed - 7.5) > 0.01 or scene.current_weapon != "dual":
         _fail("run snapshot did not preserve core run state")
         return
+    if scene.run_ship_speed != 2 or scene.run_dash != 1 or scene.run_damage != 3 or scene.run_hits != 1 or scene.run_shield != 2:
+        _fail("run snapshot did not preserve temporary store upgrades")
+        return
     scene.run_paused = false
+    scene.run_ship_speed = 0
+    scene.run_dash = 0
+    scene.run_damage = 0
+    scene.run_hits = 0
+    scene.run_shield = 0
+    scene.research_dash = 0
 
     # Baseline dash is deliberately short; research grows distance faster than speed.
     scene._start_next_level()

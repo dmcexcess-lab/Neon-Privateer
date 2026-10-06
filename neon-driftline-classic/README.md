@@ -204,3 +204,41 @@ Sound cues now cover:
 - Level clear and run death
 
 Weapon-fire sounds are intentionally short and quieter than impact/reward cues so automatic weapons do not dominate the mix.
+
+
+## Classic progression update
+
+Permanent research is now explicitly autosaved. Buying a permanent upgrade or starting-weapon unlock writes the meta save immediately, and starting a new run does **not** reset research.
+
+Permanent research has been re-priced as long-term progression:
+
+- **Hits:** starts at **2,500** research and is intentionally the cheapest/most obvious first permanent upgrade.
+- **Ship Speed:** starts at **7,500**.
+- **Dash:** starts at **9,000**.
+- **Damage:** starts at **12,000**.
+- **Shield:** starts at **15,000** and scales steeply.
+- Permanent starting-weapon unlocks cost **25×** their normal between-level run-shop price.
+
+The research screen highlights the first +1 Hit upgrade as **BEST FIRST**.
+
+### Between-level store
+
+The level-clear store now has two pages:
+
+1. **RUN UPGRADES**
+   - Ship Speed
+   - Dash
+   - Damage
+   - Max Hits
+   - Shield
+2. **WEAPONS / REPAIR**
+   - Repair
+   - Single
+   - Dual
+   - Cone
+   - Thin Laser
+   - Heat Seeker
+
+Run upgrades use the current run's score, stack on top of permanent research, persist through later levels and durable pause/reload, and reset when a brand-new run begins.
+
+Permanent research remains permanent; store upgrades are run-only.
