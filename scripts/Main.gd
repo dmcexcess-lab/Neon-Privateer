@@ -327,6 +327,218 @@ func _play_sfx(stream: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.
     player.volume_db = volume_db
     player.play()
 
+func _career_meta_path(slot: int) -> String:
+    return "user://career_%d_meta.cfg" % slot
+
+func _career_world_path(slot: int) -> String:
+    return "user://career_%d_world.cfg" % slot
+
+func _career_run_path(slot: int) -> String:
+    return "user://career_%d_run.cfg" % slot
+
+func _active_meta_path() -> String:
+    return _career_meta_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _active_world_path() -> String:
+    return _career_world_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _active_run_path() -> String:
+    return _career_run_path(active_career_slot) if active_career_slot > 0 else ""
+
+func _career_slot_exists(slot: int) -> bool:
+    if slot < 1 or slot > CAREER_SLOT_COUNT:
+        return false
+    return FileAccess.file_exists(_career_meta_path(slot)) or FileAccess.file_exists(_career_world_path(slot))
+
+func _load_career_index() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(CAREER_INDEX_PATH) != OK:
+        last_career_slot = 0
+        return
+    last_career_slot = clampi(int(cfg.get_value("careers", "last_slot", 0)), 0, CAREER_SLOT_COUNT)
+    if last_career_slot > 0 and not _career_slot_exists(last_career_slot):
+        last_career_slot = 0
+
+func _save_career_index() -> void:
+    var cfg := ConfigFile.new()
+    cfg.set_value("careers", "last_slot", last_career_slot)
+    cfg.save(CAREER_INDEX_PATH)
+
+func _copy_user_file(source_path: String, destination_path: String) -> bool:
+    if not FileAccess.file_exists(source_path):
+        return false
+    var source := FileAccess.open(source_path, FileAccess.READ)
+    if source == null:
+        return false
+    var bytes := source.get_buffer(source.get_length())
+    var destination := FileAccess.open(destination_path, FileAccess.WRITE)
+    if destination == null:
+        return false
+    destination.store_buffer(bytes)
+    return true
+
+func _migrate_legacy_career_if_needed() -> void:
+    for slot in range(1, CAREER_SLOT_COUNT + 1):
+        if _career_slot_exists(slot):
+            return
+    var has_legacy := FileAccess.file_exists(LEGACY_META_SAVE_PATH) or FileAccess.file_exists(LEGACY_PRIVATEER_SAVE_PATH)
+    if not has_legacy:
+        return
+    _copy_user_file(LEGACY_META_SAVE_PATH, _career_meta_path(1))
+    _copy_user_file(LEGACY_PRIVATEER_SAVE_PATH, _career_world_path(1))
+    _copy_user_file(LEGACY_RUN_SAVE_PATH, _career_run_path(1))
+    last_career_slot = 1
+    _save_career_index()
+
+func _reset_career_state() -> void:
+    research_credits = 1200
+    research_ship_speed = 0
+    research_dash = 0
+    research_damage = 0
+    research_hits = 0
+    research_shield = 0
+    research_start_single = false
+    research_start_dual = false
+    research_start_laser = false
+    research_start_cone = false
+    research_start_seeker = false
+    starting_weapon = "none"
+
+    current_planet = "Aster"
+    destination_planet = ""
+    route_origin = ""
+    route_distance = 1
+    route_danger = 1
+    route_duration = 18.0
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    bounty_completed_this_route = false
+    pirate_attack_active = false
+    pirate_attack_timer = 0.0
+    pirate_attack_clock = 999.0
+    pirate_banner_timer = 0.0
+    last_trip_summary = "Docked at Aster"
+    markets.clear()
+    cargo.clear()
+    contract_board.clear()
+    active_contract.clear()
+    passengers = 0
+    economy_tick = 0
+
+    playing = false
+    game_over = false
+    won = false
+    elapsed = 0.0
+    level = 1
+    shop_open = false
+    score = 0
+    energy = 0
+    combo = 1
+    best_combo = 1
+    max_hp = 2
+    hp = 2
+    shield_charges = 0
+    run_paused = false
+    banked_this_run = false
+    world_scroll = 0.0
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    particles.clear()
+    last_near_ids.clear()
+    research_open = false
+    weapon_research_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    _clear_control_holds()
+    _init_privateer_world()
+
+func _create_new_career(slot: int) -> bool:
+    if slot < 1 or slot > CAREER_SLOT_COUNT:
+        return false
+    active_career_slot = slot
+    _reset_career_state()
+    _clear_run_snapshot()
+    _save_all_state()
+    last_career_slot = slot
+    _save_career_index()
+    profile_menu_open = false
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    hub_open = true
+    queue_redraw()
+    return true
+
+func _load_career(slot: int) -> bool:
+    if not _career_slot_exists(slot):
+        return false
+    active_career_slot = slot
+    _reset_career_state()
+    _load_meta()
+    _load_privateer_state()
+    profile_menu_open = false
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    last_career_slot = slot
+    _save_career_index()
+    if _load_run_snapshot():
+        run_paused = true
+        hub_open = false
+    else:
+        run_paused = false
+        hub_open = true
+    queue_redraw()
+    return true
+
+func _continue_career() -> bool:
+    if last_career_slot <= 0 or not _career_slot_exists(last_career_slot):
+        return false
+    return _load_career(last_career_slot)
+
+func _career_slot_summary(slot: int) -> Dictionary:
+    var result := {
+        "exists": _career_slot_exists(slot),
+        "planet": "",
+        "credits": 0,
+        "in_flight": false,
+        "destination": ""
+    }
+    if not bool(result.exists):
+        return result
+    var meta := ConfigFile.new()
+    if meta.load(_career_meta_path(slot)) == OK:
+        result.credits = int(meta.get_value("meta", "credits", 0))
+    var world := ConfigFile.new()
+    if world.load(_career_world_path(slot)) == OK:
+        result.planet = String(world.get_value("world", "planet", "Aster"))
+    var run := ConfigFile.new()
+    if run.load(_career_run_path(slot)) == OK and bool(run.get_value("run", "exists", false)):
+        result.in_flight = bool(run.get_value("run", "route_active", false))
+        result.destination = String(run.get_value("run", "destination_planet", ""))
+        if bool(result.in_flight):
+            result.planet = String(run.get_value("run", "route_origin", result.planet))
+    return result
+
+func _open_profile_menu() -> void:
+    if active_career_slot > 0:
+        _save_all_state()
+    profile_menu_open = true
+    career_slots_open = false
+    career_new_mode = false
+    pending_overwrite_slot = 0
+    hub_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    research_open = false
+    weapon_research_open = false
+    queue_redraw()
+
 func _init_privateer_world() -> void:
     if cargo.is_empty():
         for commodity in commodity_names:
