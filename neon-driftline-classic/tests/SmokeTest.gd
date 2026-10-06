@@ -33,11 +33,12 @@ func _initialize() -> void:
         "_dash_score_multiplier", "_level_duration", "_split_count_for_level",
         "_station_height_for_level", "_first_split_time", "_level_difficulty", "_spawn_interval",
         "_shop_weapon_cost", "_open_shop", "_buy_repair", "_buy_weapon",
+        "_run_upgrade_level", "_run_upgrade_max", "_run_upgrade_cost", "_buy_run_upgrade",
         "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_dash_distance",
         "_dash_speed", "_damage_multiplier", "_near_miss_research_multiplier",
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon",
-        "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_save_meta", "_save_run_snapshot",
+        "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
         "_load_run_snapshot", "_clear_run_snapshot", "_make_tone", "_make_sweep", "_play_sfx"
     ]:
         if not scene.has_method(method_name):
@@ -184,35 +185,51 @@ func _initialize() -> void:
         _fail("dash speed research should increase speed only slightly")
         return
 
-    # Defense curves: shield begins cheap then explodes; hits begin expensive but climb gently.
+    # Permanent research is deliberately expensive; first +1 hit is the cheapest obvious entry upgrade.
+    scene.research_ship_speed = 0
+    scene.research_dash = 0
+    scene.research_damage = 0
+    scene.research_hits = 0
     scene.research_shield = 0
-    if scene._research_cost("shield") != 500:
-        _fail("first shield research should be cheap")
+    var hits_first: int = scene._research_cost("hits")
+    var ship_first: int = scene._research_cost("ship")
+    var dash_first: int = scene._research_cost("dash")
+    var damage_first: int = scene._research_cost("damage")
+    var shield_first: int = scene._research_cost("shield")
+    if hits_first != 2500:
+        _fail("first permanent hit upgrade should cost 2500")
         return
+    if hits_first >= ship_first or hits_first >= dash_first or hits_first >= damage_first or hits_first >= shield_first:
+        _fail("first hit is not the cheapest permanent upgrade")
+        return
+    if ship_first < 7000 or dash_first < 8000 or damage_first < 10000 or shield_first < 12000:
+        _fail("permanent research was not raised enough")
+        return
+
+    scene.research_hits = 1
+    var hits_second: int = scene._research_cost("hits")
+    if hits_second <= hits_first or hits_second >= hits_first * 2:
+        _fail("hit research should rise steadily without exploding")
+        return
+
     scene.research_shield = 1
     var shield_second: int = scene._research_cost("shield")
     scene.research_shield = 2
     var shield_third: int = scene._research_cost("shield")
-    if shield_second != 2500 or shield_third != 12500 or shield_third <= shield_second * 4:
-        _fail("shield research does not rise steeply enough")
+    if shield_second != 37500 or shield_third != 93750 or shield_third <= shield_second * 2:
+        _fail("shield research should remain a high-cost permanent track")
         return
-    scene.research_hits = 0
-    var hits_first: int = scene._research_cost("hits")
-    scene.research_hits = 1
-    var hits_second: int = scene._research_cost("hits")
-    if hits_first != 5000 or hits_second <= hits_first or hits_second >= hits_first * 2:
-        _fail("hit research should start expensive and rise gently")
-        return
+
     scene.research_hits = 1
     scene.research_shield = 1
     var credits_before_second_shield: int = scene.research_credits
-    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 2500:
+    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 37500:
         _fail("second shield charge research purchase failed")
         return
 
-    # Starting-weapon research costs at least 10x the normal run-shop price.
-    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 10     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 10     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 10     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 10     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 10:
-        _fail("starting weapon research is not at least 10x run price")
+    # Starting-weapon permanent research costs 25x the normal run-shop price.
+    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 25     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 25     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 25     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 25     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 25:
+        _fail("starting weapon research is not 25x run price")
         return
     for weapon in ["single", "dual", "laser", "cone", "seeker"]:
         if not scene._buy_start_weapon_research(weapon):
@@ -220,6 +237,29 @@ func _initialize() -> void:
             return
     if not scene._select_start_weapon("single") or scene._valid_starting_weapon() != "single":
         _fail("researched starting weapon could not be selected")
+        return
+
+    # Permanent progression is autosaved immediately and survives a fresh in-memory reset.
+    var saved_credits: int = scene.research_credits
+    var saved_ship: int = scene.research_ship_speed
+    var saved_dash: int = scene.research_dash
+    var saved_damage: int = scene.research_damage
+    var saved_hits: int = scene.research_hits
+    var saved_shield: int = scene.research_shield
+    scene.research_credits = 0
+    scene.research_ship_speed = 0
+    scene.research_dash = 0
+    scene.research_damage = 0
+    scene.research_hits = 0
+    scene.research_shield = 0
+    scene.research_start_single = false
+    scene.starting_weapon = "none"
+    scene._load_meta()
+    if scene.research_credits != saved_credits or scene.research_ship_speed != saved_ship or scene.research_dash != saved_dash or scene.research_damage != saved_damage or scene.research_hits != saved_hits or scene.research_shield != saved_shield:
+        _fail("permanent research did not autosave/reload")
+        return
+    if not scene.research_start_single or scene.starting_weapon != "single":
+        _fail("permanent starting weapon did not autosave/reload")
         return
 
     scene._start_game()
