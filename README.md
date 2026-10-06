@@ -122,3 +122,14 @@ Focus loss / phone suspension pauses and snapshots an active flight.
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
 The smoke test covers economy simulation, trading, route scaling, contract classes, pirate gating, bounty boss flow, arrival payouts, delivery/passenger capacity, durable route restore, and core flight mechanics.
+
+
+## Preserved arcade version
+
+The final standalone **Neon Driftline** build from immediately before the Privateer conversion is preserved verbatim under:
+
+`neon-driftline-classic/`
+
+It remains its own Godot project with the original endless escalating-level loop, permanent research/upgrades, starting-weapon research, station splits, enemies, pickups, button controls, and procedural SFX.
+
+The repository CI runs its original smoke suite independently and exports it alongside Neon Privateer at the `/classic/` Pages path. This subproject is intentionally frozen as the arcade branch of the game rather than sharing Privateer's economy/career state.
