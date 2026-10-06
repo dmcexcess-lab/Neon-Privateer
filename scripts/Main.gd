@@ -51,6 +51,14 @@ const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
 const META_SAVE_PATH := "user://neon_meta.cfg"
 const RUN_SAVE_PATH := "user://neon_run.cfg"
+const PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
+const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
+const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
+const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
+const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
+const CARGO_CAPACITY_BASE := 8
+const PASSENGER_CAPACITY_BASE := 2
 const DASH_COOLDOWN := 2.4
 const DASH_DURATION := 0.30
 const DASH_FORWARD_SPEED := 700.0
@@ -80,8 +88,8 @@ const REPAIR_INTERVAL_MIN := 24.0
 const REPAIR_INTERVAL_MAX := 34.0
 const REPAIR_RETRY_FULL := 12.0
 const FIELD_REPAIR_CHANCE := 0.28
-const ENERGY_ORB_BASE_SCORE := 25
-const ENERGY_ORB_DASH_MULT := 5.0
+const ENERGY_ORB_BASE_SCORE := 2
+const ENERGY_ORB_DASH_MULT := 3.0
 const KILL_ORB_DROP_CHANCE := 0.08
 const KILL_REPAIR_DROP_CHANCE := 0.02
 const ENEMY_SHOT_SPEED := 255.0
@@ -101,7 +109,7 @@ var level := 1
 var shop_open := false
 var last_level_bonus := 0
 var score := 0
-var research_credits := 0
+var research_credits := 1200
 var research_ship_speed := 0
 var research_dash := 0
 var research_damage := 0
@@ -115,6 +123,33 @@ var research_start_seeker := false
 var starting_weapon := "none"
 var research_open := false
 var weapon_research_open := false
+var hub_open := true
+var market_open := false
+var contracts_open := false
+var travel_open := false
+var current_planet := "Aster"
+var destination_planet := ""
+var route_origin := ""
+var route_distance := 1
+var route_danger := 1
+var route_duration := 18.0
+var route_active := false
+var boss_active := false
+var boss_defeated_pending := false
+var bounty_completed_this_route := false
+var pirate_attack_active := false
+var pirate_attack_timer := 0.0
+var pirate_attack_clock := 999.0
+var pirate_banner_timer := 0.0
+var last_trip_summary := "Docked at Aster"
+var planet_names: Array[String] = ["Aster", "Cinder", "Vesper", "Helix"]
+var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel"]
+var markets: Dictionary = {}
+var cargo: Dictionary = {}
+var contract_board: Array[Dictionary] = []
+var active_contract: Dictionary = {}
+var passengers := 0
+var economy_tick := 0
 var run_paused := false
 var banked_this_run := false
 var last_banked_score := 0
@@ -197,7 +232,9 @@ var laser_sfx_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
+    _init_privateer_world()
     _load_meta()
+    _load_privateer_state()
     _setup_audio()
     set_process(true)
     if _load_run_snapshot():
