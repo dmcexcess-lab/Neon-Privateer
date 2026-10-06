@@ -1000,9 +1000,36 @@ func _initialize() -> void:
         _fail("shop did not freeze and clear active gameplay objects")
         return
 
+    # Shop defaults to run-only upgrades and exposes every permanent research track as a temporary version.
+    if scene.shop_page != 0:
+        _fail("between-level store did not default to run upgrades")
+        return
+    var base_run_ship_speed: float = scene._ship_speed_multiplier()
+    var base_run_dash_distance: float = scene._dash_distance()
+    var base_run_dash_speed: float = scene._dash_speed()
+    var base_run_damage: float = scene._damage_multiplier()
+    if not scene._buy_run_upgrade("ship") or not scene._buy_run_upgrade("dash") or not scene._buy_run_upgrade("damage") or not scene._buy_run_upgrade("hits") or not scene._buy_run_upgrade("shield"):
+        _fail("run-upgrade store purchase flow failed")
+        return
+    if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
+        _fail("run-only upgrade levels did not increment")
+        return
+    if scene._ship_speed_multiplier() <= base_run_ship_speed or scene._dash_distance() <= base_run_dash_distance or scene._dash_speed() <= base_run_dash_speed or scene._damage_multiplier() <= base_run_damage:
+        _fail("run-only upgrades did not affect active ship")
+        return
+    if scene.max_hp != 3 or scene.hp != 2 or scene.shield_charges != 1:
+        _fail("run-only hit/shield upgrades applied incorrectly")
+        return
+
+    # Switch to weapons/repair page.
+    scene._handle_shop_tap(scene.SHOP_PAGE_TOGGLE_RECT.get_center())
+    if scene.shop_page != 1:
+        _fail("shop page toggle did not open weapons/repair")
+        return
+
     # Shop repair spends score and restores one hit.
     var before_repair: int = scene.score
-    if not scene._buy_repair() or scene.hp != 2 or scene.score != before_repair - scene.SHOP_REPAIR_COST:
+    if not scene._buy_repair() or scene.hp != 3 or scene.score != before_repair - scene.SHOP_REPAIR_COST:
         _fail("shop repair purchase failed")
         return
 
@@ -1045,6 +1072,9 @@ func _initialize() -> void:
     if scene.hp != hp_before_next or scene.current_weapon != weapon_before_next or scene.score != 777:
         _fail("next level did not preserve run state")
         return
+    if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
+        _fail("next level did not preserve temporary run upgrades")
+        return
     if scene._level_difficulty() <= difficulty_before_next:
         _fail("next level did not become harder")
         return
@@ -1064,8 +1094,21 @@ func _initialize() -> void:
         _fail("level timer did not transition into shop")
         return
 
-    # Durable run snapshot preserves an active paused run.
+    # A brand-new run wipes store upgrades while permanent research remains separate.
     scene._start_game()
+    if scene.run_ship_speed != 0 or scene.run_dash != 0 or scene.run_damage != 0 or scene.run_hits != 0 or scene.run_shield != 0:
+        _fail("new run did not clear temporary store upgrades")
+        return
+
+    # Durable run snapshot preserves temporary upgrades as part of the current run.
+    scene.run_ship_speed = 2
+    scene.run_dash = 1
+    scene.run_damage = 3
+    scene.run_hits = 1
+    scene.run_shield = 2
+    scene.max_hp = 3
+    scene.hp = 3
+    scene.shield_charges = 2
     scene.score = 432
     scene.level = 3
     scene.elapsed = 7.5
@@ -1076,6 +1119,9 @@ func _initialize() -> void:
         return
     if scene.score != 432 or scene.level != 3 or absf(scene.elapsed - 7.5) > 0.01 or scene.current_weapon != "dual":
         _fail("run snapshot did not preserve core run state")
+        return
+    if scene.run_ship_speed != 2 or scene.run_dash != 1 or scene.run_damage != 3 or scene.run_hits != 1 or scene.run_shield != 2:
+        _fail("run snapshot did not preserve temporary store upgrades")
         return
     scene.run_paused = false
 
