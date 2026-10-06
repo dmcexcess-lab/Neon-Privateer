@@ -390,6 +390,12 @@ func _market_price(planet: String, commodity: String) -> int:
     if planet == "Aster" and commodity == "Food": planet_bias = 0.90
     return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
 
+func _market_buy_price(planet: String, commodity: String) -> int:
+    return maxi(1, int(ceil(float(_market_price(planet, commodity)) * 1.06)))
+
+func _market_sell_price(planet: String, commodity: String) -> int:
+    return maxi(1, int(floor(float(_market_price(planet, commodity)) * 0.94)))
+
 func _simulate_economy(ticks: int) -> void:
     for step in maxi(1, ticks):
         economy_tick += 1
@@ -422,7 +428,7 @@ func _buy_commodity(commodity: String) -> bool:
     var data: Dictionary = markets[current_planet][commodity]
     if float(data.stock) < 1.0:
         return false
-    var price := _market_price(current_planet, commodity)
+    var price := _market_buy_price(current_planet, commodity)
     if research_credits < price:
         return false
     research_credits -= price
@@ -436,7 +442,7 @@ func _buy_commodity(commodity: String) -> bool:
 func _sell_commodity(commodity: String) -> bool:
     if int(cargo.get(commodity, 0)) <= 0:
         return false
-    var price := _market_price(current_planet, commodity)
+    var price := _market_sell_price(current_planet, commodity)
     cargo[commodity] = int(cargo.get(commodity, 0)) - 1
     research_credits += price
     var data: Dictionary = markets[current_planet][commodity]
@@ -2905,8 +2911,10 @@ func _draw_market_menu() -> void:
     _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(92, 96), 16, Color("ffd166"))
     for i in commodity_names.size():
         var commodity := commodity_names[i]
-        var price := _market_price(current_planet, commodity)
-        var stock := int(round(float(markets[current_planet][commodity].stock)))
+        var buy_price := _market_buy_price(current_planet, commodity)
+        var sell_price := _market_sell_price(current_planet, commodity)
+        var market_data: Dictionary = markets[current_planet][commodity]
+        var stock := int(round(float(market_data.stock)))
         var held := int(cargo.get(commodity, 0))
         var buy_rect := _market_buy_rect(i)
         var sell_rect := _market_sell_rect(i)
@@ -2915,8 +2923,8 @@ func _draw_market_menu() -> void:
         draw_rect(sell_rect, Color("2d1c26"), true)
         draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
         _text(commodity, buy_rect.position + Vector2(8, 22), 15, Color("f0fbff"))
-        _text("BUY %d" % price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
-        _text("SELL %d" % price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
+        _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
+        _text("SELL %d" % sell_price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
         _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(79, 22), 13, Color("8ea9b8"))
     _draw_submenu_back()
 
