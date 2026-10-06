@@ -924,11 +924,15 @@ func _save_privateer_state() -> void:
     cfg.set_value("world", "passengers", passengers)
     cfg.set_value("world", "economy_tick", economy_tick)
     cfg.set_value("world", "summary", last_trip_summary)
-    cfg.save(PRIVATEER_SAVE_PATH)
+    var path := _active_world_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_privateer_state() -> void:
     var cfg := ConfigFile.new()
-    if cfg.load(PRIVATEER_SAVE_PATH) != OK:
+    var path := _active_world_path()
+    if path.is_empty() or cfg.load(path) != OK:
         return
     current_planet = String(cfg.get_value("world", "planet", current_planet))
     markets = cfg.get_value("world", "markets", markets)
@@ -1730,11 +1734,15 @@ func _save_meta() -> void:
     cfg.set_value("meta", "start_cone", research_start_cone)
     cfg.set_value("meta", "start_seeker", research_start_seeker)
     cfg.set_value("meta", "starting_weapon", starting_weapon)
-    cfg.save(META_SAVE_PATH)
+    var path := _active_meta_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_meta() -> void:
     var cfg := ConfigFile.new()
-    if cfg.load(META_SAVE_PATH) != OK:
+    var path := _active_meta_path()
+    if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
     research_ship_speed = int(cfg.get_value("meta", "ship_speed", 0))
@@ -1808,11 +1816,15 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "enemy_shots", enemy_shots)
     cfg.set_value("run", "last_near_ids", last_near_ids)
     cfg.set_value("run", "rng_state", rng.state)
-    cfg.save(RUN_SAVE_PATH)
+    var path := _active_run_path()
+    if path.is_empty():
+        return
+    cfg.save(path)
 
 func _load_run_snapshot() -> bool:
     var cfg := ConfigFile.new()
-    if cfg.load(RUN_SAVE_PATH) != OK or not bool(cfg.get_value("run", "exists", false)):
+    var path := _active_run_path()
+    if path.is_empty() or cfg.load(path) != OK or not bool(cfg.get_value("run", "exists", false)):
         return false
     playing = bool(cfg.get_value("run", "playing", true))
     shop_open = bool(cfg.get_value("run", "shop_open", false))
@@ -1880,9 +1892,12 @@ func _load_run_snapshot() -> bool:
     return true
 
 func _clear_run_snapshot() -> void:
+    var path := _active_run_path()
+    if path.is_empty():
+        return
     var cfg := ConfigFile.new()
     cfg.set_value("run", "exists", false)
-    cfg.save(RUN_SAVE_PATH)
+    cfg.save(path)
 
 func _lane_score_multiplier() -> float:
     return 1.35 if _station_at_player() and _is_hard_position(player_x) else 1.0
