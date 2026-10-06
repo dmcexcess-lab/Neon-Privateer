@@ -54,12 +54,17 @@ func _initialize() -> void:
     var food_data: Dictionary = scene.markets["Aster"]["Food"]
     food_data.stock = 70.0
     scene.markets["Aster"]["Food"] = food_data
-    var food_price_before: int = scene._market_price("Aster", "Food")
+    var food_mid_before: int = scene._market_price("Aster", "Food")
+    var food_buy_before: int = scene._market_buy_price("Aster", "Food")
+    var food_sell_before: int = scene._market_sell_price("Aster", "Food")
+    if food_buy_before <= food_mid_before or food_sell_before >= food_mid_before:
+        _fail("market bid/ask spread is invalid")
+        return
     var credits_before_buy: int = scene.research_credits
     if not scene._buy_commodity("Food"):
         _fail("could not buy available commodity")
         return
-    if int(scene.cargo["Food"]) != 1 or scene.research_credits != credits_before_buy - food_price_before:
+    if int(scene.cargo["Food"]) != 1 or scene.research_credits != credits_before_buy - food_buy_before:
         _fail("commodity buy did not change cargo/credits correctly")
         return
     var stock_after_buy: float = float(scene.markets["Aster"]["Food"].stock)
