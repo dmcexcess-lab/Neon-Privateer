@@ -51,6 +51,14 @@ const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
 const META_SAVE_PATH := "user://neon_meta.cfg"
 const RUN_SAVE_PATH := "user://neon_run.cfg"
+const PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
+const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
+const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
+const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
+const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
+const CARGO_CAPACITY_BASE := 8
+const PASSENGER_CAPACITY_BASE := 2
 const DASH_COOLDOWN := 2.4
 const DASH_DURATION := 0.30
 const DASH_FORWARD_SPEED := 700.0
@@ -80,8 +88,8 @@ const REPAIR_INTERVAL_MIN := 24.0
 const REPAIR_INTERVAL_MAX := 34.0
 const REPAIR_RETRY_FULL := 12.0
 const FIELD_REPAIR_CHANCE := 0.28
-const ENERGY_ORB_BASE_SCORE := 25
-const ENERGY_ORB_DASH_MULT := 5.0
+const ENERGY_ORB_BASE_SCORE := 2
+const ENERGY_ORB_DASH_MULT := 3.0
 const KILL_ORB_DROP_CHANCE := 0.08
 const KILL_REPAIR_DROP_CHANCE := 0.02
 const ENEMY_SHOT_SPEED := 255.0
@@ -101,7 +109,7 @@ var level := 1
 var shop_open := false
 var last_level_bonus := 0
 var score := 0
-var research_credits := 0
+var research_credits := 1200
 var research_ship_speed := 0
 var research_dash := 0
 var research_damage := 0
@@ -115,6 +123,33 @@ var research_start_seeker := false
 var starting_weapon := "none"
 var research_open := false
 var weapon_research_open := false
+var hub_open := true
+var market_open := false
+var contracts_open := false
+var travel_open := false
+var current_planet := "Aster"
+var destination_planet := ""
+var route_origin := ""
+var route_distance := 1
+var route_danger := 1
+var route_duration := 18.0
+var route_active := false
+var boss_active := false
+var boss_defeated_pending := false
+var bounty_completed_this_route := false
+var pirate_attack_active := false
+var pirate_attack_timer := 0.0
+var pirate_attack_clock := 999.0
+var pirate_banner_timer := 0.0
+var last_trip_summary := "Docked at Aster"
+var planet_names: Array[String] = ["Aster", "Cinder", "Vesper", "Helix"]
+var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel"]
+var markets: Dictionary = {}
+var cargo: Dictionary = {}
+var contract_board: Array[Dictionary] = []
+var active_contract: Dictionary = {}
+var passengers := 0
+var economy_tick := 0
 var run_paused := false
 var banked_this_run := false
 var last_banked_score := 0
@@ -197,7 +232,9 @@ var laser_sfx_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
+    _init_privateer_world()
     _load_meta()
+    _load_privateer_state()
     _setup_audio()
     set_process(true)
     if _load_run_snapshot():
@@ -276,6 +313,414 @@ func _play_sfx(stream: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.
     player.volume_db = volume_db
     player.play()
 
+func _init_privateer_world() -> void:
+    if cargo.is_empty():
+        for commodity in commodity_names:
+            cargo[commodity] = 0
+    if markets.is_empty():
+        for planet in planet_names:
+            var planet_market: Dictionary = {}
+            for commodity in commodity_names:
+                var flow := _market_profile(planet, commodity)
+                var starting_stock := clampf(58.0 + flow.x * 3.0 - flow.y * 2.0, 18.0, 112.0)
+                planet_market[commodity] = {
+                    "stock": starting_stock,
+                    "production": flow.x,
+                    "consumption": flow.y
+                }
+            markets[planet] = planet_market
+    if contract_board.is_empty():
+        _regenerate_contracts()
+
+func _market_profile(planet: String, commodity: String) -> Vector2:
+    match planet:
+        "Aster":
+            match commodity:
+                "Food": return Vector2(8.0, 4.0)
+                "Ore": return Vector2(2.0, 6.0)
+                "Medicine": return Vector2(3.0, 4.0)
+                "Electronics": return Vector2(5.0, 3.0)
+                "Fuel": return Vector2(2.0, 5.0)
+        "Cinder":
+            match commodity:
+                "Food": return Vector2(1.0, 7.0)
+                "Ore": return Vector2(10.0, 2.0)
+                "Medicine": return Vector2(1.0, 5.0)
+                "Electronics": return Vector2(2.0, 5.0)
+                "Fuel": return Vector2(9.0, 3.0)
+        "Vesper":
+            match commodity:
+                "Food": return Vector2(5.0, 5.0)
+                "Ore": return Vector2(2.0, 5.0)
+                "Medicine": return Vector2(9.0, 2.0)
+                "Electronics": return Vector2(2.0, 6.0)
+                "Fuel": return Vector2(3.0, 5.0)
+        "Helix":
+            match commodity:
+                "Food": return Vector2(2.0, 6.0)
+                "Ore": return Vector2(4.0, 4.0)
+                "Medicine": return Vector2(4.0, 3.0)
+                "Electronics": return Vector2(10.0, 2.0)
+                "Fuel": return Vector2(4.0, 4.0)
+    return Vector2(4.0, 4.0)
+
+func _commodity_base_price(commodity: String) -> int:
+    match commodity:
+        "Food": return 35
+        "Ore": return 52
+        "Medicine": return 95
+        "Electronics": return 145
+        "Fuel": return 72
+    return 50
+
+func _market_price(planet: String, commodity: String) -> int:
+    if not markets.has(planet) or not markets[planet].has(commodity):
+        return _commodity_base_price(commodity)
+    var data: Dictionary = markets[planet][commodity]
+    var stock := float(data.stock)
+    var production := float(data.production)
+    var consumption := float(data.consumption)
+    var target_stock := 52.0 + consumption * 4.5
+    var scarcity := clampf((target_stock - stock) / maxf(20.0, target_stock), -0.55, 1.25)
+    var flow_pressure := clampf((consumption - production) / 12.0, -0.25, 0.45)
+    var planet_bias := 1.0
+    if planet == "Cinder" and commodity == "Ore": planet_bias = 0.88
+    if planet == "Vesper" and commodity == "Medicine": planet_bias = 0.86
+    if planet == "Helix" and commodity == "Electronics": planet_bias = 0.87
+    if planet == "Aster" and commodity == "Food": planet_bias = 0.90
+    return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
+
+func _market_buy_price(planet: String, commodity: String) -> int:
+    return maxi(1, int(ceil(float(_market_price(planet, commodity)) * 1.06)))
+
+func _market_sell_price(planet: String, commodity: String) -> int:
+    return maxi(1, int(floor(float(_market_price(planet, commodity)) * 0.94)))
+
+func _simulate_economy(ticks: int) -> void:
+    for step in maxi(1, ticks):
+        economy_tick += 1
+        for planet in planet_names:
+            var planet_market: Dictionary = markets[planet]
+            for commodity in commodity_names:
+                var data: Dictionary = planet_market[commodity]
+                var noise := rng.randf_range(-1.4, 1.4)
+                data.stock = clampf(float(data.stock) + float(data.production) - float(data.consumption) + noise, 2.0, 140.0)
+                planet_market[commodity] = data
+            markets[planet] = planet_market
+
+func _cargo_used() -> int:
+    var used := 0
+    for commodity in commodity_names:
+        used += int(cargo.get(commodity, 0))
+    if not active_contract.is_empty() and String(active_contract.get("type", "")) == "delivery":
+        used += 1
+    return used
+
+func _cargo_capacity() -> int:
+    return CARGO_CAPACITY_BASE
+
+func _passenger_capacity() -> int:
+    return PASSENGER_CAPACITY_BASE
+
+func _buy_commodity(commodity: String) -> bool:
+    if _cargo_used() >= _cargo_capacity():
+        return false
+    var data: Dictionary = markets[current_planet][commodity]
+    if float(data.stock) < 1.0:
+        return false
+    var price := _market_buy_price(current_planet, commodity)
+    if research_credits < price:
+        return false
+    research_credits -= price
+    cargo[commodity] = int(cargo.get(commodity, 0)) + 1
+    data.stock = maxf(0.0, float(data.stock) - 1.0)
+    markets[current_planet][commodity] = data
+    _play_sfx(buy_sfx, 1.05, -3.0)
+    _save_all_state()
+    return true
+
+func _sell_commodity(commodity: String) -> bool:
+    if int(cargo.get(commodity, 0)) <= 0:
+        return false
+    var price := _market_sell_price(current_planet, commodity)
+    cargo[commodity] = int(cargo.get(commodity, 0)) - 1
+    research_credits += price
+    var data: Dictionary = markets[current_planet][commodity]
+    data.stock = minf(140.0, float(data.stock) + 1.0)
+    markets[current_planet][commodity] = data
+    _play_sfx(buy_sfx, 0.94, -3.0)
+    _save_all_state()
+    return true
+
+func _route_spec(origin: String, dest: String) -> Dictionary:
+    var key := origin + "|" + dest
+    var reverse := dest + "|" + origin
+    var routes := {
+        "Aster|Cinder": {"distance": 1, "danger": 1},
+        "Aster|Vesper": {"distance": 2, "danger": 2},
+        "Aster|Helix": {"distance": 4, "danger": 3},
+        "Cinder|Vesper": {"distance": 3, "danger": 2},
+        "Cinder|Helix": {"distance": 2, "danger": 4},
+        "Vesper|Helix": {"distance": 2, "danger": 3}
+    }
+    if routes.has(key):
+        return routes[key].duplicate(true)
+    if routes.has(reverse):
+        return routes[reverse].duplicate(true)
+    return {"distance": 2, "danger": 2}
+
+func _other_planets(origin: String) -> Array[String]:
+    var result: Array[String] = []
+    for planet in planet_names:
+        if planet != origin:
+            result.append(planet)
+    return result
+
+func _regenerate_contracts() -> void:
+    contract_board.clear()
+    var destinations := _other_planets(current_planet)
+    var kinds: Array[String] = ["delivery", "passenger", "bounty", "delivery", "bounty"]
+    for i in kinds.size():
+        var kind := kinds[i]
+        var dest := destinations[rng.randi_range(0, destinations.size() - 1)]
+        var spec := _route_spec(current_planet, dest)
+        var difficulty := clampi(int(spec.danger) + rng.randi_range(0, 2), 1, 5)
+        var reward := 0
+        if kind == "delivery":
+            reward = 160 + int(spec.distance) * 90 + difficulty * 70
+        elif kind == "passenger":
+            reward = 220 + int(spec.distance) * 100 + difficulty * 80
+        else:
+            reward = 420 + int(spec.distance) * 150 + difficulty * 180
+        contract_board.append({
+            "id": rng.randi(),
+            "type": kind,
+            "destination": dest,
+            "difficulty": difficulty,
+            "reward": reward
+        })
+
+func _accept_contract(index: int) -> bool:
+    if not active_contract.is_empty() or index < 0 or index >= contract_board.size():
+        return false
+    var contract: Dictionary = contract_board[index]
+    var kind := String(contract.type)
+    if kind == "delivery" and _cargo_used() >= _cargo_capacity():
+        return false
+    if kind == "passenger" and passengers >= _passenger_capacity():
+        return false
+    if kind == "bounty" and _valid_starting_weapon() == "none":
+        return false
+    active_contract = contract.duplicate(true)
+    if kind == "passenger":
+        passengers += 1
+    contract_board.remove_at(index)
+    _play_sfx(buy_sfx, 1.10)
+    _save_all_state()
+    return true
+
+func _contract_target_matches(destination: String) -> bool:
+    return not active_contract.is_empty() and String(active_contract.get("destination", "")) == destination
+
+func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) -> int:
+    return clampi(1 + distance + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
+
+func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0) -> float:
+    return clampf(16.0 + float(distance) * 7.0 + float(danger) * 3.5 + float(contract_difficulty) * 2.5, 18.0, 68.0)
+
+func _start_route(destination: String) -> bool:
+    if destination == current_planet or not planet_names.has(destination):
+        return false
+    var spec := _route_spec(current_planet, destination)
+    var contract_difficulty := 0
+    if _contract_target_matches(destination):
+        contract_difficulty = int(active_contract.get("difficulty", 0))
+    route_origin = current_planet
+    destination_planet = destination
+    route_distance = int(spec.distance)
+    route_danger = int(spec.danger)
+    route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty)
+    _start_game()
+    level = _route_level_for(route_distance, route_danger, contract_difficulty)
+    route_active = true
+    hub_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    boss_active = false
+    boss_defeated_pending = false
+    bounty_completed_this_route = false
+    pirate_attack_active = false
+    pirate_attack_timer = 0.0
+    pirate_attack_clock = maxf(4.5, 12.5 - float(route_danger) * 1.7)
+    pirate_banner_timer = 0.0
+    result_reason = ""
+    _save_all_state()
+    return true
+
+func _update_pirate_attack(delta: float) -> void:
+    pirate_banner_timer = maxf(0.0, pirate_banner_timer - delta)
+    if not route_active or boss_active:
+        pirate_attack_active = false
+        return
+    if pirate_attack_active:
+        pirate_attack_timer = maxf(0.0, pirate_attack_timer - delta)
+        if pirate_attack_timer <= 0.0:
+            pirate_attack_active = false
+            pirate_attack_clock = maxf(4.5, rng.randf_range(10.0, 16.0) - float(route_danger) * 1.4)
+        return
+    pirate_attack_clock -= delta
+    if pirate_attack_clock <= 0.0 and (route_danger >= 2 or _contract_target_matches(destination_planet)):
+        pirate_attack_active = true
+        pirate_attack_timer = 3.5 + float(route_danger) * 1.1
+        pirate_banner_timer = 1.8
+        weapon_banner_text = "PIRATE CONTACT"
+        weapon_banner_timer = 1.8
+
+func _begin_bounty_boss() -> void:
+    if boss_active:
+        return
+    boss_active = true
+    pirate_attack_active = false
+    lane_event_active = false
+    lane_event_timer = 0.0
+    station_locked_side = ""
+    objects.clear()
+    enemy_shots.clear()
+    var difficulty := int(active_contract.get("difficulty", 1))
+    var boss_hp := 34.0 + float(difficulty) * 18.0
+    objects.append({
+        "id": rng.randi(),
+        "type": "hazard",
+        "kind": 4,
+        "boss": true,
+        "hp": boss_hp,
+        "max_hp": boss_hp,
+        "hard": false,
+        "x": W * 0.5,
+        "y": 150.0,
+        "r": 30.0,
+        "speed": 0.0,
+        "drift": 0.0,
+        "shoot_clock": maxf(0.45, 1.25 - float(difficulty) * 0.10),
+        "lane_speed_mult": 1.0,
+        "lane_min": LEFT,
+        "lane_max": RIGHT
+    })
+    weapon_banner_text = "BOUNTY TARGET"
+    weapon_banner_timer = 2.4
+    shake = 4.0
+
+func _handle_route_end() -> void:
+    if not route_active:
+        return
+    var bounty_due := _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty"
+    if bounty_due and not bounty_completed_this_route:
+        _begin_bounty_boss()
+        return
+    _arrive_at_destination()
+
+func _complete_contract_if_ready() -> int:
+    if active_contract.is_empty() or String(active_contract.get("destination", "")) != current_planet:
+        return 0
+    if String(active_contract.get("type", "")) == "bounty" and not bounty_completed_this_route:
+        return 0
+    var reward := int(active_contract.get("reward", 0))
+    if String(active_contract.get("type", "")) == "passenger":
+        passengers = maxi(0, passengers - 1)
+    active_contract.clear()
+    return reward
+
+func _arrive_at_destination() -> void:
+    playing = false
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    current_planet = destination_planet
+    destination_planet = ""
+    var flight_bonus := maxi(0, score)
+    research_credits += flight_bonus
+    score = 0
+    var contract_reward := _complete_contract_if_ready()
+    research_credits += contract_reward
+    _simulate_economy(route_distance + route_danger)
+    _regenerate_contracts()
+    last_trip_summary = "ARRIVED %s  +%d CR" % [current_planet, flight_bonus + contract_reward]
+    hub_open = true
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    game_over = false
+    run_paused = false
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    _play_sfx(level_clear_sfx)
+    _clear_run_snapshot()
+    _save_all_state()
+    queue_redraw()
+
+func _fail_route(reason: String) -> void:
+    playing = false
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    destination_planet = ""
+    score = 0
+    if not active_contract.is_empty():
+        if String(active_contract.get("type", "")) == "passenger":
+            passengers = maxi(0, passengers - 1)
+        active_contract.clear()
+    last_trip_summary = reason + " — CONTRACT LOST"
+    hub_open = true
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    game_over = false
+    run_paused = false
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    _play_sfx(death_sfx)
+    _clear_run_snapshot()
+    _save_all_state()
+    queue_redraw()
+
+func _save_privateer_state() -> void:
+    var cfg := ConfigFile.new()
+    cfg.set_value("world", "planet", current_planet)
+    cfg.set_value("world", "markets", markets)
+    cfg.set_value("world", "cargo", cargo)
+    cfg.set_value("world", "contracts", contract_board)
+    cfg.set_value("world", "active_contract", active_contract)
+    cfg.set_value("world", "passengers", passengers)
+    cfg.set_value("world", "economy_tick", economy_tick)
+    cfg.set_value("world", "summary", last_trip_summary)
+    cfg.save(PRIVATEER_SAVE_PATH)
+
+func _load_privateer_state() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(PRIVATEER_SAVE_PATH) != OK:
+        return
+    current_planet = String(cfg.get_value("world", "planet", current_planet))
+    markets = cfg.get_value("world", "markets", markets)
+    cargo = cfg.get_value("world", "cargo", cargo)
+    contract_board.clear()
+    for contract in cfg.get_value("world", "contracts", []):
+        contract_board.append(contract)
+    active_contract = cfg.get_value("world", "active_contract", {})
+    passengers = int(cfg.get_value("world", "passengers", 0))
+    economy_tick = int(cfg.get_value("world", "economy_tick", 0))
+    last_trip_summary = String(cfg.get_value("world", "summary", last_trip_summary))
+    if contract_board.is_empty():
+        _regenerate_contracts()
+
+func _save_all_state() -> void:
+    _save_meta()
+    _save_privateer_state()
+
 func _process(delta: float) -> void:
     if run_paused or not playing:
         queue_redraw()
@@ -321,6 +766,7 @@ func _process(delta: float) -> void:
     fire_clock -= game_delta
     repair_clock -= game_delta
     var difficulty := _level_difficulty()
+    _update_pirate_attack(world_delta)
 
     if current_weapon == "laser":
         _apply_laser_damage(game_delta)
@@ -332,6 +778,18 @@ func _process(delta: float) -> void:
         if hp < max_hp and rng.randf() < FIELD_REPAIR_CHANCE:
             _spawn_repair()
         repair_clock = rng.randf_range(REPAIR_INTERVAL_MIN, REPAIR_INTERVAL_MAX) if hp < max_hp else REPAIR_RETRY_FULL
+
+    if boss_active:
+        _move_shots(game_delta)
+        _move_objects(world_delta)
+        _move_enemy_shots(game_delta)
+        _move_particles(delta)
+        if boss_defeated_pending:
+            bounty_completed_this_route = true
+            boss_defeated_pending = false
+            _arrive_at_destination()
+        queue_redraw()
+        return
 
     if lane_event_active:
         station_top += STATION_SPEED * world_delta
@@ -369,7 +827,10 @@ func _process(delta: float) -> void:
     _move_particles(delta)
 
     if elapsed >= _level_duration() and playing:
-        _open_shop()
+        if route_active:
+            _handle_route_end()
+        else:
+            _open_shop()
         queue_redraw()
         return
     queue_redraw()
@@ -393,9 +854,93 @@ func _input(event: InputEvent) -> void:
             _release_control_touch(-1)
         return
 
+func _hub_button_rect(index: int) -> Rect2:
+    match index:
+        0: return HUB_TRAVEL_RECT
+        1: return HUB_MARKET_RECT
+        2: return HUB_CONTRACTS_RECT
+        3: return HUB_UPGRADES_RECT
+    return Rect2()
+
+func _travel_row_rect(index: int) -> Rect2:
+    return Rect2(30.0, 176.0 + float(index) * 132.0, 330.0, 104.0)
+
+func _market_buy_rect(index: int) -> Rect2:
+    return Rect2(28.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+
+func _market_sell_rect(index: int) -> Rect2:
+    return Rect2(204.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+
+func _contract_row_rect(index: int) -> Rect2:
+    return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
+
+func _handle_hub_tap(pos: Vector2) -> void:
+    if HUB_TRAVEL_RECT.has_point(pos):
+        travel_open = true
+        hub_open = false
+    elif HUB_MARKET_RECT.has_point(pos):
+        market_open = true
+        hub_open = false
+    elif HUB_CONTRACTS_RECT.has_point(pos):
+        contracts_open = true
+        hub_open = false
+    elif HUB_UPGRADES_RECT.has_point(pos):
+        research_open = true
+        hub_open = false
+    queue_redraw()
+
+func _handle_travel_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        travel_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    var destinations := _other_planets(current_planet)
+    for i in destinations.size():
+        if _travel_row_rect(i).has_point(pos):
+            _start_route(destinations[i])
+            return
+
+func _handle_market_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        market_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    for i in commodity_names.size():
+        if _market_buy_rect(i).has_point(pos):
+            _buy_commodity(commodity_names[i])
+            queue_redraw()
+            return
+        if _market_sell_rect(i).has_point(pos):
+            _sell_commodity(commodity_names[i])
+            queue_redraw()
+            return
+
+func _handle_contracts_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        contracts_open = false
+        hub_open = true
+        queue_redraw()
+        return
+    for i in contract_board.size():
+        if _contract_row_rect(i).has_point(pos):
+            _accept_contract(i)
+            queue_redraw()
+            return
+
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
     if run_paused:
         _handle_pause_tap(pos)
+        return
+    if travel_open:
+        _handle_travel_tap(pos)
+        return
+    if market_open:
+        _handle_market_tap(pos)
+        return
+    if contracts_open:
+        _handle_contracts_tap(pos)
         return
     if weapon_research_open:
         _handle_weapon_research_tap(pos)
@@ -410,11 +955,7 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         _handle_shop_tap(pos)
         return
     if not playing:
-        if MAIN_START_RECT.has_point(pos):
-            _start_game()
-        elif MAIN_RESEARCH_RECT.has_point(pos):
-            research_open = true
-            queue_redraw()
+        _handle_hub_tap(pos)
         return
     if PAUSE_RECT.has_point(pos):
         _clear_control_holds()
@@ -548,6 +1089,8 @@ func _near_miss_research_multiplier(is_dash: bool) -> float:
     return mult
 
 func _level_duration() -> float:
+    if route_active:
+        return route_duration
     return minf(LEVEL_TIME_MAX, LEVEL_TIME_BASE + float(level - 1) * LEVEL_TIME_STEP)
 
 func _split_count_for_level() -> int:
@@ -698,6 +1241,12 @@ func _handle_shop_tap(pos: Vector2) -> void:
     queue_redraw()
 
 func _finish(success: bool) -> void:
+    if route_active:
+        if success:
+            _arrive_at_destination()
+        else:
+            _fail_route(result_reason if not result_reason.is_empty() else "SHIP LOST")
+        return
     playing = false
     game_over = true
     won = success
@@ -766,7 +1315,7 @@ func _buy_research(track: String) -> bool:
         "shield":
             research_shield += 1
     _play_sfx(buy_sfx, 1.08)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _weapon_research_cost(weapon: String) -> int:
@@ -813,7 +1362,7 @@ func _buy_start_weapon_research(weapon: String) -> bool:
             return false
     starting_weapon = weapon
     _play_sfx(weapon_pickup_sfx, 0.96)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _select_start_weapon(weapon: String) -> bool:
@@ -821,7 +1370,7 @@ func _select_start_weapon(weapon: String) -> bool:
         return false
     starting_weapon = weapon
     _play_sfx(buy_sfx, 1.16, -3.0)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _handle_weapon_research_tap(pos: Vector2) -> void:
@@ -873,6 +1422,7 @@ func _handle_research_tap(pos: Vector2) -> void:
         weapon_research_open = true
     elif RESEARCH_BACK_RECT.has_point(pos):
         research_open = false
+        hub_open = true
     queue_redraw()
 
 func _pause_run() -> void:
@@ -898,6 +1448,10 @@ func _handle_pause_tap(pos: Vector2) -> void:
 
 func _quit_run_with_score() -> void:
     _clear_control_holds()
+    if route_active:
+        _bank_run_score()
+        _fail_route("FLIGHT ABORTED")
+        return
     _bank_run_score()
     _clear_run_snapshot()
     playing = false
@@ -906,6 +1460,7 @@ func _quit_run_with_score() -> void:
     run_paused = false
     research_open = false
     weapon_research_open = false
+    hub_open = true
     objects.clear()
     shots.clear()
     enemy_shots.clear()
@@ -921,6 +1476,10 @@ func _return_to_menu() -> void:
     run_paused = false
     research_open = false
     weapon_research_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    hub_open = true
     queue_redraw()
 
 func _bank_run_score() -> void:
@@ -1006,6 +1565,18 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "station_locked_side", station_locked_side)
     cfg.set_value("run", "world_scroll", world_scroll)
     cfg.set_value("run", "last_level_bonus", last_level_bonus)
+    cfg.set_value("run", "route_active", route_active)
+    cfg.set_value("run", "route_origin", route_origin)
+    cfg.set_value("run", "destination_planet", destination_planet)
+    cfg.set_value("run", "route_distance", route_distance)
+    cfg.set_value("run", "route_danger", route_danger)
+    cfg.set_value("run", "route_duration", route_duration)
+    cfg.set_value("run", "boss_active", boss_active)
+    cfg.set_value("run", "boss_defeated_pending", boss_defeated_pending)
+    cfg.set_value("run", "bounty_completed", bounty_completed_this_route)
+    cfg.set_value("run", "pirate_active", pirate_attack_active)
+    cfg.set_value("run", "pirate_timer", pirate_attack_timer)
+    cfg.set_value("run", "pirate_clock", pirate_attack_clock)
     cfg.set_value("run", "objects", objects)
     cfg.set_value("run", "shots", shots)
     cfg.set_value("run", "enemy_shots", enemy_shots)
@@ -1052,6 +1623,19 @@ func _load_run_snapshot() -> bool:
     station_locked_side = String(cfg.get_value("run", "station_locked_side", ""))
     world_scroll = float(cfg.get_value("run", "world_scroll", 0.0))
     last_level_bonus = int(cfg.get_value("run", "last_level_bonus", 0))
+    route_active = bool(cfg.get_value("run", "route_active", false))
+    route_origin = String(cfg.get_value("run", "route_origin", current_planet))
+    destination_planet = String(cfg.get_value("run", "destination_planet", ""))
+    route_distance = int(cfg.get_value("run", "route_distance", 1))
+    route_danger = int(cfg.get_value("run", "route_danger", 1))
+    route_duration = float(cfg.get_value("run", "route_duration", 18.0))
+    boss_active = bool(cfg.get_value("run", "boss_active", false))
+    boss_defeated_pending = bool(cfg.get_value("run", "boss_defeated_pending", false))
+    bounty_completed_this_route = bool(cfg.get_value("run", "bounty_completed", false))
+    pirate_attack_active = bool(cfg.get_value("run", "pirate_active", false))
+    pirate_attack_timer = float(cfg.get_value("run", "pirate_timer", 0.0))
+    pirate_attack_clock = float(cfg.get_value("run", "pirate_clock", 999.0))
+    hub_open = not route_active
     objects.clear()
     for item in cfg.get_value("run", "objects", []):
         objects.append(item)
@@ -1181,9 +1765,18 @@ func _enemy_kind_cap_for_level() -> int:
 
 func _choose_enemy_kind(hard_lane: bool) -> int:
     var cap := _enemy_kind_cap_for_level()
+    var roll := rng.randf()
+    if route_active:
+        if pirate_attack_active:
+            if route_danger >= 4 and roll < (0.18 if hard_lane else 0.12):
+                return 4
+            if roll < (0.48 if hard_lane else 0.36):
+                return 3
+            cap = mini(cap, 2)
+        else:
+            cap = mini(cap, 2)
     if cap <= 0:
         return 0
-    var roll := rng.randf()
     if cap == 1:
         return 1 if roll < (0.42 if hard_lane else 0.30) else 0
     if cap == 2:
@@ -1470,7 +2063,10 @@ func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
     obj.hp = maxf(0.0, float(obj.hp) - damage)
     if float(obj.hp) <= 0.0:
         score += int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
-        _queue_kill_drop(obj)
+        if bool(obj.get("boss", false)):
+            boss_defeated_pending = true
+        else:
+            _queue_kill_drop(obj)
         _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
         _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
         return true
@@ -1770,13 +2366,17 @@ func _move_objects(delta: float) -> void:
                     obj.shoot_clock = rng.randf_range(1.45, 2.10)
 
             elif kind == 4:
-                # Pentagon turret has no steering or evasive movement; it simply scrolls by with the level.
                 obj.drift = 0.0
-                motion_y = float(obj.speed)
+                if bool(obj.get("boss", false)):
+                    motion_y = 0.0
+                else:
+                    # Random pirate pentagons are fixed in world-space and scroll past with the route.
+                    motion_y = float(obj.speed)
                 obj.shoot_clock = float(obj.shoot_clock) - delta
                 if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 55.0 and float(obj.y) < player_y - 85.0:
                     _fire_enemy_missile(obj)
-                    obj.shoot_clock = rng.randf_range(1.8, 2.5)
+                    var boss_rate := maxf(0.65, 1.55 - float(active_contract.get("difficulty", 1)) * 0.12) if bool(obj.get("boss", false)) else rng.randf_range(1.8, 2.5)
+                    obj.shoot_clock = boss_rate
 
         obj.y += motion_y * delta
         obj.x += float(obj.drift) * delta
@@ -1859,8 +2459,8 @@ func _register_near_miss() -> void:
     combo = mini(combo + 1, 8)
     best_combo = maxi(best_combo, combo)
     var dash_near := dash_score_timer > 0.0
-    var near_score := 100 + combo * 10 if dash_near else 10 + combo * 5
-    near_score = int(round(float(near_score) * _near_miss_research_multiplier(dash_near) * _lane_score_multiplier()))
+    var near_score := 4 + int(combo / 3) if dash_near else 1 + int(combo / 4)
+    near_score = maxi(1, int(round(float(near_score) * _near_miss_research_multiplier(dash_near) * _lane_score_multiplier())))
     score += near_score
     near_miss_text = ("DASH NEAR +%d" if dash_near else "NEAR +%d") % near_score
     near_miss_timer = 0.62
@@ -1911,6 +2511,18 @@ func _draw() -> void:
     var offset := Vector2(rng.randf_range(-shake, shake), rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
+
+    if travel_open:
+        _draw_travel_menu()
+        return
+
+    if market_open:
+        _draw_market_menu()
+        return
+
+    if contracts_open:
+        _draw_contracts_menu()
+        return
 
     if weapon_research_open:
         _draw_weapon_research()
@@ -1972,8 +2584,9 @@ func _draw() -> void:
         _text(choice, Vector2(62, 220), 16, Color("ffd166"))
 
     if weapon_banner_timer > 0.0:
-        draw_rect(Rect2(Vector2(78, 244), Vector2(234, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        _text("WEAPON: %s" % weapon_banner_text, Vector2(91, 270), 17, Color("d4b8ff"))
+        draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
+        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" else "WEAPON: "
+        _text(banner_prefix + weapon_banner_text, Vector2(82, 270), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
         var pulse := 0.78 + sin(Time.get_ticks_msec() * 0.035) * 0.12
@@ -2191,9 +2804,9 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 
 func _draw_hud() -> void:
     _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
-    _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46), 19, Color("bdeef4"))
-    _text("ENERGY %02d" % energy, Vector2(20, 88), 18, Color("6bffb0"))
-    _text("x%d" % combo, Vector2(310, 88), 24, Color("ffd166"))
+    _text("BONUS %03d CR" % score, Vector2(118, 46), 18, Color("bdeef4"))
+    _text("%s > %s" % [route_origin, destination_planet], Vector2(20, 88), 15, Color("6bffb0"))
+    _text("D%d R%d" % [route_distance, route_danger], Vector2(302, 88), 16, Color("ffd166"))
 
     if lane_event_active:
         var left_hard := not hard_lane_right
@@ -2202,8 +2815,12 @@ func _draw_hud() -> void:
     else:
         _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
 
-    if dash_score_timer > 0.0:
-        _text("DASH NEAR BONUS", Vector2(126, 146), 16, Color("ffd166"))
+    if boss_active:
+        _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
+    elif pirate_attack_active:
+        _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
+    elif dash_score_timer > 0.0:
+        _text("DASH BONUS", Vector2(143, 146), 16, Color("ffd166"))
     else:
         _text(_weapon_label(current_weapon), Vector2(118, 146), 14, Color("ffd166"))
 
@@ -2240,18 +2857,99 @@ func _draw_controls() -> void:
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
 func _draw_title() -> void:
-    _text("NEON", Vector2(102, 180), 52, Color("77f7ff"))
-    _text("DRIFTLINE", Vector2(54, 236), 47, Color("f0fbff"))
-    _text("RESEARCH %07d" % research_credits, Vector2(82, 300), 21, Color("ffd166"))
-    _text("START: %s" % _weapon_label(_valid_starting_weapon()), Vector2(88, 348), 16, Color("bdeef4"))
-    _text("SPEED + DASH ALSO BOOST NEAR-MISS SCORE", Vector2(31, 382), 14, Color("6bffb0"))
-    _text("L1: LAZY CIRCLES / 1 SHORT SPLIT", Vector2(54, 420), 15, Color("8ea9b8"))
-    draw_rect(MAIN_START_RECT, Color("123544"), true)
-    draw_rect(MAIN_START_RECT, Color("77f7ff"), false, 3.0)
-    _text("START RUN", MAIN_START_RECT.position + Vector2(73, 42), 24, Color("f0fbff"))
-    draw_rect(MAIN_RESEARCH_RECT, Color("231835"), true)
-    draw_rect(MAIN_RESEARCH_RECT, Color("b56cff"), false, 3.0)
-    _text("RESEARCH", MAIN_RESEARCH_RECT.position + Vector2(72, 42), 23, Color("f1dcff"))
+    _text("NEON PRIVATEER", Vector2(48, 82), 34, Color("77f7ff"))
+    _text(current_planet, Vector2(132, 132), 26, Color("f0fbff"))
+    _text("%07d CREDITS" % research_credits, Vector2(92, 170), 20, Color("ffd166"))
+    _text("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], Vector2(76, 206), 15, Color("bdeef4"))
+
+    if not active_contract.is_empty():
+        var ct := String(active_contract.get("type", "")).to_upper()
+        var cd := String(active_contract.get("destination", ""))
+        var cr := int(active_contract.get("reward", 0))
+        _text("%s > %s  %d CR" % [ct, cd, cr], Vector2(54, 255), 15, Color("6bffb0"))
+    else:
+        _text("NO ACTIVE CONTRACT", Vector2(105, 255), 15, Color("8ea9b8"))
+
+    _text(last_trip_summary, Vector2(44, 310), 14, Color("8ea9b8"))
+
+    var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
+    for i in 4:
+        var rect := _hub_button_rect(i)
+        draw_rect(rect, Color("102633"), true)
+        draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
+        _text(labels[i], rect.position + Vector2(78 if i != 3 else 55, 38), 21, Color("f0fbff"))
+
+func _draw_submenu_back() -> void:
+    draw_rect(SUBMENU_BACK_RECT, Color("123544"), true)
+    draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
+    _text("BACK", SUBMENU_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
+
+func _draw_travel_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("STAR ROUTES", Vector2(83, 72), 32, Color("77f7ff"))
+    _text("FROM %s" % current_planet, Vector2(116, 108), 17, Color("bdeef4"))
+    var destinations := _other_planets(current_planet)
+    for i in destinations.size():
+        var dest := destinations[i]
+        var spec := _route_spec(current_planet, dest)
+        var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(dest) else 0
+        var effective_level := _route_level_for(int(spec.distance), int(spec.danger), contract_diff)
+        var duration := _route_duration_for(int(spec.distance), int(spec.danger), contract_diff)
+        var rect := _travel_row_rect(i)
+        draw_rect(rect, Color("10202c"), true)
+        draw_rect(rect, Color("6bffb0") if _contract_target_matches(dest) else Color("465f72"), false, 2.0)
+        _text(dest, rect.position + Vector2(14, 28), 21, Color("f0fbff"))
+        _text("DIST %d   DANGER %d   FLIGHT %ds" % [int(spec.distance), int(spec.danger), int(duration)], rect.position + Vector2(14, 56), 14, Color("8ea9b8"))
+        _text("FLIGHT LEVEL %d" % effective_level, rect.position + Vector2(14, 82), 14, Color("ffd166"))
+        if _contract_target_matches(dest):
+            _text("CONTRACT", rect.position + Vector2(242, 28), 13, Color("6bffb0"))
+    _draw_submenu_back()
+
+func _draw_market_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("%s MARKET" % current_planet.to_upper(), Vector2(74, 60), 29, Color("77f7ff"))
+    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(92, 96), 16, Color("ffd166"))
+    for i in commodity_names.size():
+        var commodity := commodity_names[i]
+        var buy_price := _market_buy_price(current_planet, commodity)
+        var sell_price := _market_sell_price(current_planet, commodity)
+        var market_data: Dictionary = markets[current_planet][commodity]
+        var stock := int(round(float(market_data.stock)))
+        var held := int(cargo.get(commodity, 0))
+        var buy_rect := _market_buy_rect(i)
+        var sell_rect := _market_sell_rect(i)
+        draw_rect(buy_rect, Color("112b24"), true)
+        draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
+        draw_rect(sell_rect, Color("2d1c26"), true)
+        draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
+        _text(commodity, buy_rect.position + Vector2(8, 22), 15, Color("f0fbff"))
+        _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
+        _text("SELL %d" % sell_price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
+        _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(79, 22), 13, Color("8ea9b8"))
+    _draw_submenu_back()
+
+func _draw_contracts_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("CONTRACT BOARD", Vector2(58, 58), 29, Color("77f7ff"))
+    if not active_contract.is_empty():
+        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), String(active_contract.destination)], Vector2(66, 94), 15, Color("6bffb0"))
+    else:
+        _text("TAP A JOB TO ACCEPT", Vector2(86, 94), 15, Color("8ea9b8"))
+    for i in contract_board.size():
+        var contract: Dictionary = contract_board[i]
+        var rect := _contract_row_rect(i)
+        draw_rect(rect, Color("111c28"), true)
+        draw_rect(rect, Color("465f72"), false, 2.0)
+        _text(String(contract.type).to_upper(), rect.position + Vector2(12, 25), 17, Color("f0fbff"))
+        _text("> %s   D%d" % [String(contract.destination), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
+        _text("%d CR" % int(contract.reward), rect.position + Vector2(244, 51), 15, Color("ffd166"))
+        if String(contract.type) == "delivery":
+            _text("1 CARGO", rect.position + Vector2(242, 25), 12, Color("bdeef4"))
+        elif String(contract.type) == "passenger":
+            _text("1 PAX", rect.position + Vector2(252, 25), 12, Color("bdeef4"))
+        else:
+            _text("BOSS", rect.position + Vector2(258, 25), 12, Color("ff8fa6"))
+    _draw_submenu_back()
 
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
@@ -2268,9 +2966,9 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
 
 func _draw_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
-    _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT ACROSS RUNS", Vector2(87, 145), 15, Color("8ea9b8"))
+    _text("SHIP UPGRADES", Vector2(57, 74), 32, Color("b56cff"))
+    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
+    _text("PERMANENT SHIP MODS", Vector2(97, 145), 15, Color("8ea9b8"))
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
@@ -2302,7 +3000,7 @@ func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> v
 func _draw_weapon_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
-    _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
+    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
     _text("PERMANENT UNLOCK — 10x RUN PRICE", Vector2(51, 140), 14, Color("8ea9b8"))
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")

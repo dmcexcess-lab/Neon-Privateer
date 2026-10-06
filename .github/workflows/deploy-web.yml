@@ -1,0 +1,98 @@
+name: Build and Deploy Neon Privateer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: neon-privateer-pages
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT_STATUS: stable
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download Godot editor and export templates
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64.zip" -o /tmp/godot.zip
+          curl -L "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_STATUS}/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_export_templates.tpz" -o /tmp/templates.tpz
+          mkdir -p /tmp/godot /tmp/templates
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          unzip -q /tmp/templates.tpz -d /tmp/templates
+          chmod +x "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
+          cp -R /tmp/templates/templates/. "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/"
+
+      - name: Run Privateer smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LOG=/tmp/privateer-smoke.log
+          set +e
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --script res://tests/SmokeTest.gd 2>&1 | tee "$LOG"
+          GODOT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|PRIVATEER SMOKE FAIL' "$LOG"; then exit 1; fi
+          grep -q 'NEON PRIVATEER SMOKE OK' "$LOG"
+
+      - name: Export Web and reject script errors
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p build/web
+          SHORT_SHA="${GITHUB_SHA:0:12}"
+          BASENAME="neon-privateer-${SHORT_SHA}"
+          LOG=/tmp/privateer-export.log
+          set +e
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --export-release Web "build/web/${BASENAME}.html"             2>&1 | tee "$LOG"
+          GODOT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' "$LOG"; then exit 1; fi
+          mv "build/web/${BASENAME}.html" build/web/index.html
+          test -f "build/web/${BASENAME}.pck"
+          touch build/web/.nojekyll
+
+      - name: Keep downloadable Web build
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-privateer-web
+          path: build/web
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
