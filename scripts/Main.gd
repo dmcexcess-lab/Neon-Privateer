@@ -1092,6 +1092,54 @@ func _hub_button_rect(index: int) -> Rect2:
         3: return HUB_UPGRADES_RECT
     return Rect2()
 
+func _career_slot_rect(index: int) -> Rect2:
+    return Rect2(32.0, 178.0 + float(index) * 144.0, 326.0, 112.0)
+
+func _handle_profile_tap(pos: Vector2) -> void:
+    if PROFILE_CONTINUE_RECT.has_point(pos):
+        _continue_career()
+        return
+    if PROFILE_NEW_RECT.has_point(pos):
+        profile_menu_open = false
+        career_slots_open = true
+        career_new_mode = true
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    if PROFILE_LOAD_RECT.has_point(pos):
+        profile_menu_open = false
+        career_slots_open = true
+        career_new_mode = false
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    if active_career_slot > 0 and PROFILE_SLOT_BACK_RECT.has_point(pos):
+        profile_menu_open = false
+        hub_open = true
+        queue_redraw()
+
+func _handle_career_slots_tap(pos: Vector2) -> void:
+    if PROFILE_SLOT_BACK_RECT.has_point(pos):
+        career_slots_open = false
+        profile_menu_open = true
+        pending_overwrite_slot = 0
+        queue_redraw()
+        return
+    for i in CAREER_SLOT_COUNT:
+        var slot := i + 1
+        if not _career_slot_rect(i).has_point(pos):
+            continue
+        if career_new_mode:
+            if _career_slot_exists(slot) and pending_overwrite_slot != slot:
+                pending_overwrite_slot = slot
+                queue_redraw()
+                return
+            _create_new_career(slot)
+            return
+        if _career_slot_exists(slot):
+            _load_career(slot)
+            return
+
 func _travel_row_rect(index: int) -> Rect2:
     return Rect2(30.0, 176.0 + float(index) * 132.0, 330.0, 104.0)
 
@@ -1117,6 +1165,9 @@ func _handle_hub_tap(pos: Vector2) -> void:
     elif HUB_UPGRADES_RECT.has_point(pos):
         research_open = true
         hub_open = false
+    elif HUB_CAREERS_RECT.has_point(pos):
+        _open_profile_menu()
+        return
     queue_redraw()
 
 func _handle_travel_tap(pos: Vector2) -> void:
@@ -1160,6 +1211,12 @@ func _handle_contracts_tap(pos: Vector2) -> void:
             return
 
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
+    if career_slots_open:
+        _handle_career_slots_tap(pos)
+        return
+    if profile_menu_open:
+        _handle_profile_tap(pos)
+        return
     if run_paused:
         _handle_pause_tap(pos)
         return
