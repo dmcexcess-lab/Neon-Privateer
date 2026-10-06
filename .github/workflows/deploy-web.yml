@@ -53,11 +53,25 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|PRIVATEER SMOKE FAIL' "$LOG"; then exit 1; fi
           grep -q 'NEON PRIVATEER SMOKE OK' "$LOG"
 
+      - name: Run Classic Neon Driftline smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LOG=/tmp/classic-smoke.log
+          set +e
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --path neon-driftline-classic --script res://tests/SmokeTest.gd 2>&1 | tee "$LOG"
+          GODOT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SMOKE FAIL' "$LOG"; then exit 1; fi
+          grep -q 'NEON DRIFTLINE SMOKE OK' "$LOG"
+
       - name: Export Web and reject script errors
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p build/web
+          mkdir -p build/web build/web/classic
           SHORT_SHA="${GITHUB_SHA:0:12}"
           BASENAME="neon-privateer-${SHORT_SHA}"
           LOG=/tmp/privateer-export.log
@@ -69,6 +83,20 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' "$LOG"; then exit 1; fi
           mv "build/web/${BASENAME}.html" build/web/index.html
           test -f "build/web/${BASENAME}.pck"
+
+          CLASSIC_BASENAME="neon-driftline-classic-${SHORT_SHA}"
+          CLASSIC_LOG=/tmp/classic-export.log
+          set +e
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --path neon-driftline-classic --export-release Web "../build/web/classic/${CLASSIC_BASENAME}.html" \
+            2>&1 | tee "$CLASSIC_LOG"
+          CLASSIC_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$CLASSIC_EXIT" -ne 0 ]; then exit "$CLASSIC_EXIT"; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' "$CLASSIC_LOG"; then exit 1; fi
+          mv "build/web/classic/${CLASSIC_BASENAME}.html" build/web/classic/index.html
+          test -f "build/web/classic/${CLASSIC_BASENAME}.pck"
+
           touch build/web/.nojekyll
 
       - name: Keep downloadable Web build
