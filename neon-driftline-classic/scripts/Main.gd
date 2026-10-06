@@ -494,6 +494,12 @@ func _start_game() -> void:
     energy = 0
     combo = 1
     best_combo = 1
+    run_ship_speed = 0
+    run_dash = 0
+    run_damage = 0
+    run_hits = 0
+    run_shield = 0
+    shop_page = 0
     max_hp = 2 + research_hits
     hp = max_hp
     shield_charges = research_shield
@@ -545,23 +551,24 @@ func _start_game() -> void:
     particles.clear()
     last_near_ids.clear()
     _clear_run_snapshot()
+    _autosave_permanent_progress()
 
 func _ship_speed_multiplier() -> float:
-    return 0.72 + float(research_ship_speed) * 0.04
+    return 0.72 + float(research_ship_speed + run_ship_speed) * 0.04
 
 func _dash_distance() -> float:
-    return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash) * 35.0)
+    return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash + run_dash) * 35.0)
 
 func _dash_speed() -> float:
-    return DASH_FORWARD_SPEED + float(research_dash) * 40.0
+    return DASH_FORWARD_SPEED + float(research_dash + run_dash) * 40.0
 
 func _damage_multiplier() -> float:
-    return 1.0 + float(research_damage) * 0.03
+    return 1.0 + float(research_damage + run_damage) * 0.03
 
 func _near_miss_research_multiplier(is_dash: bool) -> float:
-    var mult := 1.0 + float(research_ship_speed) * 0.08
+    var mult := 1.0 + float(research_ship_speed + run_ship_speed) * 0.08
     if is_dash:
-        mult += float(research_dash) * 0.12
+        mult += float(research_dash + run_dash) * 0.12
     return mult
 
 func _level_duration() -> float:
@@ -615,6 +622,7 @@ func _open_shop() -> void:
         return
     playing = false
     shop_open = true
+    shop_page = 0
     last_level_bonus = 30 + level * 10
     score += last_level_bonus
     combo = 1
@@ -752,15 +760,15 @@ func _research_cost(track: String) -> int:
     var lvl := _research_level(track)
     match track:
         "ship":
-            return int(round(500.0 * pow(1.75, lvl)))
+            return int(round(7500.0 * pow(1.85, lvl)))
         "dash":
-            return int(round(750.0 * pow(1.75, lvl)))
+            return int(round(9000.0 * pow(1.90, lvl)))
         "damage":
-            return int(round(1000.0 * pow(1.80, lvl)))
+            return int(round(12000.0 * pow(1.90, lvl)))
         "hits":
-            return int(round(5000.0 * pow(1.35, lvl)))
+            return int(round(2500.0 * pow(1.65, lvl)))
         "shield":
-            return int(round(500.0 * pow(5.0, lvl)))
+            return int(round(15000.0 * pow(2.50, lvl)))
     return 99999999
 
 func _buy_research(track: String) -> bool:
@@ -783,11 +791,11 @@ func _buy_research(track: String) -> bool:
         "shield":
             research_shield += 1
     _play_sfx(buy_sfx, 1.08)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _weapon_research_cost(weapon: String) -> int:
-    return _shop_weapon_cost(weapon) * 10
+    return _shop_weapon_cost(weapon) * 25
 
 func _weapon_start_unlocked(weapon: String) -> bool:
     match weapon:
@@ -830,7 +838,7 @@ func _buy_start_weapon_research(weapon: String) -> bool:
             return false
     starting_weapon = weapon
     _play_sfx(weapon_pickup_sfx, 0.96)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _select_start_weapon(weapon: String) -> bool:
@@ -838,7 +846,7 @@ func _select_start_weapon(weapon: String) -> bool:
         return false
     starting_weapon = weapon
     _play_sfx(buy_sfx, 1.16, -3.0)
-    _save_meta()
+    _autosave_permanent_progress()
     return true
 
 func _handle_weapon_research_tap(pos: Vector2) -> void:
@@ -898,7 +906,7 @@ func _pause_run() -> void:
     _clear_control_holds()
     run_paused = true
     _save_run_snapshot()
-    _save_meta()
+    _autosave_permanent_progress()
     queue_redraw()
 
 func _resume_run() -> void:
@@ -946,6 +954,9 @@ func _bank_run_score() -> void:
     last_banked_score = maxi(0, score)
     research_credits += last_banked_score
     banked_this_run = true
+    _save_meta()
+
+func _autosave_permanent_progress() -> void:
     _save_meta()
 
 func _save_meta() -> void:
