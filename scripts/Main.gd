@@ -2470,6 +2470,18 @@ func _draw() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
 
+    if travel_open:
+        _draw_travel_menu()
+        return
+
+    if market_open:
+        _draw_market_menu()
+        return
+
+    if contracts_open:
+        _draw_contracts_menu()
+        return
+
     if weapon_research_open:
         _draw_weapon_research()
         return
@@ -2530,8 +2542,9 @@ func _draw() -> void:
         _text(choice, Vector2(62, 220), 16, Color("ffd166"))
 
     if weapon_banner_timer > 0.0:
-        draw_rect(Rect2(Vector2(78, 244), Vector2(234, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        _text("WEAPON: %s" % weapon_banner_text, Vector2(91, 270), 17, Color("d4b8ff"))
+        draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
+        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" else "WEAPON: "
+        _text(banner_prefix + weapon_banner_text, Vector2(82, 270), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
         var pulse := 0.78 + sin(Time.get_ticks_msec() * 0.035) * 0.12
@@ -2749,9 +2762,9 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 
 func _draw_hud() -> void:
     _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
-    _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46), 19, Color("bdeef4"))
-    _text("ENERGY %02d" % energy, Vector2(20, 88), 18, Color("6bffb0"))
-    _text("x%d" % combo, Vector2(310, 88), 24, Color("ffd166"))
+    _text("BONUS %03d CR" % score, Vector2(118, 46), 18, Color("bdeef4"))
+    _text("%s > %s" % [route_origin, destination_planet], Vector2(20, 88), 15, Color("6bffb0"))
+    _text("D%d R%d" % [route_distance, route_danger], Vector2(302, 88), 16, Color("ffd166"))
 
     if lane_event_active:
         var left_hard := not hard_lane_right
@@ -2760,8 +2773,12 @@ func _draw_hud() -> void:
     else:
         _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
 
-    if dash_score_timer > 0.0:
-        _text("DASH NEAR BONUS", Vector2(126, 146), 16, Color("ffd166"))
+    if boss_active:
+        _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
+    elif pirate_attack_active:
+        _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
+    elif dash_score_timer > 0.0:
+        _text("DASH BONUS", Vector2(143, 146), 16, Color("ffd166"))
     else:
         _text(_weapon_label(current_weapon), Vector2(118, 146), 14, Color("ffd166"))
 
@@ -2798,18 +2815,97 @@ func _draw_controls() -> void:
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
 func _draw_title() -> void:
-    _text("NEON", Vector2(102, 180), 52, Color("77f7ff"))
-    _text("DRIFTLINE", Vector2(54, 236), 47, Color("f0fbff"))
-    _text("RESEARCH %07d" % research_credits, Vector2(82, 300), 21, Color("ffd166"))
-    _text("START: %s" % _weapon_label(_valid_starting_weapon()), Vector2(88, 348), 16, Color("bdeef4"))
-    _text("SPEED + DASH ALSO BOOST NEAR-MISS SCORE", Vector2(31, 382), 14, Color("6bffb0"))
-    _text("L1: LAZY CIRCLES / 1 SHORT SPLIT", Vector2(54, 420), 15, Color("8ea9b8"))
-    draw_rect(MAIN_START_RECT, Color("123544"), true)
-    draw_rect(MAIN_START_RECT, Color("77f7ff"), false, 3.0)
-    _text("START RUN", MAIN_START_RECT.position + Vector2(73, 42), 24, Color("f0fbff"))
-    draw_rect(MAIN_RESEARCH_RECT, Color("231835"), true)
-    draw_rect(MAIN_RESEARCH_RECT, Color("b56cff"), false, 3.0)
-    _text("RESEARCH", MAIN_RESEARCH_RECT.position + Vector2(72, 42), 23, Color("f1dcff"))
+    _text("NEON PRIVATEER", Vector2(48, 82), 34, Color("77f7ff"))
+    _text(current_planet, Vector2(132, 132), 26, Color("f0fbff"))
+    _text("%07d CREDITS" % research_credits, Vector2(92, 170), 20, Color("ffd166"))
+    _text("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], Vector2(76, 206), 15, Color("bdeef4"))
+
+    if not active_contract.is_empty():
+        var ct := String(active_contract.get("type", "")).to_upper()
+        var cd := String(active_contract.get("destination", ""))
+        var cr := int(active_contract.get("reward", 0))
+        _text("%s > %s  %d CR" % [ct, cd, cr], Vector2(54, 255), 15, Color("6bffb0"))
+    else:
+        _text("NO ACTIVE CONTRACT", Vector2(105, 255), 15, Color("8ea9b8"))
+
+    _text(last_trip_summary, Vector2(44, 310), 14, Color("8ea9b8"))
+
+    var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
+    for i in 4:
+        var rect := _hub_button_rect(i)
+        draw_rect(rect, Color("102633"), true)
+        draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
+        _text(labels[i], rect.position + Vector2(78 if i != 3 else 55, 38), 21, Color("f0fbff"))
+
+func _draw_submenu_back() -> void:
+    draw_rect(SUBMENU_BACK_RECT, Color("123544"), true)
+    draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
+    _text("BACK", SUBMENU_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
+
+func _draw_travel_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("STAR ROUTES", Vector2(83, 72), 32, Color("77f7ff"))
+    _text("FROM %s" % current_planet, Vector2(116, 108), 17, Color("bdeef4"))
+    var destinations := _other_planets(current_planet)
+    for i in destinations.size():
+        var dest := destinations[i]
+        var spec := _route_spec(current_planet, dest)
+        var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(dest) else 0
+        var effective_level := _route_level_for(int(spec.distance), int(spec.danger), contract_diff)
+        var duration := _route_duration_for(int(spec.distance), int(spec.danger), contract_diff)
+        var rect := _travel_row_rect(i)
+        draw_rect(rect, Color("10202c"), true)
+        draw_rect(rect, Color("6bffb0") if _contract_target_matches(dest) else Color("465f72"), false, 2.0)
+        _text(dest, rect.position + Vector2(14, 28), 21, Color("f0fbff"))
+        _text("DIST %d   DANGER %d   FLIGHT %ds" % [int(spec.distance), int(spec.danger), int(duration)], rect.position + Vector2(14, 56), 14, Color("8ea9b8"))
+        _text("FLIGHT LEVEL %d" % effective_level, rect.position + Vector2(14, 82), 14, Color("ffd166"))
+        if _contract_target_matches(dest):
+            _text("CONTRACT", rect.position + Vector2(242, 28), 13, Color("6bffb0"))
+    _draw_submenu_back()
+
+func _draw_market_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("%s MARKET" % current_planet.to_upper(), Vector2(74, 60), 29, Color("77f7ff"))
+    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(92, 96), 16, Color("ffd166"))
+    for i in commodity_names.size():
+        var commodity := commodity_names[i]
+        var price := _market_price(current_planet, commodity)
+        var stock := int(round(float(markets[current_planet][commodity].stock)))
+        var held := int(cargo.get(commodity, 0))
+        var buy_rect := _market_buy_rect(i)
+        var sell_rect := _market_sell_rect(i)
+        draw_rect(buy_rect, Color("112b24"), true)
+        draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
+        draw_rect(sell_rect, Color("2d1c26"), true)
+        draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
+        _text(commodity, buy_rect.position + Vector2(8, 22), 15, Color("f0fbff"))
+        _text("BUY %d" % price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
+        _text("SELL %d" % price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
+        _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(79, 22), 13, Color("8ea9b8"))
+    _draw_submenu_back()
+
+func _draw_contracts_menu() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
+    _text("CONTRACT BOARD", Vector2(58, 58), 29, Color("77f7ff"))
+    if not active_contract.is_empty():
+        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), String(active_contract.destination)], Vector2(66, 94), 15, Color("6bffb0"))
+    else:
+        _text("TAP A JOB TO ACCEPT", Vector2(86, 94), 15, Color("8ea9b8"))
+    for i in contract_board.size():
+        var contract: Dictionary = contract_board[i]
+        var rect := _contract_row_rect(i)
+        draw_rect(rect, Color("111c28"), true)
+        draw_rect(rect, Color("465f72"), false, 2.0)
+        _text(String(contract.type).to_upper(), rect.position + Vector2(12, 25), 17, Color("f0fbff"))
+        _text("> %s   D%d" % [String(contract.destination), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
+        _text("%d CR" % int(contract.reward), rect.position + Vector2(244, 51), 15, Color("ffd166"))
+        if String(contract.type) == "delivery":
+            _text("1 CARGO", rect.position + Vector2(242, 25), 12, Color("bdeef4"))
+        elif String(contract.type) == "passenger":
+            _text("1 PAX", rect.position + Vector2(252, 25), 12, Color("bdeef4"))
+        else:
+            _text("BOSS", rect.position + Vector2(258, 25), 12, Color("ff8fa6"))
+    _draw_submenu_back()
 
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
@@ -2826,9 +2922,9 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
 
 func _draw_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
-    _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT ACROSS RUNS", Vector2(87, 145), 15, Color("8ea9b8"))
+    _text("SHIP UPGRADES", Vector2(57, 74), 32, Color("b56cff"))
+    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
+    _text("PERMANENT SHIP MODS", Vector2(97, 145), 15, Color("8ea9b8"))
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
@@ -2860,7 +2956,7 @@ func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> v
 func _draw_weapon_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
-    _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
+    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
     _text("PERMANENT UNLOCK — 10x RUN PRICE", Vector2(51, 140), 14, Color("8ea9b8"))
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
