@@ -313,6 +313,406 @@ func _play_sfx(stream: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.
     player.volume_db = volume_db
     player.play()
 
+func _init_privateer_world() -> void:
+    if cargo.is_empty():
+        for commodity in commodity_names:
+            cargo[commodity] = 0
+    if markets.is_empty():
+        for planet in planet_names:
+            var planet_market: Dictionary = {}
+            for commodity in commodity_names:
+                var flow := _market_profile(planet, commodity)
+                var starting_stock := clampf(58.0 + flow.x * 3.0 - flow.y * 2.0, 18.0, 112.0)
+                planet_market[commodity] = {
+                    "stock": starting_stock,
+                    "production": flow.x,
+                    "consumption": flow.y
+                }
+            markets[planet] = planet_market
+    if contract_board.is_empty():
+        _regenerate_contracts()
+
+func _market_profile(planet: String, commodity: String) -> Vector2:
+    match planet:
+        "Aster":
+            match commodity:
+                "Food": return Vector2(8.0, 4.0)
+                "Ore": return Vector2(2.0, 6.0)
+                "Medicine": return Vector2(3.0, 4.0)
+                "Electronics": return Vector2(5.0, 3.0)
+                "Fuel": return Vector2(2.0, 5.0)
+        "Cinder":
+            match commodity:
+                "Food": return Vector2(1.0, 7.0)
+                "Ore": return Vector2(10.0, 2.0)
+                "Medicine": return Vector2(1.0, 5.0)
+                "Electronics": return Vector2(2.0, 5.0)
+                "Fuel": return Vector2(9.0, 3.0)
+        "Vesper":
+            match commodity:
+                "Food": return Vector2(5.0, 5.0)
+                "Ore": return Vector2(2.0, 5.0)
+                "Medicine": return Vector2(9.0, 2.0)
+                "Electronics": return Vector2(2.0, 6.0)
+                "Fuel": return Vector2(3.0, 5.0)
+        "Helix":
+            match commodity:
+                "Food": return Vector2(2.0, 6.0)
+                "Ore": return Vector2(4.0, 4.0)
+                "Medicine": return Vector2(4.0, 3.0)
+                "Electronics": return Vector2(10.0, 2.0)
+                "Fuel": return Vector2(4.0, 4.0)
+    return Vector2(4.0, 4.0)
+
+func _commodity_base_price(commodity: String) -> int:
+    match commodity:
+        "Food": return 35
+        "Ore": return 52
+        "Medicine": return 95
+        "Electronics": return 145
+        "Fuel": return 72
+    return 50
+
+func _market_price(planet: String, commodity: String) -> int:
+    if not markets.has(planet) or not markets[planet].has(commodity):
+        return _commodity_base_price(commodity)
+    var data: Dictionary = markets[planet][commodity]
+    var stock := float(data.stock)
+    var production := float(data.production)
+    var consumption := float(data.consumption)
+    var target_stock := 52.0 + consumption * 4.5
+    var scarcity := clampf((target_stock - stock) / maxf(20.0, target_stock), -0.55, 1.25)
+    var flow_pressure := clampf((consumption - production) / 12.0, -0.25, 0.45)
+    var planet_bias := 1.0
+    if planet == "Cinder" and commodity == "Ore": planet_bias = 0.88
+    if planet == "Vesper" and commodity == "Medicine": planet_bias = 0.86
+    if planet == "Helix" and commodity == "Electronics": planet_bias = 0.87
+    if planet == "Aster" and commodity == "Food": planet_bias = 0.90
+    return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
+
+func _simulate_economy(ticks: int) -> void:
+    for step in maxi(1, ticks):
+        economy_tick += 1
+        for planet in planet_names:
+            var planet_market: Dictionary = markets[planet]
+            for commodity in commodity_names:
+                var data: Dictionary = planet_market[commodity]
+                var noise := rng.randf_range(-1.4, 1.4)
+                data.stock = clampf(float(data.stock) + float(data.production) - float(data.consumption) + noise, 2.0, 140.0)
+                planet_market[commodity] = data
+            markets[planet] = planet_market
+
+func _cargo_used() -> int:
+    var used := 0
+    for commodity in commodity_names:
+        used += int(cargo.get(commodity, 0))
+    if not active_contract.is_empty() and String(active_contract.get("type", "")) == "delivery":
+        used += 1
+    return used
+
+func _cargo_capacity() -> int:
+    return CARGO_CAPACITY_BASE
+
+func _passenger_capacity() -> int:
+    return PASSENGER_CAPACITY_BASE
+
+func _buy_commodity(commodity: String) -> bool:
+    if _cargo_used() >= _cargo_capacity():
+        return false
+    var data: Dictionary = markets[current_planet][commodity]
+    if float(data.stock) < 1.0:
+        return false
+    var price := _market_price(current_planet, commodity)
+    if research_credits < price:
+        return false
+    research_credits -= price
+    cargo[commodity] = int(cargo.get(commodity, 0)) + 1
+    data.stock = maxf(0.0, float(data.stock) - 1.0)
+    markets[current_planet][commodity] = data
+    _play_sfx(buy_sfx, 1.05, -3.0)
+    _save_all_state()
+    return true
+
+func _sell_commodity(commodity: String) -> bool:
+    if int(cargo.get(commodity, 0)) <= 0:
+        return false
+    var price := _market_price(current_planet, commodity)
+    cargo[commodity] = int(cargo.get(commodity, 0)) - 1
+    research_credits += price
+    var data: Dictionary = markets[current_planet][commodity]
+    data.stock = minf(140.0, float(data.stock) + 1.0)
+    markets[current_planet][commodity] = data
+    _play_sfx(buy_sfx, 0.94, -3.0)
+    _save_all_state()
+    return true
+
+func _route_spec(origin: String, dest: String) -> Dictionary:
+    var key := origin + "|" + dest
+    var reverse := dest + "|" + origin
+    var routes := {
+        "Aster|Cinder": {"distance": 1, "danger": 1},
+        "Aster|Vesper": {"distance": 2, "danger": 2},
+        "Aster|Helix": {"distance": 4, "danger": 3},
+        "Cinder|Vesper": {"distance": 3, "danger": 2},
+        "Cinder|Helix": {"distance": 2, "danger": 4},
+        "Vesper|Helix": {"distance": 2, "danger": 3}
+    }
+    if routes.has(key):
+        return routes[key].duplicate(true)
+    if routes.has(reverse):
+        return routes[reverse].duplicate(true)
+    return {"distance": 2, "danger": 2}
+
+func _other_planets(origin: String) -> Array[String]:
+    var result: Array[String] = []
+    for planet in planet_names:
+        if planet != origin:
+            result.append(planet)
+    return result
+
+func _regenerate_contracts() -> void:
+    contract_board.clear()
+    var destinations := _other_planets(current_planet)
+    var kinds: Array[String] = ["delivery", "passenger", "bounty", "delivery", "bounty"]
+    for i in kinds.size():
+        var kind := kinds[i]
+        var dest := destinations[rng.randi_range(0, destinations.size() - 1)]
+        var spec := _route_spec(current_planet, dest)
+        var difficulty := clampi(int(spec.danger) + rng.randi_range(0, 2), 1, 5)
+        var reward := 0
+        if kind == "delivery":
+            reward = 160 + int(spec.distance) * 90 + difficulty * 70
+        elif kind == "passenger":
+            reward = 220 + int(spec.distance) * 100 + difficulty * 80
+        else:
+            reward = 420 + int(spec.distance) * 150 + difficulty * 180
+        contract_board.append({
+            "id": rng.randi(),
+            "type": kind,
+            "destination": dest,
+            "difficulty": difficulty,
+            "reward": reward
+        })
+
+func _accept_contract(index: int) -> bool:
+    if not active_contract.is_empty() or index < 0 or index >= contract_board.size():
+        return false
+    var contract: Dictionary = contract_board[index]
+    var kind := String(contract.type)
+    if kind == "delivery" and _cargo_used() >= _cargo_capacity():
+        return false
+    if kind == "passenger" and passengers >= _passenger_capacity():
+        return false
+    active_contract = contract.duplicate(true)
+    if kind == "passenger":
+        passengers += 1
+    contract_board.remove_at(index)
+    _play_sfx(buy_sfx, 1.10)
+    _save_all_state()
+    return true
+
+func _contract_target_matches(destination: String) -> bool:
+    return not active_contract.is_empty() and String(active_contract.get("destination", "")) == destination
+
+func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) -> int:
+    return clampi(1 + distance + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
+
+func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0) -> float:
+    return clampf(16.0 + float(distance) * 7.0 + float(danger) * 3.5 + float(contract_difficulty) * 2.5, 18.0, 68.0)
+
+func _start_route(destination: String) -> bool:
+    if destination == current_planet or not planet_names.has(destination):
+        return false
+    var spec := _route_spec(current_planet, destination)
+    var contract_difficulty := 0
+    if _contract_target_matches(destination):
+        contract_difficulty = int(active_contract.get("difficulty", 0))
+    route_origin = current_planet
+    destination_planet = destination
+    route_distance = int(spec.distance)
+    route_danger = int(spec.danger)
+    route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty)
+    _start_game()
+    level = _route_level_for(route_distance, route_danger, contract_difficulty)
+    route_active = true
+    hub_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    boss_active = false
+    boss_defeated_pending = false
+    bounty_completed_this_route = false
+    pirate_attack_active = false
+    pirate_attack_timer = 0.0
+    pirate_attack_clock = maxf(4.5, 12.5 - float(route_danger) * 1.7)
+    pirate_banner_timer = 0.0
+    result_reason = ""
+    _save_all_state()
+    return true
+
+func _update_pirate_attack(delta: float) -> void:
+    pirate_banner_timer = maxf(0.0, pirate_banner_timer - delta)
+    if not route_active or boss_active:
+        pirate_attack_active = false
+        return
+    if pirate_attack_active:
+        pirate_attack_timer = maxf(0.0, pirate_attack_timer - delta)
+        if pirate_attack_timer <= 0.0:
+            pirate_attack_active = false
+            pirate_attack_clock = maxf(4.5, rng.randf_range(10.0, 16.0) - float(route_danger) * 1.4)
+        return
+    pirate_attack_clock -= delta
+    if pirate_attack_clock <= 0.0 and (route_danger >= 2 or _contract_target_matches(destination_planet)):
+        pirate_attack_active = true
+        pirate_attack_timer = 3.5 + float(route_danger) * 1.1
+        pirate_banner_timer = 1.8
+        weapon_banner_text = "PIRATE CONTACT"
+        weapon_banner_timer = 1.8
+
+func _begin_bounty_boss() -> void:
+    if boss_active:
+        return
+    boss_active = true
+    pirate_attack_active = false
+    lane_event_active = false
+    lane_event_timer = 0.0
+    station_locked_side = ""
+    objects.clear()
+    enemy_shots.clear()
+    var difficulty := int(active_contract.get("difficulty", 1))
+    var boss_hp := 34.0 + float(difficulty) * 18.0
+    objects.append({
+        "id": rng.randi(),
+        "type": "hazard",
+        "kind": 4,
+        "boss": true,
+        "hp": boss_hp,
+        "max_hp": boss_hp,
+        "hard": false,
+        "x": W * 0.5,
+        "y": 150.0,
+        "r": 30.0,
+        "speed": 0.0,
+        "drift": 0.0,
+        "shoot_clock": maxf(0.45, 1.25 - float(difficulty) * 0.10),
+        "lane_speed_mult": 1.0,
+        "lane_min": LEFT,
+        "lane_max": RIGHT
+    })
+    weapon_banner_text = "BOUNTY TARGET"
+    weapon_banner_timer = 2.4
+    shake = 4.0
+
+func _handle_route_end() -> void:
+    if not route_active:
+        return
+    var bounty_due := _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty"
+    if bounty_due and not bounty_completed_this_route:
+        _begin_bounty_boss()
+        return
+    _arrive_at_destination()
+
+func _complete_contract_if_ready() -> int:
+    if active_contract.is_empty() or String(active_contract.get("destination", "")) != current_planet:
+        return 0
+    if String(active_contract.get("type", "")) == "bounty" and not bounty_completed_this_route:
+        return 0
+    var reward := int(active_contract.get("reward", 0))
+    if String(active_contract.get("type", "")) == "passenger":
+        passengers = maxi(0, passengers - 1)
+    active_contract.clear()
+    return reward
+
+func _arrive_at_destination() -> void:
+    playing = false
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    current_planet = destination_planet
+    destination_planet = ""
+    var flight_bonus := maxi(0, score)
+    research_credits += flight_bonus
+    score = 0
+    var contract_reward := _complete_contract_if_ready()
+    research_credits += contract_reward
+    _simulate_economy(route_distance + route_danger)
+    _regenerate_contracts()
+    last_trip_summary = "ARRIVED %s  +%d CR" % [current_planet, flight_bonus + contract_reward]
+    hub_open = true
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    game_over = false
+    run_paused = false
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    _play_sfx(level_clear_sfx)
+    _clear_run_snapshot()
+    _save_all_state()
+    queue_redraw()
+
+func _fail_route(reason: String) -> void:
+    playing = false
+    route_active = false
+    boss_active = false
+    boss_defeated_pending = false
+    destination_planet = ""
+    score = 0
+    if not active_contract.is_empty():
+        if String(active_contract.get("type", "")) == "passenger":
+            passengers = maxi(0, passengers - 1)
+        active_contract.clear()
+    last_trip_summary = reason + " — CONTRACT LOST"
+    hub_open = true
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    game_over = false
+    run_paused = false
+    objects.clear()
+    shots.clear()
+    enemy_shots.clear()
+    pending_drops.clear()
+    _play_sfx(death_sfx)
+    _clear_run_snapshot()
+    _save_all_state()
+    queue_redraw()
+
+func _save_privateer_state() -> void:
+    var cfg := ConfigFile.new()
+    cfg.set_value("world", "planet", current_planet)
+    cfg.set_value("world", "markets", markets)
+    cfg.set_value("world", "cargo", cargo)
+    cfg.set_value("world", "contracts", contract_board)
+    cfg.set_value("world", "active_contract", active_contract)
+    cfg.set_value("world", "passengers", passengers)
+    cfg.set_value("world", "economy_tick", economy_tick)
+    cfg.set_value("world", "summary", last_trip_summary)
+    cfg.save(PRIVATEER_SAVE_PATH)
+
+func _load_privateer_state() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(PRIVATEER_SAVE_PATH) != OK:
+        return
+    current_planet = String(cfg.get_value("world", "planet", current_planet))
+    markets = cfg.get_value("world", "markets", markets)
+    cargo = cfg.get_value("world", "cargo", cargo)
+    contract_board.clear()
+    for contract in cfg.get_value("world", "contracts", []):
+        contract_board.append(contract)
+    active_contract = cfg.get_value("world", "active_contract", {})
+    passengers = int(cfg.get_value("world", "passengers", 0))
+    economy_tick = int(cfg.get_value("world", "economy_tick", 0))
+    last_trip_summary = String(cfg.get_value("world", "summary", last_trip_summary))
+    if contract_board.is_empty():
+        _regenerate_contracts()
+
+func _save_all_state() -> void:
+    _save_meta()
+    _save_privateer_state()
+
 func _process(delta: float) -> void:
     if run_paused or not playing:
         queue_redraw()
