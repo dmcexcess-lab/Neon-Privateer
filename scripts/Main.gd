@@ -49,9 +49,16 @@ const WEAPON_RESEARCH_BACK_RECT := Rect2(54.0, 620.0, 282.0, 58.0)
 const PAUSE_RECT := Rect2(300.0, 16.0, 72.0, 38.0)
 const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
-const META_SAVE_PATH := "user://neon_meta.cfg"
-const RUN_SAVE_PATH := "user://neon_run.cfg"
-const PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const LEGACY_META_SAVE_PATH := "user://neon_meta.cfg"
+const LEGACY_RUN_SAVE_PATH := "user://neon_run.cfg"
+const LEGACY_PRIVATEER_SAVE_PATH := "user://neon_privateer.cfg"
+const CAREER_INDEX_PATH := "user://neon_careers.cfg"
+const CAREER_SLOT_COUNT := 3
+const PROFILE_CONTINUE_RECT := Rect2(54.0, 352.0, 282.0, 64.0)
+const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
+const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
+const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
+const HUB_CAREERS_RECT := Rect2(35.0, 700.0, 320.0, 58.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
 const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
 const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
@@ -123,7 +130,13 @@ var research_start_seeker := false
 var starting_weapon := "none"
 var research_open := false
 var weapon_research_open := false
-var hub_open := true
+var profile_menu_open := true
+var career_slots_open := false
+var career_new_mode := false
+var pending_overwrite_slot := 0
+var active_career_slot := 0
+var last_career_slot := 0
+var hub_open := false
 var market_open := false
 var contracts_open := false
 var travel_open := false
@@ -232,20 +245,21 @@ var laser_sfx_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
-    _init_privateer_world()
-    _load_meta()
-    _load_privateer_state()
     _setup_audio()
+    _load_career_index()
+    _migrate_legacy_career_if_needed()
+    profile_menu_open = true
+    career_slots_open = false
+    hub_open = false
     set_process(true)
-    if _load_run_snapshot():
-        run_paused = true
     queue_redraw()
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
         if (playing or shop_open) and not game_over:
             _pause_run()
-        _save_meta()
+        if active_career_slot > 0:
+            _save_all_state()
 
 func _setup_audio() -> void:
     for i in 10:
