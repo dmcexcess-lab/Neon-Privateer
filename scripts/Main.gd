@@ -503,6 +503,8 @@ func _accept_contract(index: int) -> bool:
         return false
     if kind == "passenger" and passengers >= _passenger_capacity():
         return false
+    if kind == "bounty" and _valid_starting_weapon() == "none":
+        return false
     active_contract = contract.duplicate(true)
     if kind == "passenger":
         passengers += 1
@@ -1307,7 +1309,7 @@ func _buy_research(track: String) -> bool:
         "shield":
             research_shield += 1
     _play_sfx(buy_sfx, 1.08)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _weapon_research_cost(weapon: String) -> int:
@@ -1354,7 +1356,7 @@ func _buy_start_weapon_research(weapon: String) -> bool:
             return false
     starting_weapon = weapon
     _play_sfx(weapon_pickup_sfx, 0.96)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _select_start_weapon(weapon: String) -> bool:
@@ -1362,7 +1364,7 @@ func _select_start_weapon(weapon: String) -> bool:
         return false
     starting_weapon = weapon
     _play_sfx(buy_sfx, 1.16, -3.0)
-    _save_meta()
+    _save_all_state()
     return true
 
 func _handle_weapon_research_tap(pos: Vector2) -> void:
@@ -1440,6 +1442,10 @@ func _handle_pause_tap(pos: Vector2) -> void:
 
 func _quit_run_with_score() -> void:
     _clear_control_holds()
+    if route_active:
+        _bank_run_score()
+        _fail_route("FLIGHT ABORTED")
+        return
     _bank_run_score()
     _clear_run_snapshot()
     playing = false
@@ -1448,6 +1454,7 @@ func _quit_run_with_score() -> void:
     run_paused = false
     research_open = false
     weapon_research_open = false
+    hub_open = true
     objects.clear()
     shots.clear()
     enemy_shots.clear()
@@ -1463,6 +1470,10 @@ func _return_to_menu() -> void:
     run_paused = false
     research_open = false
     weapon_research_open = false
+    market_open = false
+    contracts_open = false
+    travel_open = false
+    hub_open = true
     queue_redraw()
 
 func _bank_run_score() -> void:
@@ -1548,6 +1559,18 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "station_locked_side", station_locked_side)
     cfg.set_value("run", "world_scroll", world_scroll)
     cfg.set_value("run", "last_level_bonus", last_level_bonus)
+    cfg.set_value("run", "route_active", route_active)
+    cfg.set_value("run", "route_origin", route_origin)
+    cfg.set_value("run", "destination_planet", destination_planet)
+    cfg.set_value("run", "route_distance", route_distance)
+    cfg.set_value("run", "route_danger", route_danger)
+    cfg.set_value("run", "route_duration", route_duration)
+    cfg.set_value("run", "boss_active", boss_active)
+    cfg.set_value("run", "boss_defeated_pending", boss_defeated_pending)
+    cfg.set_value("run", "bounty_completed", bounty_completed_this_route)
+    cfg.set_value("run", "pirate_active", pirate_attack_active)
+    cfg.set_value("run", "pirate_timer", pirate_attack_timer)
+    cfg.set_value("run", "pirate_clock", pirate_attack_clock)
     cfg.set_value("run", "objects", objects)
     cfg.set_value("run", "shots", shots)
     cfg.set_value("run", "enemy_shots", enemy_shots)
@@ -1594,6 +1617,19 @@ func _load_run_snapshot() -> bool:
     station_locked_side = String(cfg.get_value("run", "station_locked_side", ""))
     world_scroll = float(cfg.get_value("run", "world_scroll", 0.0))
     last_level_bonus = int(cfg.get_value("run", "last_level_bonus", 0))
+    route_active = bool(cfg.get_value("run", "route_active", false))
+    route_origin = String(cfg.get_value("run", "route_origin", current_planet))
+    destination_planet = String(cfg.get_value("run", "destination_planet", ""))
+    route_distance = int(cfg.get_value("run", "route_distance", 1))
+    route_danger = int(cfg.get_value("run", "route_danger", 1))
+    route_duration = float(cfg.get_value("run", "route_duration", 18.0))
+    boss_active = bool(cfg.get_value("run", "boss_active", false))
+    boss_defeated_pending = bool(cfg.get_value("run", "boss_defeated_pending", false))
+    bounty_completed_this_route = bool(cfg.get_value("run", "bounty_completed", false))
+    pirate_attack_active = bool(cfg.get_value("run", "pirate_active", false))
+    pirate_attack_timer = float(cfg.get_value("run", "pirate_timer", 0.0))
+    pirate_attack_clock = float(cfg.get_value("run", "pirate_clock", 999.0))
+    hub_open = not route_active
     objects.clear()
     for item in cfg.get_value("run", "objects", []):
         objects.append(item)
