@@ -784,8 +784,8 @@ func _initialize() -> void:
         "lane_speed_mult": 1.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
     })
     scene._move_objects(1.0)
-    var square_drift: float = float(scene.objects[0].drift)
-    if square_drift < 25.0 or square_drift > 38.1:
+    var square_mobility_drift: float = float(scene.objects[0].drift)
+    if square_mobility_drift < 25.0 or square_mobility_drift > 38.1:
         _fail("square drone mobility is outside the intended modest pursuit range")
         return
 
