@@ -25,7 +25,18 @@ const DANGER_WEIGHT := {
     STATE_CONTESTED: 5.0
 }
 
-const RESTRICTED_COMMODITIES := ["Arms", "Narcotics"]
+const LEGAL_COMMODITIES := [
+    "Grain", "Protein", "Produce", "Luxury Food",
+    "Iron", "Copper", "Titanium", "Rare Alloys",
+    "First Aid", "Antibiotics", "Vaccines", "Regenerative Medicine"
+]
+const GREY_WEAPONS := ["Small Arms", "Heavy Weapons", "Explosives", "Military Tech"]
+const GREY_NARCOTICS := ["Stims", "Sedatives", "Euphorics", "Neurodust"]
+const GREY_ENTERTAINMENT := ["Holovids", "Sim Chips", "VR Experiences", "Unlicensed Media"]
+const GREY_COMMODITIES := GREY_WEAPONS + GREY_NARCOTICS + GREY_ENTERTAINMENT
+# Compatibility name retained for encounter/scan code. All grey goods are
+# potentially restricted; the actual legality is faction + item specific.
+const RESTRICTED_COMMODITIES := GREY_COMMODITIES
 
 const RELATION_MIN := -100
 const RELATION_MAX := 100
@@ -240,6 +251,19 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             faction_name += " %d" % (i + 1)
         used_faction_names[faction_name] = true
         var faction_strength := rng.randf_range(0.98, 1.16)
+        var grey_legal: Dictionary = {}
+        for category in [GREY_WEAPONS, GREY_NARCOTICS, GREY_ENTERTAINMENT]:
+            var allowed_count: int = rng.randi_range(0, 4)
+            var shuffled: Array = category.duplicate()
+            for si in range(shuffled.size() - 1, 0, -1):
+                var sj := rng.randi_range(0, si)
+                var swap_value = shuffled[si]
+                shuffled[si] = shuffled[sj]
+                shuffled[sj] = swap_value
+            for grey_good in category:
+                grey_legal[String(grey_good)] = false
+            for ai in allowed_count:
+                grey_legal[String(shuffled[ai])] = true
         factions.append({
             "id": "f%02d" % i,
             "name": faction_name,
@@ -253,6 +277,9 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             "offenses": 0,
             "last_offense": "",
             "laws": {
+                "grey_legal": grey_legal,
+                # Legacy category flags are retained only so schema-2 careers
+                # written before the 24-good economy remain intelligible.
                 "arms_legal": combo == 0 or combo == 2,
                 "narcotics_legal": combo == 0 or combo == 1
             }
@@ -428,23 +455,63 @@ static func decay_all_heat(world: Dictionary, amount: int) -> bool:
         world["factions"] = factions
     return changed
 
+static func _stable_text_hash(value: String) -> int:
+    var result: int = 2166136261
+    for byte in value.to_utf8_buffer():
+        result = int((result ^ int(byte)) * 16777619) & 0x7fffffff
+    return result
+
+static func ensure_grey_law_schema(world: Dictionary) -> bool:
+    var changed := false
+    var factions: Array = world.get("factions", [])
+    var seed_value := int(world.get("seed", 1))
+    for i in factions.size():
+        var faction: Dictionary = factions[i]
+        var laws: Dictionary = faction.get("laws", {}).duplicate(true)
+        var grey: Dictionary = laws.get("grey_legal", {}).duplicate(true)
+        if grey.size() != GREY_COMMODITIES.size():
+            var local_rng := RandomNumberGenerator.new()
+            local_rng.seed = seed_value * 1009 + _stable_text_hash(String(faction.get("id", i))) * 9176 + 73
+            grey.clear()
+            for category in [GREY_WEAPONS, GREY_NARCOTICS, GREY_ENTERTAINMENT]:
+                var allowed_count := local_rng.randi_range(0, 4)
+                var shuffled: Array = category.duplicate()
+                for si in range(shuffled.size() - 1, 0, -1):
+                    var sj := local_rng.randi_range(0, si)
+                    var swap_value = shuffled[si]
+                    shuffled[si] = shuffled[sj]
+                    shuffled[sj] = swap_value
+                for grey_good in category:
+                    grey[String(grey_good)] = false
+                for ai in allowed_count:
+                    grey[String(shuffled[ai])] = true
+            laws["grey_legal"] = grey
+            faction["laws"] = laws
+            factions[i] = faction
+            changed = true
+    if changed:
+        world["factions"] = factions
+    return changed
+
 static func commodity_law_key(commodity: String) -> String:
-    match commodity:
-        "Arms":
-            return "arms_legal"
-        "Narcotics":
-            return "narcotics_legal"
-    return ""
+    return commodity if GREY_COMMODITIES.has(commodity) else ""
 
 static func faction_commodity_legal(world: Dictionary, faction_id: String, commodity: String) -> bool:
-    var law_key: String = commodity_law_key(commodity)
-    if law_key.is_empty():
+    if not GREY_COMMODITIES.has(commodity):
         return true
     var faction: Dictionary = faction_record(world, faction_id)
     if faction.is_empty():
         return true
     var laws: Dictionary = faction.get("laws", {})
-    return bool(laws.get(law_key, true))
+    var grey: Dictionary = laws.get("grey_legal", {})
+    if grey.has(commodity):
+        return bool(grey.get(commodity, true))
+    # Pre-economy-3 fallback until ensure_grey_law_schema() persists migration.
+    if GREY_WEAPONS.has(commodity):
+        return bool(laws.get("arms_legal", true))
+    if GREY_NARCOTICS.has(commodity):
+        return bool(laws.get("narcotics_legal", true))
+    return true
 
 static func commodity_legality_at(world: Dictionary, pos: Vector2, commodity: String) -> Dictionary:
     var context: Dictionary = political_context_at(world, pos)
