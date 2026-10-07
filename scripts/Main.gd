@@ -2,7 +2,7 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.jpg"
+const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
