@@ -123,22 +123,37 @@ The atlas remains menu-only; the arcade renderer does not reference it.
 
 ## Space travel
 
-The arcade renderer now uses shape as object identity rather than a generic difficulty ladder:
+The arcade renderer uses shape as object identity:
 
 - **Circles — asteroids.** They retain environmental movement and are the only objects that award normal/dash near-miss credits. Destroying an asteroid gives no kill credits and has a rare 12% chance to release one unit of Ore salvage.
-- **Squares — basic cargo containers.** They are stationary laterally, low durability, and release one small random 1–2 unit commodity bundle when broken.
-- **Diamonds — reinforced cargo containers.** They are stationary laterally, tougher and substantially rarer, and release two larger 2–3 unit bundles from a higher-value commodity table.
-- **Trapezoids / pentagons** remain the existing ship/platform behavior until their dedicated enforcement/encounter slices.
+- **Squares — basic cargo containers.** Stationary laterally, low durability, one small random 1–2 unit commodity bundle.
+- **Diamonds — reinforced cargo containers.** Stationary laterally, tougher and substantially rarer, two larger 2–3 unit bundles from a higher-value commodity table.
+- **Trapezoids — hostile ships.** Their role now comes from territory: pirates in CONTESTED/UNCONTROLLED space, faction patrols in CORE/CONTROLLED space only when the player is criminal with that faction.
+- **Pentagons — heavy enforcement platforms.** Random route pentagons are faction-only and require the Slice 3 heavy criminal threshold. Pirate encounters never spawn pentagons. The bounty-boss pentagon remains a contract-specific exception rather than random traffic.
 
-Cargo containers never award near-miss or kill credits.
+### Territory encounter director
 
-Container ownership comes from the political territory at spawn. CORE/CONTROLLED containers belong to that superpower, CONTESTED containers belong to one of the claimant powers, and UNCONTROLLED containers are unowned. Breaking an owned square costs 4 relation with its owner; breaking an owned reinforced container costs 8. The offense is recorded, but Slice 4 intentionally adds no heat yet.
+Hostile ships are no longer enabled merely because a route has a high danger value.
 
-Container loot and asteroid salvage appear as in-flight cargo pickups. Flying through a pickup loads as much as the ship's remaining cargo capacity allows.
+At the ship's exact current route segment:
+
+- UNCONTROLLED / CONTESTED → pirate encounter windows may occur.
+- CORE / CONTROLLED + clean player → no hostile patrol.
+- CORE / CONTROLLED + WANTED/HOSTILE player → faction patrol windows may occur.
+- CORE / CONTROLLED + heavy-enforcement threshold → patrols may include pentagon platforms.
+
+Contacts remain random; eligibility means the director is allowed to schedule one, not that every eligible segment automatically contains enemies. Entering a different political segment immediately stops further spawns from a contact that is no longer valid there.
+
+Faction patrol ships are colored by their superpower. Pirate ships are visually distinct.
+
+Cargo containers still never award near-miss or kill credits. Their ownership comes from the political territory at spawn, and breaking an owned container applies the Slice 4 relation consequence.
+
+Container loot and asteroid salvage remain physical in-flight cargo pickups and respect hold capacity.
 
 The original LEFT / DASH / RIGHT controls, station splits, green energy pickups, weapons, shields, hit points, and procedural sound effects remain.
 
-Pirate/police eligibility is still not territory-driven in this slice; encounter-director changes come later.
+**Not in Slice 5:** police cargo scans, contraband detection, fines, confiscation, scan countdowns, or new heat from enforcement encounters.
+
 
 ## Flight bonus credits
 
@@ -188,7 +203,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, route scaling, contract classes, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, route scaling, territory-authorized pirate/police eligibility, heavy-enforcement pentagon gating, route-boundary encounter changes, legacy pirate-run migration, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
