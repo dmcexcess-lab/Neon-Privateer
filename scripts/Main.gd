@@ -1791,6 +1791,98 @@ func _sell_commodity(commodity: String) -> bool:
 func _route_spec(origin: String, dest: String) -> Dictionary:
     return PoliticalWorld.route_spec(political_world, origin, dest)
 
+func _jump_range() -> int:
+    return clampi(JUMP_RANGE_BASE + research_jump_range, JUMP_RANGE_BASE, JUMP_RANGE_MAX)
+
+func _fuel_required_for_jump(distance: int) -> int:
+    return maxi(1, distance)
+
+func _refuel_cost() -> int:
+    return maxi(0, FUEL_CAPACITY - ship_fuel) * FUEL_COST_PER_UNIT
+
+func _refuel_ship() -> int:
+    var missing := maxi(0, FUEL_CAPACITY - ship_fuel)
+    if missing <= 0:
+        return 0
+    var affordable := mini(missing, research_credits / FUEL_COST_PER_UNIT)
+    if affordable <= 0:
+        return 0
+    var cost := affordable * FUEL_COST_PER_UNIT
+    research_credits -= cost
+    ship_fuel += affordable
+    _play_sfx(buy_sfx, 1.02, -3.0)
+    _save_meta()
+    return affordable
+
+func _jump_route_spec(origin: String, destination: String) -> Dictionary:
+    if origin == destination:
+        return {"distance": 0, "danger": 1, "wealth": 1, "path": [origin], "hops": 0, "direct": true}
+    var max_jump := _jump_range()
+    var unvisited: Dictionary = {}
+    var dist: Dictionary = {}
+    var prev: Dictionary = {}
+    for planet in planet_names:
+        unvisited[planet] = true
+        dist[planet] = INF
+    dist[origin] = 0.0
+
+    while not unvisited.is_empty():
+        var current := ""
+        var best := INF
+        for pid in unvisited.keys():
+            var candidate := float(dist.get(pid, INF))
+            if candidate < best:
+                best = candidate
+                current = String(pid)
+        if current.is_empty() or best == INF:
+            break
+        unvisited.erase(current)
+        if current == destination:
+            break
+        for next_id in PoliticalWorld.neighbors(political_world, current):
+            if not unvisited.has(next_id):
+                continue
+            var edge := PoliticalWorld.direct_route(political_world, current, next_id)
+            var edge_distance := int(edge.get("distance", 999))
+            if edge_distance > max_jump:
+                continue
+            var alt := best + float(edge_distance)
+            if alt < float(dist.get(next_id, INF)):
+                dist[next_id] = alt
+                prev[next_id] = current
+
+    if not prev.has(destination):
+        return {"distance": 0, "danger": 1, "wealth": 1, "path": [], "hops": 0, "direct": false}
+
+    var path: Array[String] = [destination]
+    var cursor := destination
+    while cursor != origin:
+        cursor = String(prev[cursor])
+        path.push_front(cursor)
+
+    var total_distance := 0
+    var danger_sum := 0.0
+    var max_danger := 1
+    var wealth_sum := 0.0
+    var wealth_weight := 0.0
+    for i in range(path.size() - 1):
+        var edge := PoliticalWorld.direct_route(political_world, path[i], path[i + 1])
+        var edge_distance := maxi(1, int(edge.get("distance", 1)))
+        total_distance += edge_distance
+        danger_sum += float(edge.get("danger", 1))
+        max_danger = maxi(max_danger, int(edge.get("danger", 1)))
+        wealth_sum += float(edge.get("wealth", 1)) * float(edge_distance)
+        wealth_weight += float(edge_distance)
+    var avg_danger := danger_sum / maxf(1.0, float(path.size() - 1))
+    return {
+        "distance": total_distance,
+        "danger": clampi(int(round(avg_danger * 0.7 + float(max_danger) * 0.3)), 1, 5),
+        "wealth": clampi(int(round(wealth_sum / maxf(1.0, wealth_weight))), 1, 5),
+        "path": path,
+        "hops": path.size() - 1,
+        "direct": path.size() == 2
+    }
+
 func _other_planets(origin: String) -> Array[String]:
     var result: Array[String] = []
     for planet in planet_names:
@@ -2100,15 +2192,25 @@ func _contract_target_matches(destination: String) -> bool:
 func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) -> int:
     return clampi(1 + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
 
-func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0) -> float:
-    # Route length controls travel time. Political danger and contract pressure do not lengthen the lane.
-    return clampf(14.0 + float(maxi(1, distance)) * 8.0, 18.0, 62.0)
+func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0, variance: float = 1.0) -> float:
+    # Length establishes the base time, bounded randomness gives each flight a
+    # little uncertainty, and ship-speed upgrades reduce the final duration.
+    # Danger and contract difficulty still do not lengthen the lane.
+    var base := clampf(7.0 + float(maxi(1, distance)) * 3.5, 10.0, 28.0)
+    var speed_factor := 1.0 + float(research_ship_speed) * 0.025
+    return clampf((base * clampf(variance, ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX)) / speed_factor, 8.0, ROUTE_TIME_MAX)
 
 func _start_route(destination: String) -> bool:
     if destination == current_planet or not planet_names.has(destination):
         return false
     var spec := _direct_route_spec(current_planet, destination)
     if spec.is_empty():
+        return false
+    var jump_distance := int(spec.get("distance", 999))
+    if jump_distance > _jump_range():
+        return false
+    var fuel_required := _fuel_required_for_jump(jump_distance)
+    if ship_fuel < fuel_required:
         return false
     var contract_difficulty := 0
     if _contract_target_matches(destination):
@@ -2118,7 +2220,9 @@ func _start_route(destination: String) -> bool:
     route_distance = int(spec.distance)
     route_danger = int(spec.danger)
     route_wealth = clampi(int(spec.get("wealth", 1)), 1, 5)
-    route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty)
+    var route_variance := rng.randf_range(ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX)
+    route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty, route_variance)
+    ship_fuel = maxi(0, ship_fuel - fuel_required)
     _start_game()
     level = _route_level_for(route_distance, route_danger, contract_difficulty)
     route_active = true
@@ -3350,7 +3454,7 @@ func _handle_hub_tap(pos: Vector2) -> void:
 func _next_hop_toward(destination: String) -> String:
     if destination == current_planet:
         return ""
-    var spec := _route_spec(current_planet, destination)
+    var spec := _jump_route_spec(current_planet, destination)
     var path: Array = spec.get("path", [])
     if path.size() < 2:
         return ""
