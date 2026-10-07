@@ -2036,8 +2036,11 @@ func _best_bounty_profiles(profiles: Array, count: int) -> Array:
     var ranked: Array = []
     for profile_variant in profiles:
         var profile: Dictionary = profile_variant.duplicate(true)
-        var spec: Dictionary = profile.spec
-        profile["bounty_score"] = float(profile.get("pirate_exposure", 0.0)) * 1000.0 + float(spec.get("danger", 1)) * 40.0 + rng.randf_range(0.0, 25.0)
+        var jump_spec := _jump_route_spec(current_planet, String(profile.get("destination", "")))
+        if jump_spec.get("path", []).is_empty():
+            continue
+        profile["jump_spec"] = jump_spec
+        profile["bounty_score"] = float(profile.get("pirate_exposure", 0.0)) * 1000.0 + float(jump_spec.get("danger", 1)) * 40.0 + float(jump_spec.get("distance", 1)) * 12.0 + rng.randf_range(0.0, 25.0)
         ranked.append(profile)
     ranked.sort_custom(func(a, b): return float(a.get("bounty_score", 0.0)) > float(b.get("bounty_score", 0.0)))
     var result: Array = []
@@ -2050,7 +2053,9 @@ func _best_bounty_profiles(profiles: Array, count: int) -> Array:
     return result
 
 func _contract_reward_breakdown(kind: String, origin: String, destination: String, commodity: String = "", smuggling: bool = false) -> Dictionary:
-    var spec := _route_spec(origin, destination)
+    var spec := _jump_route_spec(origin, destination)
+    if spec.get("path", []).is_empty():
+        spec = _route_spec(origin, destination)
     var danger := int(spec.get("danger", 1))
     var distance := int(spec.get("distance", 1))
     var pirate_exposure := _route_pirate_exposure(origin, destination)
@@ -2288,12 +2293,10 @@ func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) 
     return clampi(1 + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
 
 func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0, variance: float = 1.0) -> float:
-    # Length establishes the base time, bounded randomness gives each flight a
-    # little uncertainty, and ship-speed upgrades reduce the final duration.
-    # Danger and contract difficulty still do not lengthen the lane.
+    # Route length + bounded ±7% variation sets the baseline. Ship speed
+    # reduces real wall-clock travel through _ship_speed_multiplier().
     var base := clampf(7.0 + float(maxi(1, distance)) * 3.5, 10.0, 28.0)
-    var speed_factor := 1.0 + float(research_ship_speed) * 0.025
-    return clampf((base * clampf(variance, ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX)) / speed_factor, 8.0, ROUTE_TIME_MAX)
+    return clampf(base * clampf(variance, ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX), 8.0, ROUTE_TIME_MAX)
 
 func _start_route(destination: String) -> bool:
     if destination == current_planet or not planet_names.has(destination):
@@ -3418,13 +3421,14 @@ func _system_route_pairs() -> Array:
 func _default_travel_selection() -> String:
     if not active_contract.is_empty():
         var contract_dest := String(active_contract.get("destination", ""))
-        if planet_names.has(contract_dest) and contract_dest != current_planet:
+        if planet_names.has(contract_dest) and contract_dest != current_planet and not _jump_route_spec(current_planet, contract_dest).get("path", []).is_empty():
             return contract_dest
-    var neighbors := PoliticalWorld.neighbors(political_world, current_planet)
-    if not neighbors.is_empty():
-        return neighbors[0]
+    for neighbor in PoliticalWorld.neighbors(political_world, current_planet):
+        var edge := PoliticalWorld.direct_route(political_world, current_planet, neighbor)
+        if int(edge.get("distance", 999)) <= _jump_range():
+            return neighbor
     for planet in planet_names:
-        if planet != current_planet:
+        if planet != current_planet and not _jump_route_spec(current_planet, planet).get("path", []).is_empty():
             return planet
     return current_planet
 
@@ -3809,7 +3813,7 @@ func _start_game() -> void:
     _clear_run_snapshot()
 
 func _ship_speed_multiplier() -> float:
-    return 0.72 + float(research_ship_speed) * 0.04
+    return 1.0 + float(research_ship_speed) * 0.04
 
 func _dash_distance() -> float:
     return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash) * 35.0)
