@@ -5825,44 +5825,64 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 
     if kind == 0:
         var rock := PackedVector2Array()
+        var inner_rock := PackedVector2Array()
         var angle := float(obj.get("angle", 0.0))
-        for i in 10:
-            var a := TAU * float(i) / 10.0 + angle
-            var wobble := 0.78 + 0.18 * sin(float(obj.id % 997) * 0.013 + float(i) * 2.17)
-            rock.append(p + Vector2(cos(a), sin(a)) * float(obj.r) * wobble)
-        draw_colored_polygon(rock, Color("6d7278"))
-        var rock_outline := rock.duplicate()
-        rock_outline.append(rock[0])
-        draw_polyline(rock_outline, Color("9ca2a8"), 2.0)
-        var crater_a := Vector2(cos(angle + 0.8), sin(angle + 0.8)) * float(obj.r) * 0.30
-        var crater_b := Vector2(cos(angle + 3.1), sin(angle + 3.1)) * float(obj.r) * 0.42
-        draw_circle(p + crater_a, float(obj.r) * 0.18, Color("44484d"))
-        draw_circle(p + crater_b, float(obj.r) * 0.12, Color("50545a"))
+        var rock_r := float(obj.r)
+        for i in 11:
+            var a := TAU * float(i) / 11.0 + angle
+            var wobble := 0.76 + 0.19 * sin(float(obj.id % 997) * 0.013 + float(i) * 2.17)
+            rock.append(p + Vector2(cos(a), sin(a)) * rock_r * wobble)
+            inner_rock.append(p + Vector2(cos(a), sin(a)) * rock_r * wobble * 0.76)
+        _draw_hull_panel(rock, Color("555b63"), Color("919aa4"))
+        draw_colored_polygon(inner_rock, Color("646a72"))
+        var light_dir := Vector2(-0.55, -0.82)
+        draw_arc(p + light_dir * rock_r * 0.08, rock_r * 0.84, -2.7, -0.25, 18, Color(0.78, 0.82, 0.86, 0.28), 2.0)
+        var crater_a := Vector2(cos(angle + 0.8), sin(angle + 0.8)) * rock_r * 0.30
+        var crater_b := Vector2(cos(angle + 3.1), sin(angle + 3.1)) * rock_r * 0.42
+        var crater_c := Vector2(cos(angle + 5.2), sin(angle + 5.2)) * rock_r * 0.24
+        draw_circle(p + crater_a, rock_r * 0.20, Color("373d43"))
+        draw_circle(p + crater_a + Vector2(-1.5, -1.5), rock_r * 0.12, Color("4a5057"))
+        draw_circle(p + crater_b, rock_r * 0.12, Color("3d434a"))
+        draw_circle(p + crater_c, rock_r * 0.08, Color("41484f"))
 
     elif kind == 1:
         var r := float(obj.r)
-        draw_circle(p, r + 5.0, Color(0.25, 0.55, 0.75, 0.10))
-        draw_rect(Rect2(p - Vector2(r, r), Vector2(r * 2.0, r * 2.0)), Color("526b7a"), true)
-        draw_rect(Rect2(p - Vector2(r - 4.0, r - 4.0), Vector2((r - 4.0) * 2.0, (r - 4.0) * 2.0)), Color("182630"), true)
-        draw_line(p + Vector2(-r, 0), p + Vector2(r, 0), Color("7894a3"), 2.0)
-        draw_circle(p, 4.0, Color("7bd7ff"))
+        var owner1 := String(obj.get("owner_faction", ""))
+        var accent1 := _faction_color(owner1) if not owner1.is_empty() else Color("71d8ff")
+        _draw_soft_glow(p, r + 4.0, accent1, 0.46)
+        var base_rect := Rect2(p - Vector2(r, r), Vector2(r * 2.0, r * 2.0))
+        draw_rect(base_rect, Color("25343e"), true)
+        draw_rect(base_rect, Color("7892a1"), false, 2.0)
+        draw_rect(Rect2(p - Vector2(r - 4.0, r - 4.0), Vector2((r - 4.0) * 2.0, (r - 4.0) * 2.0)), Color("111b22"), true)
+        draw_line(p + Vector2(-r + 3.0, -r * 0.45), p + Vector2(r - 3.0, -r * 0.45), accent1, 2.0)
+        draw_line(p + Vector2(-r + 3.0, r * 0.45), p + Vector2(r - 3.0, r * 0.45), accent1, 2.0)
+        for bolt in [Vector2(-0.62, -0.62), Vector2(0.62, -0.62), Vector2(-0.62, 0.62), Vector2(0.62, 0.62)]:
+            draw_circle(p + bolt * r, 1.8, Color("c8d4dc"))
+        draw_circle(p, 4.8, accent1)
+        draw_circle(p, 2.0, Color("eaffff"))
 
     elif kind == 2:
         var r2 := float(obj.r)
-        draw_circle(p, r2 + 7.0, Color(1.0, 0.66, 0.20, 0.12))
-        draw_colored_polygon(PackedVector2Array([
-            p + Vector2(0, -r2 * 1.25),
-            p + Vector2(r2 * 1.15, 0),
-            p + Vector2(0, r2 * 1.25),
-            p + Vector2(-r2 * 1.15, 0)
-        ]), Color("c27a24"))
-        draw_colored_polygon(PackedVector2Array([
-            p + Vector2(0, -r2 * 0.65),
-            p + Vector2(r2 * 0.58, 0),
-            p + Vector2(0, r2 * 0.65),
-            p + Vector2(-r2 * 0.58, 0)
-        ]), Color("332414"))
-        draw_circle(p, 4.0, Color("fff0a8"))
+        var owner2 := String(obj.get("owner_faction", ""))
+        var accent2 := _faction_color(owner2) if not owner2.is_empty() else Color("ffb347")
+        _draw_soft_glow(p, r2 + 6.0, accent2, 0.72)
+        var diamond := PackedVector2Array([
+            p + Vector2(0, -r2 * 1.30),
+            p + Vector2(r2 * 1.18, 0),
+            p + Vector2(0, r2 * 1.30),
+            p + Vector2(-r2 * 1.18, 0)
+        ])
+        _draw_hull_panel(diamond, Color("694322"), accent2)
+        var inner_diamond := PackedVector2Array([
+            p + Vector2(0, -r2 * 0.72),
+            p + Vector2(r2 * 0.64, 0),
+            p + Vector2(0, r2 * 0.72),
+            p + Vector2(-r2 * 0.64, 0)
+        ])
+        _draw_hull_panel(inner_diamond, Color("211b18"), Color(accent2.r, accent2.g, accent2.b, 0.55))
+        draw_line(p + Vector2(-r2 * 0.86, 0), p + Vector2(r2 * 0.86, 0), Color(1.0, 0.82, 0.42, 0.42), 2.0)
+        draw_circle(p, 5.0, accent2)
+        draw_circle(p, 2.0, Color("fff9d9"))
 
     elif kind == 3:
         var r3 := float(obj.r)
