@@ -917,8 +917,11 @@ func _faction_tag(faction_id: String) -> String:
 func _faction_map_status_line(faction_id: String) -> String:
     var faction := PoliticalWorld.faction_record(political_world, faction_id)
     var state := _faction_crime_state(faction_id)
-    return "%s  R%+d %s  H%d %s" % [
-        _short_map_label(String(faction.get("name", faction_id)).to_upper(), 12),
+    var war := PoliticalWorld.active_war_for_faction(political_world, faction_id)
+    var war_tag := " WAR" if not war.is_empty() else ""
+    return "%s%s  R%+d %s  H%d %s" % [
+        _short_map_label(String(faction.get("name", faction_id)).to_upper(), 10),
+        war_tag,
         int(state.get("relation", 0)),
         String(state.get("relation_label", "NEUTRAL")),
         int(state.get("heat", 0)),
@@ -6008,6 +6011,7 @@ func _draw_travel_menu() -> void:
     var next_hop := ""
     if selected == current_planet:
         _text("DOCKED HERE", Vector2(126.0, 648.0), 12, Color("ffd166"))
+        _text("SPECIALTY %s" % _short_map_label(_planet_specialty(selected).to_upper(), 18), Vector2(126.0, 663.0), 8, Color("ffd166"))
         _text(_planet_law_summary(selected), Vector2(126.0, 674.0), 8, Color("bdeef4"))
         for status_index in range(status_lines.size()):
             if status_index >= 2:
@@ -6025,7 +6029,7 @@ func _draw_travel_menu() -> void:
         _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 646.0), 9, _system_route_color(int(selected_spec.danger)))
         _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 662.0), 9, Color("8ea9b8"))
         _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 678.0), 9, Color("ffd166"))
-        _text(_planet_law_summary(selected), Vector2(126.0, 697.0), 7, Color("bdeef4"))
+        _text("SPEC %s  •  %s" % [_short_map_label(_planet_specialty(selected).to_upper(), 12), _planet_law_summary(selected)], Vector2(126.0, 697.0), 7, Color("bdeef4"))
         for status_index in range(status_lines.size()):
             if status_index >= 2:
                 break
