@@ -223,7 +223,7 @@ Destroying faction enforcement has additional consequences:
 
 Faction ships use their superpower color; pirate ships use a distinct pirate treatment.
 
-Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, station splits, pickups, shields, hit points, and procedural SFX remain unchanged.
+Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, pickups, shields, hit points, and procedural SFX remain unchanged. **Privateer travel no longer has station/lane splits:** flights are one continuous open field from departure to arrival.
 
 ### Random police encounters and cargo scans
 
