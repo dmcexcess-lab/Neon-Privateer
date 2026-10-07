@@ -76,6 +76,12 @@ const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
 const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
 const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
+const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
+const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 590.0, 342.0, 140.0)
+const SYSTEM_MAP_BACK_RECT := Rect2(24.0, 756.0, 158.0, 54.0)
+const SYSTEM_FLY_RECT := Rect2(208.0, 756.0, 158.0, 54.0)
+const SYSTEM_STAR_POS := Vector2(195.0, 350.0)
+const SYSTEM_PLANET_HIT_SIZE := 82.0
 const CARGO_CAPACITY_BASE := 8
 const PASSENGER_CAPACITY_BASE := 2
 const DASH_COOLDOWN := 2.4
@@ -153,6 +159,7 @@ var hub_open := false
 var market_open := false
 var contracts_open := false
 var travel_open := false
+var travel_selected_planet := ""
 var current_planet := "Aster"
 var destination_planet := ""
 var route_origin := ""
@@ -1154,8 +1161,60 @@ func _handle_career_slots_tap(pos: Vector2) -> void:
             _load_career(slot)
             return
 
-func _travel_row_rect(index: int) -> Rect2:
-    return Rect2(30.0, 176.0 + float(index) * 132.0, 330.0, 104.0)
+func _system_planet_position(planet: String) -> Vector2:
+    match planet:
+        "Aster":
+            return Vector2(195.0, 188.0)
+        "Cinder":
+            return Vector2(308.0, 300.0)
+        "Vesper":
+            return Vector2(82.0, 426.0)
+        "Helix":
+            return Vector2(268.0, 518.0)
+    return SYSTEM_STAR_POS
+
+func _system_planet_hit_rect(planet: String) -> Rect2:
+    var center := _system_planet_position(planet)
+    return Rect2(center - Vector2.ONE * (SYSTEM_PLANET_HIT_SIZE * 0.5), Vector2.ONE * SYSTEM_PLANET_HIT_SIZE)
+
+func _system_route_pairs() -> Array:
+    return [
+        ["Aster", "Cinder"],
+        ["Aster", "Vesper"],
+        ["Aster", "Helix"],
+        ["Cinder", "Vesper"],
+        ["Cinder", "Helix"],
+        ["Vesper", "Helix"]
+    ]
+
+func _default_travel_selection() -> String:
+    if not active_contract.is_empty():
+        var contract_dest := String(active_contract.get("destination", ""))
+        if planet_names.has(contract_dest) and contract_dest != current_planet:
+            return contract_dest
+    for planet in planet_names:
+        if planet != current_planet:
+            return planet
+    return current_planet
+
+func _set_travel_selection(planet: String) -> bool:
+    if not planet_names.has(planet):
+        return false
+    travel_selected_planet = planet
+    queue_redraw()
+    return true
+
+func _system_route_color(danger: int) -> Color:
+    match danger:
+        1:
+            return Color("6bffb0")
+        2:
+            return Color("77f7ff")
+        3:
+            return Color("ffb347")
+        _:
+            return Color("ff6687")
+
 
 func _market_buy_rect(index: int) -> Rect2:
     return Rect2(28.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
@@ -1168,6 +1227,7 @@ func _contract_row_rect(index: int) -> Rect2:
 
 func _handle_hub_tap(pos: Vector2) -> void:
     if HUB_TRAVEL_RECT.has_point(pos):
+        travel_selected_planet = _default_travel_selection()
         travel_open = true
         hub_open = false
     elif HUB_MARKET_RECT.has_point(pos):
@@ -1185,16 +1245,22 @@ func _handle_hub_tap(pos: Vector2) -> void:
     queue_redraw()
 
 func _handle_travel_tap(pos: Vector2) -> void:
-    if SUBMENU_BACK_RECT.has_point(pos):
+    if SYSTEM_MAP_BACK_RECT.has_point(pos):
         travel_open = false
         hub_open = true
+        travel_selected_planet = ""
         queue_redraw()
         return
-    var destinations := _other_planets(current_planet)
-    for i in destinations.size():
-        if _travel_row_rect(i).has_point(pos):
-            _start_route(destinations[i])
+
+    for planet in planet_names:
+        if _system_planet_hit_rect(planet).has_point(pos):
+            _set_travel_selection(planet)
             return
+
+    if SYSTEM_FLY_RECT.has_point(pos):
+        if planet_names.has(travel_selected_planet) and travel_selected_planet != current_planet:
+            _start_route(travel_selected_planet)
+        return
 
 func _handle_market_tap(pos: Vector2) -> void:
     if SUBMENU_BACK_RECT.has_point(pos):
@@ -3347,29 +3413,103 @@ func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SUBMENU_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), SUBMENU_BACK_RECT.position.x, SUBMENU_BACK_RECT.end.x)
 func _draw_travel_menu() -> void:
-    _draw_menu_art(ART_BG_OPS, 0.61)
-    _draw_menu_panel(Rect2(20.0, 18.0, 350.0, 116.0), 0.72)
-    _draw_planet_art(current_planet, Rect2(294.0, 28.0, 76.0, 76.0), 0.96)
-    _text("STAR ROUTES", Vector2(36, 64), 30, Color("77f7ff"))
-    _text("FROM %s" % current_planet, Vector2(38, 103), 16, Color("bdeef4"))
+    _draw_menu_art(ART_BG_OPS, 0.76)
+    _draw_menu_panel(Rect2(16.0, 14.0, 358.0, 78.0), 0.76)
+    _text_center("SYSTEM MAP", 52.0, 29, Color("77f7ff"), 24.0, 366.0)
+    _text_center("CURRENT: %s" % current_planet.to_upper(), 78.0, 13, Color("bdeef4"), 24.0, 366.0)
 
-    var destinations := _other_planets(current_planet)
-    for i in destinations.size():
-        var dest := destinations[i]
-        var spec := _route_spec(current_planet, dest)
-        var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(dest) else 0
-        var effective_level := _route_level_for(int(spec.distance), int(spec.danger), contract_diff)
-        var duration := _route_duration_for(int(spec.distance), int(spec.danger), contract_diff)
-        var rect := _travel_row_rect(i)
-        draw_rect(rect, Color(0.025, 0.07, 0.10, 0.90), true)
-        draw_rect(rect, Color("6bffb0") if _contract_target_matches(dest) else Color("465f72"), false, 2.0)
-        _draw_planet_art(dest, Rect2(rect.end.x - 78.0, rect.position.y + 14.0, 70.0, 70.0), 0.98)
-        _text(dest, rect.position + Vector2(14, 28), 21, Color("f0fbff"))
-        _text("DIST %d   DANGER %d" % [int(spec.distance), int(spec.danger)], rect.position + Vector2(14, 55), 13, Color("8ea9b8"))
-        _text("FLIGHT %ds   L%d" % [int(duration), effective_level], rect.position + Vector2(14, 80), 13, Color("ffd166"))
-        if _contract_target_matches(dest):
-            _text("CONTRACT", rect.position + Vector2(184, 28), 12, Color("6bffb0"))
-    _draw_submenu_back()
+    # Dark navigation glass over the generated operations-room art.
+    draw_rect(SYSTEM_MAP_RECT, Color(0.005, 0.015, 0.035, 0.82), true)
+    draw_rect(SYSTEM_MAP_RECT, Color(0.25, 0.78, 0.96, 0.26), false, 1.5)
+
+    # Orbital guide rings make this read as a star system rather than a route list.
+    for radius in [72.0, 126.0, 182.0]:
+        draw_arc(SYSTEM_STAR_POS, radius, 0.0, TAU, 72, Color(0.32, 0.66, 0.86, 0.13), 1.0, true)
+
+    # System primary.
+    draw_circle(SYSTEM_STAR_POS, 31.0, Color(1.0, 0.68, 0.20, 0.07))
+    draw_circle(SYSTEM_STAR_POS, 21.0, Color(1.0, 0.73, 0.26, 0.14))
+    draw_circle(SYSTEM_STAR_POS, 12.0, Color("ffd166"))
+    draw_circle(SYSTEM_STAR_POS, 6.0, Color("fff4c2"))
+
+    # Every physical route in the current game is represented on the map.
+    for pair in _system_route_pairs():
+        var origin := String(pair[0])
+        var dest := String(pair[1])
+        var spec := _route_spec(origin, dest)
+        var a := _system_planet_position(origin)
+        var b := _system_planet_position(dest)
+        var danger := int(spec.danger)
+        var route_color := _system_route_color(danger)
+        var selected_route := travel_selected_planet != "" and (
+            (origin == current_planet and dest == travel_selected_planet) or
+            (dest == current_planet and origin == travel_selected_planet)
+        )
+        var contract_route := not active_contract.is_empty() and (
+            (origin == current_planet and dest == String(active_contract.get("destination", ""))) or
+            (dest == current_planet and origin == String(active_contract.get("destination", "")))
+        )
+        draw_line(a, b, Color(0.01, 0.02, 0.04, 0.88), 6.0 if selected_route else 4.0, true)
+        var alpha := 0.92 if selected_route else (0.70 if contract_route else 0.42)
+        var width := 4.0 if selected_route else (3.0 if contract_route else 1.7 + float(danger) * 0.20)
+        var final_color := Color("6bffb0") if contract_route else route_color
+        draw_line(a, b, Color(final_color.r, final_color.g, final_color.b, alpha), width, true)
+
+    # Planets are actual map nodes using their generated portraits.
+    for planet in planet_names:
+        var center := _system_planet_position(planet)
+        var is_current := planet == current_planet
+        var is_selected := planet == travel_selected_planet
+        var is_contract := _contract_target_matches(planet)
+        var portrait_size := 62.0 if is_selected else 54.0
+        var portrait_rect := Rect2(center - Vector2.ONE * (portrait_size * 0.5), Vector2.ONE * portrait_size)
+
+        if is_selected:
+            draw_circle(center, 41.0, Color(0.47, 0.97, 1.0, 0.12))
+            draw_arc(center, 39.0, 0.0, TAU, 40, Color("77f7ff"), 2.5, true)
+        if is_current:
+            draw_arc(center, 34.0, 0.0, TAU, 40, Color("ffd166"), 3.0, true)
+        if is_contract:
+            draw_arc(center, 45.0, 0.0, TAU, 40, Color("6bffb0"), 2.0, true)
+
+        _draw_planet_art(planet, portrait_rect, 1.0)
+
+        var label_color := Color("ffd166") if is_current else (Color("6bffb0") if is_contract else Color("f0fbff"))
+        var label_y := center.y + 43.0
+        _text_center(planet.to_upper(), label_y, 12, label_color, center.x - 58.0, center.x + 58.0)
+        if is_current:
+            _text_center("YOU", label_y + 15.0, 10, Color("ffd166"), center.x - 44.0, center.x + 44.0)
+        elif is_contract:
+            _text_center("CONTRACT", label_y + 15.0, 9, Color("6bffb0"), center.x - 48.0, center.x + 48.0)
+
+    # Selection card is the only place route numbers are repeated.
+    _draw_menu_panel(SYSTEM_ROUTE_INFO_RECT, 0.88, Color(0.35, 0.85, 1.0, 0.34))
+    var selected := travel_selected_planet if planet_names.has(travel_selected_planet) else current_planet
+    _draw_planet_art(selected, Rect2(38.0, 607.0, 84.0, 82.0), 1.0)
+    _text(selected.to_upper(), Vector2(138.0, 620.0), 21, Color("f0fbff"))
+
+    if selected == current_planet:
+        _text("DOCKED HERE", Vector2(138.0, 650.0), 14, Color("ffd166"))
+        _text("SELECT ANOTHER WORLD", Vector2(138.0, 678.0), 12, Color("8ea9b8"))
+    else:
+        var selected_spec := _route_spec(current_planet, selected)
+        var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
+        var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
+        var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
+        _text("DIST %d   DANGER %d" % [int(selected_spec.distance), int(selected_spec.danger)], Vector2(138.0, 648.0), 13, _system_route_color(int(selected_spec.danger)))
+        _text("FLIGHT %ds   L%d" % [int(selected_duration), selected_level], Vector2(138.0, 674.0), 13, Color("ffd166"))
+        if _contract_target_matches(selected):
+            _text("ACTIVE CONTRACT", Vector2(138.0, 700.0), 11, Color("6bffb0"))
+
+    draw_rect(SYSTEM_MAP_BACK_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
+    draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
+    _text_center("BACK", SYSTEM_MAP_BACK_RECT.position.y + 35.0, 18, Color("f0fbff"), SYSTEM_MAP_BACK_RECT.position.x, SYSTEM_MAP_BACK_RECT.end.x)
+
+    var can_fly := planet_names.has(selected) and selected != current_planet
+    draw_rect(SYSTEM_FLY_RECT, Color(0.04, 0.18, 0.15, 0.96) if can_fly else Color(0.05, 0.06, 0.08, 0.96), true)
+    draw_rect(SYSTEM_FLY_RECT, Color("6bffb0") if can_fly else Color("46515c"), false, 2.5)
+    _text_center("FLY", SYSTEM_FLY_RECT.position.y + 35.0, 19, Color("f0fbff") if can_fly else Color("68737d"), SYSTEM_FLY_RECT.position.x, SYSTEM_FLY_RECT.end.x)
+
 func _draw_market_menu() -> void:
     _draw_menu_art(ART_BG_MARKET, 0.64)
     _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 108.0), 0.74)
