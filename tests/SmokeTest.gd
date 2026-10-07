@@ -617,10 +617,11 @@ func _initialize() -> void:
     for route in routes:
         for segment in route.segments:
             var segment_state := String(segment.state)
-            if pirate_route.is_empty() and (segment_state == "CONTESTED" or segment_state == "UNCONTROLLED"):
+            var segment_span: float = float(segment.end_t) - float(segment.start_t)
+            if pirate_route.is_empty() and segment_span >= 0.03 and (segment_state == "CONTESTED" or segment_state == "UNCONTROLLED"):
                 pirate_route = route
                 pirate_segment = segment
-            if controlled_route.is_empty() and (segment_state == "CORE" or segment_state == "CONTROLLED"):
+            if controlled_route.is_empty() and segment_span >= 0.03 and (segment_state == "CORE" or segment_state == "CONTROLLED"):
                 var segment_faction := String(segment.get("faction_id", segment.get("strongest_faction_id", "")))
                 if not segment_faction.is_empty():
                     controlled_route = route
