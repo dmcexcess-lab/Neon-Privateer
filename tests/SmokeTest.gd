@@ -1856,24 +1856,35 @@ func _initialize() -> void:
         _fail("crime-schema upgrade did not persist schema version")
         return
 
-    # Career slots remain isolated under generated worlds.
+    # Career slots remain isolated under generated worlds, including bank/currency state.
     scene.research_credits = 4321
+    scene.bank_balance = 8765
     scene.cargo["Grain"] = 2
+    var slot_one_currency: String = String(scene.political_world.factions[0].id)
+    scene.currency_holdings[slot_one_currency] = 3
     var slot_one_planet: String = String(scene.current_planet)
     scene._save_all_state()
     if not scene._create_new_career(2):
         _fail("could not create career slot 2")
         return
-    if scene.research_credits != 1200 or int(scene.cargo.get("Grain", 0)) != 0:
-        _fail("new career inherited credits/cargo")
+    if scene.research_credits != 1200 or scene.bank_balance != 0 or int(scene.cargo.get("Grain", 0)) != 0:
+        _fail("new career inherited cash/bank/cargo")
         return
+    for held_value in scene.currency_holdings.values():
+        if int(held_value) != 0:
+            _fail("new career inherited faction-currency position")
+            return
     scene.research_credits = 2222
+    scene.bank_balance = 333
     scene._save_all_state()
     if not scene._load_career(1):
         _fail("could not reload career slot 1")
         return
-    if scene.research_credits != 4321 or scene.current_planet != slot_one_planet or int(scene.cargo.get("Grain", 0)) != 2:
-        _fail("career slot 1 did not restore isolated generated state")
+    if scene.research_credits != 4321 or scene.bank_balance != 8765 or scene.current_planet != slot_one_planet or int(scene.cargo.get("Grain", 0)) != 2:
+        _fail("career slot 1 did not restore isolated cash/bank/cargo state")
+        return
+    if int(scene.currency_holdings.get(slot_one_currency, 0)) != 3:
+        _fail("career slot 1 did not restore faction-currency position")
         return
 
     # Legacy four-world world file migrates once to schema 2 and matching archetype.
@@ -1900,13 +1911,25 @@ func _initialize() -> void:
     if scene._planet_type(scene.current_planet) != "VOLCANIC":
         _fail("legacy Cinder location did not migrate to VOLCANIC world")
         return
-    if int(scene.cargo.get("Small Arms", -1)) != 0 or int(scene.cargo.get("Stims", -1)) != 0:
-        _fail("legacy five-commodity cargo did not gain zeroed restricted commodities")
+    if int(scene.cargo.get("Grain", -1)) != 1 or int(scene.cargo.get("Small Arms", -1)) != 0 or int(scene.cargo.get("Stims", -1)) != 0:
+        _fail("legacy seven-commodity cargo did not map into economy schema 3")
         return
-    for migrated_planet in scene.planet_names:
-        if not scene.markets[migrated_planet].has("Small Arms") or not scene.markets[migrated_planet].has("Stims"):
-            _fail("legacy market migration did not add restricted commodities")
+    for legacy_key in scene.LEGACY_COMMODITY_MAP.keys():
+        if scene.cargo.has(legacy_key):
+            _fail("legacy cargo key survived economy-3 migration: " + String(legacy_key))
             return
+    for migrated_planet in scene.planet_names:
+        if scene.markets[migrated_planet].size() != 24:
+            _fail("legacy market migration did not produce exactly 24 active goods")
+            return
+        for commodity in scene.commodity_names:
+            if not scene.markets[migrated_planet].has(commodity):
+                _fail("legacy market migration missing " + commodity)
+                return
+        for legacy_key in scene.LEGACY_COMMODITY_MAP.keys():
+            if scene.markets[migrated_planet].has(legacy_key):
+                _fail("legacy market key survived economy-3 migration: " + String(legacy_key))
+                return
     var migrated_seed: int = int(scene.world_seed)
     var migrated_world_before: Dictionary = scene.political_world.duplicate(true)
     var migrated_signature: String = _world_signature(scene.political_world)
