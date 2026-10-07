@@ -2,7 +2,8 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS_PATH := "res://art/privateer_ui_atlas.b64"
+const PRIVATEER_UI_ATLAS_PATH := "res://art/privateer_ui_atlas_%d.b64"
+const PRIVATEER_UI_ATLAS_CHUNKS := 4
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -3255,12 +3256,15 @@ func _draw_career_slots_menu() -> void:
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _load_privateer_ui_art() -> void:
     privateer_ui_atlas = null
-    if not FileAccess.file_exists(PRIVATEER_UI_ATLAS_PATH):
-        return
-    var file := FileAccess.open(PRIVATEER_UI_ATLAS_PATH, FileAccess.READ)
-    if file == null:
-        return
-    var encoded := file.get_as_text().strip_edges()
+    var encoded := ""
+    for chunk_index in PRIVATEER_UI_ATLAS_CHUNKS:
+        var chunk_path := PRIVATEER_UI_ATLAS_PATH % chunk_index
+        if not FileAccess.file_exists(chunk_path):
+            return
+        var file := FileAccess.open(chunk_path, FileAccess.READ)
+        if file == null:
+            return
+        encoded += file.get_as_text().strip_edges()
     var bytes := Marshalls.base64_to_raw(encoded)
     if bytes.is_empty():
         return
