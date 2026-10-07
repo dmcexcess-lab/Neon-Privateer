@@ -198,6 +198,7 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
         capital_ids.append(best_id)
 
     var factions: Array = []
+    var used_faction_names: Dictionary = {}
     var law_offset: int = rng.randi_range(0, 3)
     for i in count:
         var combo: int = (i + law_offset) % 4
@@ -221,9 +222,13 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             760.0,
             1120.0
         )
+        var faction_name: String = String(FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()]) + " " + String(FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()])
+        if used_faction_names.has(faction_name):
+            faction_name += " %d" % (i + 1)
+        used_faction_names[faction_name] = true
         factions.append({
             "id": "f%02d" % i,
-            "name": String(FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()]) + " " + String(FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()]),
+            "name": faction_name,
             "color": FACTION_COLORS[i % FACTION_COLORS.size()],
             "capital_id": capital_id,
             "radius": influence_radius,
