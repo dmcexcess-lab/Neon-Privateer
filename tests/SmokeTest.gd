@@ -141,6 +141,11 @@ func _initialize() -> void:
         "_adjust_faction_relation", "_adjust_faction_heat",
         "_record_faction_crime", "_decay_all_faction_heat",
         "_planet_faction_ids", "_faction_status_summary", "_planet_crime_summary",
+        "_route_progress_fraction", "_current_flight_political_context",
+        "_container_owner_for_context", "_container_owner_for_current_space",
+        "_make_cargo_pickup", "_queue_asteroid_ore_drop",
+        "_basic_container_commodity", "_reinforced_container_commodity",
+        "_queue_container_loot", "_handle_container_break", "_collect_cargo_pickup",
         "_route_political_segment_at_progress", "_direct_route_spec",
         "_route_political_percentages", "_market_price", "_simulate_economy",
         "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
@@ -553,6 +558,266 @@ func _initialize() -> void:
         _fail("CENTER did not reset map view")
         return
     scene.active_contract = {}
+
+    # Slice 4: circles are asteroids; squares/diamonds are cargo containers.
+    if scene._kill_score(0) != 0 or scene._kill_score(1) != 0 or scene._kill_score(2) != 0:
+        _fail("asteroids/containers still award kill credits")
+        return
+    if scene._kill_score(3) <= 0 or scene._kill_score(4) <= 0:
+        _fail("ship/platform kill scoring regressed before their later slice")
+        return
+
+    var controlled_context := {
+        "state": "CONTROLLED",
+        "faction_id": primary_faction,
+        "strongest_faction_id": primary_faction,
+        "second_faction_id": ""
+    }
+    if scene._container_owner_for_context(controlled_context) != primary_faction:
+        _fail("controlled-space container did not inherit controlling faction")
+        return
+    var uncontrolled_context := {
+        "state": "UNCONTROLLED",
+        "faction_id": "",
+        "strongest_faction_id": "",
+        "second_faction_id": ""
+    }
+    if not scene._container_owner_for_context(uncontrolled_context).is_empty():
+        _fail("uncontrolled-space container should be unowned")
+        return
+    var contested_context := {
+        "state": "CONTESTED",
+        "faction_id": "",
+        "strongest_faction_id": primary_faction,
+        "second_faction_id": secondary_faction
+    }
+    scene.rng.seed = 991
+    var contested_owner: String = scene._container_owner_for_context(contested_context)
+    if contested_owner != primary_faction and contested_owner != secondary_faction:
+        _fail("contested container owner is not one of the claimant factions")
+        return
+
+    # Asteroid salvage is rare Ore and not generic kill loot.
+    scene.pending_drops.clear()
+    var asteroid_fixture := {
+        "id": 70001, "type": "hazard", "kind": 0,
+        "x": 190.0, "y": 200.0, "r": 20.0, "hard": false
+    }
+    if not scene._queue_asteroid_ore_drop(asteroid_fixture, 0.0):
+        _fail("forced asteroid salvage roll did not drop Ore")
+        return
+    if scene.pending_drops.size() != 1 or String(scene.pending_drops[0].type) != "cargo" or String(scene.pending_drops[0].commodity) != "Ore" or int(scene.pending_drops[0].quantity) != 1:
+        _fail("asteroid salvage payload is not one unit of Ore")
+        return
+    scene.pending_drops.clear()
+    if scene._queue_asteroid_ore_drop(asteroid_fixture, 0.99) or not scene.pending_drops.is_empty():
+        _fail("failed asteroid salvage roll still produced cargo")
+        return
+
+    # Basic crates produce one small random bundle; reinforced crates produce two larger premium bundles.
+    scene.rng.seed = 4421
+    scene.pending_drops.clear()
+    var square_fixture := {
+        "id": 70002, "type": "hazard", "kind": 1,
+        "x": 170.0, "y": 220.0, "r": 17.0, "hard": false,
+        "owner_faction": ""
+    }
+    var square_units: int = scene._queue_container_loot(square_fixture)
+    if scene.pending_drops.size() != 1 or square_units < 1 or square_units > 2:
+        _fail("basic container loot is not one small bundle")
+        return
+    if not scene.commodity_names.has(String(scene.pending_drops[0].commodity)):
+        _fail("basic container produced unknown commodity")
+        return
+
+    scene.rng.seed = 4421
+    scene.pending_drops.clear()
+    var diamond_fixture := {
+        "id": 70003, "type": "hazard", "kind": 2,
+        "x": 210.0, "y": 220.0, "r": 17.0, "hard": false,
+        "owner_faction": ""
+    }
+    var diamond_units: int = scene._queue_container_loot(diamond_fixture)
+    if scene.pending_drops.size() != 2 or diamond_units < 4 or diamond_units > 6 or diamond_units <= square_units:
+        _fail("reinforced container loot is not larger than basic-container loot")
+        return
+    var premium_goods := ["Electronics", "Arms", "Medicine", "Narcotics", "Fuel", "Ore"]
+    for loot in scene.pending_drops:
+        if not premium_goods.has(String(loot.commodity)):
+            _fail("reinforced container used non-premium loot table")
+            return
+
+    # Owned container destruction damages only the owner's relation, records an offense, and adds no heat.
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
+    scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
+    scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, -scene._faction_heat(secondary_faction), false)
+    var owner_record_before: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    var offenses_before: int = int(owner_record_before.get("offenses", 0))
+    scene.pending_drops.clear()
+    var owned_square := {
+        "id": 70004, "type": "hazard", "kind": 1,
+        "hp": 1.0, "max_hp": 4.0,
+        "x": 180.0, "y": 200.0, "r": 17.0, "hard": false,
+        "owner_faction": primary_faction
+    }
+    scene.score = 0
+    if not scene._apply_damage_to_hazard(owned_square, 5.0):
+        _fail("owned square did not break")
+        return
+    if scene.score != 0:
+        _fail("breaking a square still awarded combat score")
+        return
+    if scene._faction_relation(primary_faction) != -scene.BASIC_CONTAINER_RELATION_LOSS or scene._faction_heat(primary_faction) != 0:
+        _fail("owned square did not apply relation-only faction penalty")
+        return
+    var owner_record_after: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    if int(owner_record_after.get("offenses", 0)) != offenses_before + 1 or String(owner_record_after.get("last_offense", "")) != "container_theft":
+        _fail("owned square crime metadata was not recorded")
+        return
+    if scene._faction_relation(secondary_faction) != 0 or scene._faction_heat(secondary_faction) != 0:
+        _fail("owned-container penalty leaked to another faction")
+        return
+
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
+    scene.pending_drops.clear()
+    var owned_diamond := {
+        "id": 70005, "type": "hazard", "kind": 2,
+        "hp": 1.0, "max_hp": 12.0,
+        "x": 200.0, "y": 200.0, "r": 17.0, "hard": false,
+        "owner_faction": primary_faction
+    }
+    if not scene._apply_damage_to_hazard(owned_diamond, 20.0):
+        _fail("owned reinforced container did not break")
+        return
+    if scene._faction_relation(primary_faction) != -scene.REINFORCED_CONTAINER_RELATION_LOSS or scene._faction_heat(primary_faction) != 0:
+        _fail("reinforced container did not apply larger relation-only penalty")
+        return
+    if scene.pending_drops.size() != 2:
+        _fail("reinforced container did not release two commodity bundles")
+        return
+
+    # Unowned containers remain consequence-free.
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
+    var unowned_square := owned_square.duplicate(true)
+    unowned_square.hp = 1.0
+    unowned_square.owner_faction = ""
+    scene.pending_drops.clear()
+    scene._apply_damage_to_hazard(unowned_square, 5.0)
+    if scene._faction_relation(primary_faction) != 0 or scene._faction_heat(primary_faction) != 0:
+        _fail("unowned container changed faction state")
+        return
+
+    # Cargo pickups obey hold capacity.
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
+    var cargo_pickup: Dictionary = scene._make_cargo_pickup("Electronics", 3, scene.player_x, scene.player_y, false)
+    if scene._collect_cargo_pickup(cargo_pickup) != 3 or int(scene.cargo.Electronics) != 3 or int(cargo_pickup.quantity) != 0:
+        _fail("cargo pickup did not load available commodity units")
+        return
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
+    scene.cargo["Food"] = scene._cargo_capacity()
+    var full_pickup: Dictionary = scene._make_cargo_pickup("Ore", 2, scene.player_x, scene.player_y, false)
+    if scene._collect_cargo_pickup(full_pickup) != 0 or int(full_pickup.quantity) != 2:
+        _fail("full hold consumed cargo pickup")
+        return
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
+
+    # Containers have no self-propelled lateral motion and cannot trigger near-miss credits.
+    scene.playing = true
+    scene.invuln = 99.0
+    scene.player_x = 195.0
+    scene.player_y = scene.PLAYER_Y
+    scene.target_x = scene.player_x
+    scene.last_near_ids.clear()
+    scene.score = 0
+    var square_x := scene.player_x + 37.0
+    var moving_square := {
+        "id": 70006, "type": "hazard", "kind": 1,
+        "hp": 4.0, "max_hp": 4.0, "hard": false,
+        "x": square_x, "y": scene.player_y + 19.0,
+        "r": 17.0, "speed": 10.0, "drift": 80.0,
+        "shoot_clock": 999.0, "angle": 0.0, "spin": 0.0,
+        "lane_min": scene.LEFT, "lane_max": scene.RIGHT,
+        "owner_faction": ""
+    }
+    scene.objects = [moving_square]
+    scene._move_objects(0.01)
+    if scene.objects.is_empty() or absf(float(scene.objects[0].x) - square_x) > 0.001:
+        _fail("square container still has lateral movement")
+        return
+    if scene.score != 0:
+        _fail("square container triggered near-miss credits")
+        return
+
+    scene.last_near_ids.clear()
+    scene.score = 0
+    var moving_diamond := moving_square.duplicate(true)
+    moving_diamond.id = 70007
+    moving_diamond.kind = 2
+    moving_diamond.hp = 12.0
+    moving_diamond.max_hp = 12.0
+    moving_diamond.x = square_x
+    moving_diamond.drift = -80.0
+    scene.objects = [moving_diamond]
+    scene._move_objects(0.01)
+    if scene.objects.is_empty() or absf(float(scene.objects[0].x) - square_x) > 0.001:
+        _fail("diamond container still has lateral movement")
+        return
+    if scene.score != 0:
+        _fail("diamond container triggered near-miss credits")
+        return
+
+    # The equivalent asteroid pass still awards near-miss credits and asteroid destruction gives no kill credits.
+    scene.last_near_ids.clear()
+    scene.score = 0
+    var near_asteroid := moving_square.duplicate(true)
+    near_asteroid.id = 70008
+    near_asteroid.kind = 0
+    near_asteroid.hp = 3.0
+    near_asteroid.max_hp = 3.0
+    near_asteroid.x = square_x
+    near_asteroid.drift = 0.0
+    scene.objects = [near_asteroid]
+    scene._move_objects(0.01)
+    if scene.score <= 0:
+        _fail("asteroid no longer awards near-miss credits")
+        return
+
+    scene.pending_drops.clear()
+    scene.score = 0
+    var kill_asteroid := asteroid_fixture.duplicate(true)
+    kill_asteroid.hp = 1.0
+    kill_asteroid.max_hp = 3.0
+    scene.rng.seed = 7777
+    scene._apply_damage_to_hazard(kill_asteroid, 9.0)
+    if scene.score != 0:
+        _fail("destroyed asteroid still awarded kill credits")
+        return
+
+    # Reinforced containers are materially rarer than basic containers at the same route cap.
+    scene.route_active = true
+    scene.pirate_attack_active = false
+    scene.level = 5
+    scene.rng.seed = 81173
+    var square_count := 0
+    var diamond_count := 0
+    for sample_index in 2000:
+        var sampled_kind: int = scene._choose_enemy_kind(false)
+        if sampled_kind == 1:
+            square_count += 1
+        elif sampled_kind == 2:
+            diamond_count += 1
+    if diamond_count <= 0 or square_count <= diamond_count * 3:
+        _fail("reinforced containers are not substantially rarer than basic containers")
+        return
+    scene.route_active = false
+    scene.playing = false
+    scene.objects.clear()
+    scene.pending_drops.clear()
+    scene.score = 0
 
     # Save/reload must reproduce the exact political world.
     var world_before: Dictionary = scene.political_world.duplicate(true)
