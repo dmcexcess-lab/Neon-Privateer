@@ -53,7 +53,7 @@ Seven commodities are simulated:
 - Arms
 - Narcotics
 
-Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Industrial worlds are the strongest Arms producers; lush worlds are the strongest Narcotics producers. Prices continue to derive from stock scarcity, production/consumption pressure, base commodity value, and local production advantages.
+Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Industrial worlds are the strongest Arms producers; lush worlds are the strongest Narcotics producers. Prices continue to derive from stock scarcity, production/consumption pressure, base commodity value, local production advantages, and—only for restricted commodities—the destination's legal status. Illegal Arms/Narcotics markets apply a 30% black-market multiplier; mixed-law markets apply a smaller 14% multiplier.
 
 **Arms** and **Narcotics** are politically restricted commodities. Every superpower independently decides whether each is legal. CORE/CONTROLLED markets show that controlling faction's law, CONTESTED worlds show mixed/shared claimant law, and UNCONTROLLED worlds report them as unregulated. The selected planet on the system map shows the same law summary.
 
@@ -84,27 +84,37 @@ Slice 3 established the persistent criminal-state authority. Later encounter/enf
 
 ## Contracts
 
-The contract board regenerates at each arrival and includes:
+The contract board regenerates at each arrival and is now integrated with the generated economy and political map.
 
-### Special delivery
+Every contract stores its origin, destination, issuer, route pirate exposure, payout breakdown, relation reward, and political role. Legitimate faction jobs improve relation with the issuing faction when completed; underworld smuggling jobs do not grant faction reputation.
 
-- Reserves one cargo slot.
-- Pays when the player successfully reaches the specified destination.
-- Difficulty increases route pressure.
+### Freight / smuggling
+
+- Delivery contracts reserve one cargo slot and name the actual commodity being moved.
+- Legal freight selection follows market demand and destination legality rather than choosing arbitrary cargo.
+- Restricted commodities sold in illegal markets carry a black-market price premium; mixed-law destinations have a smaller premium.
+- When a destination bans Arms or Narcotics, the board can generate an **UNDERWORLD / SMUGGLE** delivery with a separate illegal-cargo premium.
+- Smuggling contract cargo is real contraband for police scans. If a patrol faction bans that commodity and completes a scan, the contract cargo is confiscated, the contract fails, and normal contraband fine/relation/heat consequences apply.
+- Successful freight delivery adds one unit of the named commodity into the destination market stock.
 
 ### Passenger
 
-- Reserves one passenger berth.
-- Pays on successful arrival.
-- Passenger capacity is tracked separately from cargo.
+- Passenger contracts reserve one passenger berth.
+- The generator prefers politically meaningful destinations such as rival-faction, contested, or uncontrolled worlds.
+- Cross-faction passenger work receives a political payout premium.
+- Legitimate passenger completion improves issuer relation.
 
 ### Bounty
 
-- Requires an armed starting ship.
-- The flight length/difficulty combines route risk with contract difficulty.
-- At the destination threshold, the route transitions into a boss fight.
-- The current first boss implementation is a heavy missile-firing pentagon with health and fire rate scaled by bounty difficulty.
-- The contract pays only after the boss is destroyed.
+- Bounties require an armed starting ship.
+- The generator prefers destinations whose route has the greatest CONTESTED/UNCONTROLLED exposure.
+- Pirate-region exposure directly raises bounty pay rather than merely raising an abstract difficulty value.
+- At the destination threshold, the route transitions into the existing boss fight.
+- The contract pays only after the boss is destroyed, and legitimate completion improves issuer relation.
+
+### Risk premiums
+
+CONTESTED + UNCONTROLLED route coverage is the authoritative **pirate exposure** percentage for contracts. It produces an explicit payout premium for freight, passengers, and especially bounties. Route danger still controls asteroid density and route length still controls travel time; neither substitutes for the political risk premium.
 
 ## Generated Privateer menu art
 
@@ -216,7 +226,7 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, crime schema 1, and enforcement schema 1, all 32 generated planets, factions, capitals, influence parameters, faction level/law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, crime schema 1, enforcement schema 1, and contract schema 1, all 32 generated planets, factions, capitals, influence parameters, faction level/law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, politically/economically annotated contracts, passengers, and economy tick.
 
 Generated political state is created once and never rerolled on reload. Existing generated careers missing route-wealth metadata derive it deterministically from their preserved capitals and route graph, without rerolling planets or lanes.
 
@@ -236,7 +246,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, legal/illegal market premiums, faction-aware contract generation, smuggling opportunities, pirate-exposure payout premiums, contract-schema migration/persistence, smuggling-cargo scan confiscation, contract-driven market stock and faction-relation effects, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
