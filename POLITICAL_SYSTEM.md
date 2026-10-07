@@ -52,19 +52,18 @@ Each superpower has:
 - player `relation`
 - `laws`
 
-Initial law fields:
+Current law state includes an item-level `grey_legal` map covering all 12 grey commodities. Each faction independently permits 0–4 goods in each of the three grey categories, so none/some/all configurations are valid. Legacy `arms_legal` / `narcotics_legal` fields remain only as economy-2 migration fallback.
 
-- `arms_legal`
-- `narcotics_legal`
-
-Slice 2 made these laws authoritative for commodity legality. The current production systems consume them for market/map indicators, black-market pricing, smuggling generation, police scans, confiscation, fines, and enforcement. Installed ship weapons are not governed by `arms_legal`; only the **Arms commodity** is.
+Installed ship weapons are not commodity law. The law system applies to physical grey-market cargo and contract cargo.
 
 ## Commodity legality
 
-Slice 2 adds two restricted commodities:
+Economy schema 3 divides goods into:
 
-- `Arms`
-- `Narcotics`
+- **12 Green/legal commodities:** four food, four metals, four medicines;
+- **12 Grey commodities:** four weapons, four narcotics, four entertainment goods.
+
+Green goods are always legal. Every grey good has independent faction legality.
 
 The authoritative law helpers are:
 
@@ -72,15 +71,15 @@ The authoritative law helpers are:
 - `faction_commodity_legal(world, faction_id, commodity)`
 - `commodity_legality_at(world, position, commodity)`
 
-Ordinary commodities are always reported as legal/unrestricted.
+Green commodities are always reported as legal/unrestricted.
 
-For restricted commodities:
+For grey commodities:
 
 - **CORE / CONTROLLED:** the controlling superpower's law applies.
 - **CONTESTED:** both meaningful claimant factions are consulted. If their laws disagree, status is `MIXED`; if they agree, the shared `LEGAL` or `ILLEGAL` result is returned.
 - **UNCONTROLLED:** status is `UNREGULATED`.
 
-This query remains the commodity-law authority. Police scans use the specific patrol faction's law directly rather than inferring enforcement from the generic contested-space label; Slice 9 uses the same result for black-market premiums and smuggling destinations.
+This query remains the commodity-law authority. Police scans use the specific patrol faction's item-level law directly rather than inferring enforcement from the generic contested-space label. The same query drives Grey-market labels, black-market premiums, and smuggling destinations.
 
 ## Faction reputation and criminal state
 
@@ -297,7 +296,7 @@ At each encounter opportunity:
 - route danger, contract difficulty, and player heat do not increase the probability of a police contact;
 - a failed roll schedules another later opportunity rather than forcing an encounter.
 
-The faction-level base police chance remains 19% at level 1 through 39% at level 5 before wealth scaling. Route wealth then multiplies that base so traffic-rich/core-adjacent lanes see more patrol traffic while poor backwater lanes see less. Opportunity timing remains randomized, so no route guarantees a patrol.
+The production police base chance is 16.5% at level 1 through 34.5% at level 5 before the 0.65x–1.35x route-wealth multiplier. Opportunity timing is randomized at 11–16 seconds while eligible, so no route guarantees a patrol.
 
 Pirate windows are also probabilistic rather than guaranteed when their territory is eligible. Route wealth scales pirate probability too, while CONTESTED/UNCONTROLLED political state remains the hard eligibility gate. Pirates are always hostile once an encounter starts.
 
@@ -313,9 +312,9 @@ A scan is a visible timed action. While it is active the HUD shows the remaining
 
 The scan uses the specific patrol faction's laws, not a generic regional legality label:
 
-- illegal Arms are contraband only if that faction bans Arms;
-- illegal Narcotics are contraband only if that faction bans Narcotics;
-- unrestricted commodities are never confiscated.
+- every carried grey good is checked independently;
+- only goods banned by that patrol faction are contraband;
+- Green-market food, metals, and medicines are never confiscated.
 
 If the scan completes with no contraband, it reports clear and changes no relation/heat.
 
@@ -323,7 +322,7 @@ If contraband is found:
 
 - all cargo illegal to that scanning faction is confiscated;
 - legal cargo is untouched;
-- a fine is charged from available credits;
+- a fine is charged from carried cash;
 - `contraband_scan` is recorded as the faction offense;
 - faction relation falls;
 - heat rises to at least the WANTED threshold;
@@ -470,7 +469,7 @@ The map consumes the same `political_context_at()` result used by gameplay. A ca
 
 The coarse field is intentional. It communicates control/borders on a phone-sized map without pretending the radial influence model creates perfect polygonal borders.
 
-The map also includes a faction/state legend. Selecting a planet exposes its jurisdiction, applicable Arms/Narcotics law, and the relevant faction relation/heat status. Contested worlds expose both claimant factions independently rather than collapsing them into one reputation record.
+The map also includes a faction/state legend. Selecting a planet exposes its jurisdiction, compact W/N/E grey-category permission counts, and the relevant faction relation/heat status. Contested worlds expose both claimant factions independently rather than collapsing them into one reputation record.
 
 Selected/contract routes render above the political field so path readability wins over decorative shading.
 
@@ -520,7 +519,7 @@ Legitimate jobs use the current world's primary faction as issuer when one exist
 The contract board is faction/economy aware:
 
 - legal freight prefers commodities with destination demand / favorable market spread while avoiding cargo illegal at that destination;
-- smuggling searches for Arms or Narcotics destinations where the destination law is explicitly ILLEGAL;
+- smuggling searches the 12 grey goods for destinations where the specific item is explicitly ILLEGAL;
 - passenger work prefers cross-faction, contested, or uncontrolled destinations so passenger contracts cross political geography;
 - bounties prefer routes with the greatest CONTESTED + UNCONTROLLED coverage.
 
@@ -544,7 +543,7 @@ Danger remains the asteroid-density axis. Distance remains the travel-time axis.
 
 ### Legal / illegal cargo premium
 
-Restricted-market price multipliers now reflect enforcement risk:
+Grey-market price multipliers reflect enforcement risk:
 
 - LEGAL / UNREGULATED: 1.00x;
 - MIXED: 1.14x;
@@ -558,7 +557,7 @@ Smuggling contracts receive an additional cargo premium on top of normal route p
 
 Delivery cargo still occupies one reserved cargo slot.
 
-If a delivery's named Arms/Narcotics commodity is illegal to a scanning patrol faction, that reserved contract cargo is part of the contraband manifest even though it is not stored in the player's ordinary cargo dictionary.
+If a delivery's named grey commodity is illegal to a scanning patrol faction, that reserved contract cargo is part of the contraband manifest even though it is not stored in the player's ordinary cargo dictionary.
 
 A completed illegal scan:
 
@@ -583,7 +582,7 @@ Successful freight also adds one unit of its named commodity to the destination 
 
 ### Contract schema
 
-Contract schema version 1 upgrades older saved contracts in place.
+Contract schema version **2** upgrades older saved contracts in place and migrates retired commodity IDs such as `Arms` to the corresponding economy-3 ID such as `Small Arms`.
 
 Legacy records keep their original ID, type, destination, difficulty, and reward while gaining safe defaults for origin, commodity, issuer, relation reward, pirate exposure, role, and payout-breakdown metadata. The political world and existing markets are not rerolled.
 
@@ -626,7 +625,7 @@ The terminal smoke suite generates 12 additional deterministic careers from fixe
 
 ### Phone/browser closure
 
-The production test also verifies the 390x844 portrait viewport, canvas-item stretch mode, all primary touch controls within the viewport, minimum 44px primary hit targets, seven-row market fit, five-row contract-board fit, and non-overlap of the system route card with BACK/FLY controls.
+The production test also verifies the 390x844 portrait viewport, canvas-item stretch mode, all primary touch controls within the viewport, minimum 44px primary hit targets, six-row paged Bank-market fit, five-row contract-board fit, and non-overlap of the system route card with BACK/FLY controls.
 
 The Web export remains single-thread compatible through the Godot Compatibility renderer and the CI deployment remains the browser acceptance path.
 
@@ -657,8 +656,10 @@ Career world saves persist:
 - faction records, laws, relation, heat, offense count, and last offense
 - generated route graph
 - current planet
-- market state for all seven commodities
-- cargo/contracts/passengers/economy state, including Slice 9 contract political/economic metadata
+- local market state for all 24 commodities
+- bank-interest cycle state
+- faction-currency holdings and market factors
+- cargo/contracts/passengers/economy state, including migrated contract commodity IDs
 
 Route political segmentation and route-wealth metadata are saved with the generated graph and can also be deterministically reproduced from the same world.
 
@@ -709,25 +710,41 @@ These APIs now drive:
 - smuggling legality and scan consequences
 
 
-## Slice 2 economy schema
+## Economy schema 3: Bank / Green / Grey / Currency
 
-Economy schema version **2** adds `Arms` and `Narcotics` to every generated market and cargo inventory.
+Economy schema **3** replaces the old seven-good catalog with 24 active commodity IDs.
 
-Existing five-commodity careers are upgraded idempotently on load:
+Green market:
 
-- missing cargo keys are added at zero;
-- every generated market receives missing commodity entries from its planet-type production profile;
-- existing stock for the original five commodities is preserved;
-- the upgraded economy schema is saved back to the career.
+- Food: Grain, Protein, Produce, Luxury Food
+- Metals: Iron, Copper, Titanium, Rare Alloys
+- Medicine: First Aid, Antibiotics, Vaccines, Regenerative Medicine
 
-Planet-type tendencies:
+Grey market:
 
-- **LUSH:** strong Food and Narcotics production; weak Arms.
-- **VOLCANIC:** strong Ore/Fuel and moderate Arms; weak Narcotics.
-- **FROZEN:** strong Medicine with modest Narcotics and weak Arms.
-- **INDUSTRIAL:** strong Electronics/Arms; weak Narcotics.
+- Weapons: Small Arms, Heavy Weapons, Explosives, Military Tech
+- Narcotics: Stims, Sedatives, Euphorics, Neurodust
+- Entertainment: Holovids, Sim Chips, VR Experiences, Unlicensed Media
 
-Market trading remains mechanically available even when a commodity is illegal. Later slices now consume that same law authority for scans/confiscation and, in Slice 9, for black-market price premiums plus smuggling-contract generation.
+Every item has a base price and volatility. Each local market persists stock, production, consumption, price factor, and volatility. The price factor mean-reverts while receiving bounded random movement; scarcity and planet specialization remain part of the final quote. While the Bank screen is open, an economy tick occurs every 10 seconds, enabling same-world day trading without a flight. Travel also advances the economy.
+
+The Bank exposes ACCOUNT / GREEN / GREY / CURRENCY. Carried cash uses the legacy `research_credits` code/save field for compatibility. Banked cash is a separate protected meta-save balance. Deposits/withdrawals currently move all available cash; banked money earns 3% once per successful completed flight; ship destruction wipes carried cash but not banked cash or faction-currency holdings.
+
+Faction currency instruments are generated for every live faction. Their base index derives from faction level, controlled-world footprint, and route wealth, then a persistent bounded market factor moves the live quote. Currency positions use no cargo capacity.
+
+### Economy-2 migration
+
+Retired IDs map deterministically:
+
+- Food -> Grain
+- Ore -> Iron
+- Medicine -> First Aid
+- Electronics -> Sim Chips
+- Fuel -> Titanium
+- Arms -> Small Arms
+- Narcotics -> Stims
+
+Cargo quantity and practical legacy stock are preserved through those mappings where possible. Old keys are then removed; every generated market ends with exactly 24 active goods. Existing faction geography is not rerolled. Missing item-level grey laws are generated deterministically from the preserved world seed/faction ID.
 
 
 ## Slice 3 crime schema
@@ -750,14 +767,7 @@ The Slice 3 fields are now consumed by patrol hostility, scans/fines/confiscatio
 
 Basic square containers are stationary laterally, use the normal commodity catalog, and release one small 1–2 unit bundle.
 
-Reinforced diamond containers are also stationary laterally, remain materially tougher/rarer, and release two 2–3 unit bundles from a higher-value table:
-
-- Electronics
-- Arms
-- Medicine
-- Narcotics
-- Fuel
-- Ore
+Reinforced diamond containers are also stationary laterally, remain materially tougher/rarer, and release two 2–3 unit bundles from a higher-value economy-3 table including advanced metals, medicines, weapons, narcotics, and entertainment goods. Asteroid salvage now yields one weighted metal unit (usually Iron/Copper, rarely Titanium/Rare Alloys).
 
 The player's forward travel still makes containers scroll through the arcade field; "stationary" means they have no self-propelled lateral pursuit/drift.
 
