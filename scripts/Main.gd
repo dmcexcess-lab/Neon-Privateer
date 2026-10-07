@@ -4854,14 +4854,7 @@ func _move_shots(delta: float) -> void:
         shot.x += float(shot.vx) * delta
         shot.y += float(shot.vy) * delta
 
-        var blocked := false
-        if lane_event_active:
-            var point := Vector2(shot.x, shot.y)
-            for barrier in _station_barrier_rects():
-                if barrier.has_point(point):
-                    blocked = true
-                    break
-        if not blocked and shot.y > -45.0 and shot.y < H + 40.0 and shot.x > -40.0 and shot.x < W + 40.0:
+        if shot.y > -45.0 and shot.y < H + 40.0 and shot.x > -40.0 and shot.x < W + 40.0:
             next.append(shot)
     shots = next
 
@@ -5000,16 +4993,6 @@ func _move_enemy_shots(delta: float) -> void:
 
         shot.x += float(shot.vx) * delta
         shot.y += float(shot.vy) * delta
-
-        var blocked := false
-        if lane_event_active:
-            var point := Vector2(float(shot.x), float(shot.y))
-            for barrier in _station_barrier_rects():
-                if barrier.has_point(point):
-                    blocked = true
-                    break
-        if blocked:
-            continue
 
         var radius := float(shot.get("r", ENEMY_SHOT_RADIUS))
         var dx := absf(float(shot.x) - player_x)
@@ -5404,8 +5387,6 @@ func _draw() -> void:
         var laser_x := player_x + offset.x
         draw_line(Vector2(laser_x, player_y - 20.0 + offset.y), Vector2(laser_x, 0.0), Color(0.65, 0.95, 1.0, 0.78), 2.0)
 
-    _draw_station(offset)
-
     for p in particles:
         var alpha: float = clampf(p.life / p.max, 0.0, 1.0)
         var pc: Color = p.color
@@ -5415,11 +5396,6 @@ func _draw() -> void:
     _draw_hud()
     _draw_controls()
     _draw_pause_button()
-
-    if lane_choice_banner_timer > 0.0 and lane_event_active:
-        var choice := "STATION SPLIT — CHOOSE A LANE"
-        draw_rect(Rect2(Vector2(38, 192), Vector2(314, 42)), Color(0.02, 0.04, 0.07, 0.92), true)
-        _text(choice, Vector2(62, 220), 16, Color("ffd166"))
 
     if weapon_banner_timer > 0.0:
         draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
@@ -5459,9 +5435,6 @@ func _draw_background() -> void:
 
     draw_circle(Vector2(74, 170), 118.0, Color(0.10, 0.16, 0.34, 0.055))
     draw_circle(Vector2(320, 520), 150.0, Color(0.24, 0.08, 0.30, 0.035))
-
-    if lane_event_active:
-        draw_rect(_hard_lane_background_rect(), Color(0.58, 0.03, 0.08, 0.18), true)
 
     for i in 44:
         var layer := float(i % 4)
@@ -5690,12 +5663,7 @@ func _draw_hud() -> void:
     _text("%s > %s" % [_planet_display_name(route_origin), _planet_display_name(destination_planet)], Vector2(20, 88), 15, Color("6bffb0"))
     _text("D%d R%d" % [route_distance, route_danger], Vector2(302, 88), 16, Color("ffd166"))
 
-    if lane_event_active:
-        var left_hard := not hard_lane_right
-        _text("HARD +35%" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
-        _text("HARD +35%" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
-    else:
-        _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
+    _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
 
     if boss_active:
         _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
