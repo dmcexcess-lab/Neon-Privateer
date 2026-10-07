@@ -27,6 +27,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Rebuild Privateer generated menu atlas
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p assets/privateer_ui
+          cat             art/privateer_ui_atlas_0.b64             art/privateer_ui_atlas_1.b64             art/privateer_ui_atlas_2.b64             art/privateer_ui_atlas_3.b64             | base64 --decode > assets/privateer_ui/privateer_ui_atlas.jpg
+          test -s assets/privateer_ui/privateer_ui_atlas.jpg
+          file assets/privateer_ui/privateer_ui_atlas.jpg | grep -q '390x1228'
+
       - name: Download Godot editor and export templates
         shell: bash
         run: |
@@ -84,10 +93,8 @@ jobs:
           mv "build/web/${BASENAME}.html" build/web/index.html
           test -f "build/web/${BASENAME}.pck"
 
-          # The generated Privateer atlas is a normal Godot texture dependency.
-          # Assert its logical resource path is present in the exported PCK so
-          # Pages cannot silently ship the procedural fallback again.
-          grep -a -q "privateer_ui_atlas.webp" "build/web/${BASENAME}.pck"
+          # Assert the reconstructed/generated atlas is inside the Web PCK.
+          grep -a -q "privateer_ui_atlas.jpg" "build/web/${BASENAME}.pck"
 
           CLASSIC_BASENAME="neon-driftline-classic-${SHORT_SHA}"
           CLASSIC_LOG=/tmp/classic-export.log
