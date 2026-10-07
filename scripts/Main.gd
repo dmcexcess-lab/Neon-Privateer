@@ -4,6 +4,7 @@ const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
 const POLITICAL_WORLD_SCHEMA := 2
+const ECONOMY_SCHEMA_VERSION := 2
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -191,7 +192,7 @@ var pirate_attack_clock := 999.0
 var pirate_banner_timer := 0.0
 var last_trip_summary := "Docked"
 var planet_names: Array[String] = []
-var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel"]
+var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel", "Arms", "Narcotics"]
 var markets: Dictionary = {}
 var cargo: Dictionary = {}
 var contract_board: Array[Dictionary] = []
@@ -629,6 +630,53 @@ func _political_laws_at(position: Vector2) -> Dictionary:
         return {}
     return PoliticalWorld.faction_record(political_world, faction_id).get("laws", {}).duplicate(true)
 
+func _commodity_legality_at(position: Vector2, commodity: String) -> Dictionary:
+    return PoliticalWorld.commodity_legality_at(political_world, position, commodity)
+
+func _planet_commodity_legality(planet_id: String, commodity: String) -> Dictionary:
+    return _commodity_legality_at(_system_planet_world_position(planet_id), commodity)
+
+func _commodity_legality_color(status: String) -> Color:
+    match status:
+        "ILLEGAL":
+            return Color("ff6687")
+        "MIXED":
+            return Color("ffb347")
+        "UNREGULATED":
+            return Color("8ea9b8")
+        _:
+            return Color("6bffb0")
+
+func _commodity_legality_short(planet_id: String, commodity: String) -> String:
+    var legality: Dictionary = _planet_commodity_legality(planet_id, commodity)
+    match String(legality.get("status", "LEGAL")):
+        "ILLEGAL":
+            return "ILLEGAL"
+        "MIXED":
+            return "MIXED"
+        "UNREGULATED":
+            return "FREE"
+        _:
+            return "LEGAL"
+
+func _planet_law_summary(planet_id: String) -> String:
+    return "ARMS %s  NARC %s" % [
+        _commodity_legality_short(planet_id, "Arms"),
+        _commodity_legality_short(planet_id, "Narcotics")
+    ]
+
+func _planet_jurisdiction_label(planet_id: String) -> String:
+    var context: Dictionary = _get_political_context_at(_system_planet_world_position(planet_id))
+    var state: String = String(context.get("state", "UNCONTROLLED"))
+    if state == "UNCONTROLLED":
+        return "UNCONTROLLED"
+    if state == "CONTESTED":
+        var first: Dictionary = PoliticalWorld.faction_record(political_world, String(context.get("strongest_faction_id", "")))
+        var second: Dictionary = PoliticalWorld.faction_record(political_world, String(context.get("second_faction_id", "")))
+        return "CONTESTED • %s / %s" % [String(first.get("name", "?")), String(second.get("name", "?"))]
+    var faction: Dictionary = PoliticalWorld.faction_record(political_world, String(context.get("faction_id", "")))
+    return "%s • %s" % [String(faction.get("name", "UNKNOWN")), state]
+
 func _route_political_segment_at_progress(origin: String, destination: String, progress: float) -> Dictionary:
     var route := PoliticalWorld.direct_route(political_world, origin, destination)
     if route.is_empty():
@@ -670,6 +718,30 @@ func _route_political_percentages(origin: String, destination: String) -> Dictio
             totals[state] = float(totals[state]) / total_weight
     return totals
 
+func _new_market_entry(planet: String, commodity: String) -> Dictionary:
+    var flow: Vector2 = _market_profile(planet, commodity)
+    var starting_stock: float = clampf(58.0 + flow.x * 3.0 - flow.y * 2.0, 18.0, 112.0)
+    return {
+        "stock": starting_stock,
+        "production": flow.x,
+        "consumption": flow.y
+    }
+
+func _ensure_commodity_schema() -> bool:
+    var changed := false
+    for commodity in commodity_names:
+        if not cargo.has(commodity):
+            cargo[commodity] = 0
+            changed = true
+    for planet in planet_names:
+        var planet_market: Dictionary = markets.get(planet, {})
+        for commodity in commodity_names:
+            if not planet_market.has(commodity):
+                planet_market[commodity] = _new_market_entry(planet, commodity)
+                changed = true
+        markets[planet] = planet_market
+    return changed
+
 func _init_privateer_world() -> void:
     if political_world.is_empty() or int(political_world.get("schema", 0)) < POLITICAL_WORLD_SCHEMA:
         _generate_political_world()
@@ -678,21 +750,7 @@ func _init_privateer_world() -> void:
         _sync_generated_planets()
     if current_planet.is_empty() and not planet_names.is_empty():
         current_planet = planet_names[0]
-    if cargo.is_empty():
-        for commodity in commodity_names:
-            cargo[commodity] = 0
-    if markets.is_empty():
-        for planet in planet_names:
-            var planet_market: Dictionary = {}
-            for commodity in commodity_names:
-                var flow := _market_profile(planet, commodity)
-                var starting_stock := clampf(58.0 + flow.x * 3.0 - flow.y * 2.0, 18.0, 112.0)
-                planet_market[commodity] = {
-                    "stock": starting_stock,
-                    "production": flow.x,
-                    "consumption": flow.y
-                }
-            markets[planet] = planet_market
+    _ensure_commodity_schema()
     if contract_board.is_empty():
         _regenerate_contracts()
     if last_trip_summary == "Docked":
@@ -708,6 +766,8 @@ func _market_profile(planet: String, commodity: String) -> Vector2:
                 "Medicine": return Vector2(3.0, 4.0)
                 "Electronics": return Vector2(5.0, 3.0)
                 "Fuel": return Vector2(2.0, 5.0)
+                "Arms": return Vector2(1.0, 5.0)
+                "Narcotics": return Vector2(8.0, 3.0)
         "VOLCANIC":
             match commodity:
                 "Food": return Vector2(1.0, 7.0)
@@ -715,6 +775,8 @@ func _market_profile(planet: String, commodity: String) -> Vector2:
                 "Medicine": return Vector2(1.0, 5.0)
                 "Electronics": return Vector2(2.0, 5.0)
                 "Fuel": return Vector2(9.0, 3.0)
+                "Arms": return Vector2(5.0, 4.0)
+                "Narcotics": return Vector2(1.0, 6.0)
         "FROZEN":
             match commodity:
                 "Food": return Vector2(5.0, 5.0)
@@ -722,6 +784,8 @@ func _market_profile(planet: String, commodity: String) -> Vector2:
                 "Medicine": return Vector2(9.0, 2.0)
                 "Electronics": return Vector2(2.0, 6.0)
                 "Fuel": return Vector2(3.0, 5.0)
+                "Arms": return Vector2(2.0, 5.0)
+                "Narcotics": return Vector2(4.0, 4.0)
         "INDUSTRIAL":
             match commodity:
                 "Food": return Vector2(2.0, 6.0)
@@ -729,6 +793,8 @@ func _market_profile(planet: String, commodity: String) -> Vector2:
                 "Medicine": return Vector2(4.0, 3.0)
                 "Electronics": return Vector2(10.0, 2.0)
                 "Fuel": return Vector2(4.0, 4.0)
+                "Arms": return Vector2(10.0, 2.0)
+                "Narcotics": return Vector2(2.0, 6.0)
     return Vector2(4.0, 4.0)
 
 func _commodity_base_price(commodity: String) -> int:
@@ -738,6 +804,8 @@ func _commodity_base_price(commodity: String) -> int:
         "Medicine": return 95
         "Electronics": return 145
         "Fuel": return 72
+        "Arms": return 260
+        "Narcotics": return 340
     return 50
 
 func _market_price(planet: String, commodity: String) -> int:
@@ -756,6 +824,8 @@ func _market_price(planet: String, commodity: String) -> int:
     if type_id == "FROZEN" and commodity == "Medicine": planet_bias = 0.86
     if type_id == "INDUSTRIAL" and commodity == "Electronics": planet_bias = 0.87
     if type_id == "LUSH" and commodity == "Food": planet_bias = 0.90
+    if type_id == "INDUSTRIAL" and commodity == "Arms": planet_bias = 0.84
+    if type_id == "LUSH" and commodity == "Narcotics": planet_bias = 0.86
     return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
 
 func _market_buy_price(planet: String, commodity: String) -> int:
@@ -1048,6 +1118,7 @@ func _save_privateer_state() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("political", "schema", POLITICAL_WORLD_SCHEMA)
     cfg.set_value("political", "world", political_world)
+    cfg.set_value("world", "economy_schema", ECONOMY_SCHEMA_VERSION)
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
@@ -1104,6 +1175,7 @@ func _load_privateer_state() -> void:
         migrated_world = true
 
     cargo = cfg.get_value("world", "cargo", cargo)
+    var commodity_schema_changed: bool = _ensure_commodity_schema()
     contract_board.clear()
     for contract in cfg.get_value("world", "contracts", []):
         var migrated: Dictionary = contract.duplicate(true)
@@ -1131,6 +1203,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
+    if migrated_world or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -1548,10 +1621,10 @@ func _political_risk_label(danger: int) -> String:
 
 
 func _market_buy_rect(index: int) -> Rect2:
-    return Rect2(28.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+    return Rect2(22.0, 150.0 + float(index) * 76.0, 165.0, 62.0)
 
 func _market_sell_rect(index: int) -> Rect2:
-    return Rect2(204.0, 162.0 + float(index) * 103.0, 158.0, 74.0)
+    return Rect2(203.0, 150.0 + float(index) * 76.0, 165.0, 62.0)
 
 func _contract_row_rect(index: int) -> Rect2:
     return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
@@ -3888,7 +3961,8 @@ func _draw_travel_menu() -> void:
     var next_hop := ""
     if selected == current_planet:
         _text("DOCKED HERE", Vector2(126.0, 646.0), 13, Color("ffd166"))
-        _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 672.0), 10, Color("8ea9b8"))
+        _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 670.0), 10, Color("8ea9b8"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 697.0), 9, Color("bdeef4"))
     else:
         var selected_spec := _route_spec(current_planet, selected)
         next_hop = _next_hop_toward(selected)
@@ -3898,9 +3972,10 @@ func _draw_travel_menu() -> void:
         var pct := _route_political_percentages(current_planet, selected)
         _text("D%d  RISK %s  HOPS %d" % [int(selected_spec.distance), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 11, _system_route_color(int(selected_spec.danger)))
         _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 667.0), 10, Color("8ea9b8"))
-        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 689.0), 10, Color("ffd166"))
+        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 687.0), 10, Color("ffd166"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 706.0), 9, Color("bdeef4"))
         if _contract_target_matches(selected):
-            _text("ACTIVE CONTRACT", Vector2(126.0, 710.0), 9, Color("6bffb0"))
+            _text("CONTRACT", Vector2(302.0, 706.0), 8, Color("6bffb0"))
 
     draw_rect(SYSTEM_MAP_BACK_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
@@ -3912,29 +3987,37 @@ func _draw_travel_menu() -> void:
     _text_center("FLY", SYSTEM_FLY_RECT.position.y + 35.0, 19, Color("f0fbff") if can_fly else Color("68737d"), SYSTEM_FLY_RECT.position.x, SYSTEM_FLY_RECT.end.x)
 
 func _draw_market_menu() -> void:
-    _draw_menu_art(ART_BG_MARKET, 0.64)
-    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 108.0), 0.74)
-    _draw_planet_art(current_planet, Rect2(302.0, 20.0, 66.0, 66.0), 0.96)
-    _text("%s MARKET" % _planet_display_name(current_planet).to_upper(), Vector2(30, 55), 27, Color("77f7ff"))
-    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(30, 93), 15, Color("ffd166"))
+    _draw_menu_art(ART_BG_MARKET, 0.67)
+    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 126.0), 0.78)
+    _draw_planet_art(current_planet, Rect2(306.0, 18.0, 60.0, 60.0), 0.96)
+    _text("%s MARKET" % _planet_display_name(current_planet).to_upper(), Vector2(28, 48), 24, Color("77f7ff"))
+    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(28, 76), 14, Color("ffd166"))
+    _text(_planet_jurisdiction_label(current_planet), Vector2(28, 101), 10, Color("bdeef4"))
+    _text(_planet_law_summary(current_planet), Vector2(28, 122), 10, Color("8ea9b8"))
+
     for i in commodity_names.size():
-        var commodity := commodity_names[i]
-        var buy_price := _market_buy_price(current_planet, commodity)
-        var sell_price := _market_sell_price(current_planet, commodity)
+        var commodity: String = commodity_names[i]
+        var buy_price: int = _market_buy_price(current_planet, commodity)
+        var sell_price: int = _market_sell_price(current_planet, commodity)
         var market_data: Dictionary = markets[current_planet][commodity]
-        var stock := int(round(float(market_data.stock)))
-        var held := int(cargo.get(commodity, 0))
-        var buy_rect := _market_buy_rect(i)
-        var sell_rect := _market_sell_rect(i)
+        var stock: int = int(round(float(market_data.stock)))
+        var held: int = int(cargo.get(commodity, 0))
+        var buy_rect: Rect2 = _market_buy_rect(i)
+        var sell_rect: Rect2 = _market_sell_rect(i)
         draw_rect(buy_rect, Color(0.035, 0.16, 0.12, 0.91), true)
         draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
         draw_rect(sell_rect, Color(0.16, 0.07, 0.11, 0.91), true)
         draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
-        _text(commodity, buy_rect.position + Vector2(8, 22), 15, Color("f0fbff"))
-        _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
-        _text("SELL %d" % sell_price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
-        _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(79, 22), 13, Color("8ea9b8"))
+        _text(commodity, buy_rect.position + Vector2(8, 19), 14, Color("f0fbff"))
+        _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 46), 13, Color("6bffb0"))
+        _text("SELL %d" % sell_price, sell_rect.position + Vector2(9, 46), 13, Color("ffb0c0"))
+        _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(86, 19), 11, Color("8ea9b8"))
+        if PoliticalWorld.RESTRICTED_COMMODITIES.has(commodity):
+            var legality: Dictionary = _planet_commodity_legality(current_planet, commodity)
+            var status: String = _commodity_legality_short(current_planet, commodity)
+            _text(status, sell_rect.position + Vector2(9, 19), 10, _commodity_legality_color(String(legality.status)))
     _draw_submenu_back()
+
 func _draw_contracts_menu() -> void:
     _draw_menu_art(ART_BG_OPS, 0.65)
     _draw_menu_panel(Rect2(18.0, 14.0, 354.0, 108.0), 0.74)
