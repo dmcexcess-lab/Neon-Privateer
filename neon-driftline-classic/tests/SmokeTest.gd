@@ -772,6 +772,23 @@ func _initialize() -> void:
         return
     scene.objects.clear()
 
+    # Square drones have modest pursuit: more mobile than before, still far below diamonds.
+    scene.objects.clear()
+    scene.player_x = 330.0
+    scene.player_y = scene.PLAYER_Y
+    scene.objects.append({
+        "id": 771001, "type": "hazard", "kind": 1,
+        "hp": 4.0, "max_hp": 4.0, "hard": false,
+        "x": 100.0, "y": 180.0, "r": 17.0,
+        "speed": 0.0, "drift": 0.0, "shoot_clock": 999.0,
+        "lane_speed_mult": 1.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+    })
+    scene._move_objects(1.0)
+    var square_drift: float = float(scene.objects[0].drift)
+    if square_drift < 25.0 or square_drift > 38.1:
+        _fail("square drone mobility is outside the intended modest pursuit range")
+        return
+
     # Drone durability: square and trapezoid stay weak; diamond remains strongest.
     if scene._obstacle_max_hp(1) != 4.0 or scene._obstacle_max_hp(3) != 4.0:
         _fail("square and trapezoid drones should stay weak")

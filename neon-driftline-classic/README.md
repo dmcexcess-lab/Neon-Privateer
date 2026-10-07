@@ -126,7 +126,7 @@ The +1 hit pickup restores one hit up to the ship's current maximum.
 The playfield now reads as open space rather than a lane/road: layered scrolling stars and faint deep-space haze replace the old vertical guide lines. The pre-split center guide is gone; the station divider only exists when the physical station segment actually arrives.
 
 - **Asteroids (kind 0, 3 HP):** irregular grey rocks with craters and slow spin. They mostly ride the scroll and only barely drift laterally.
-- **Square drones (kind 1, 4 HP):** weak, dumb drones. They move downfield and make only a very slow lateral correction toward the player.
+- **Square drones (kind 1, 4 HP):** weak pursuit drones. They move downfield and now make a modest lateral correction toward the player, capped well below diamond mobility.
 - **Diamond drones (kind 2, 12 HP):** faster, strongest, smarter pursuit drones. They lead toward the player's intended horizontal movement but their lateral pursuit is capped so they remain avoidable.
 - **Trapezoid drones (kind 3, 4 HP):** weak ranged skirmishers. They can move both up and down, try to maintain a standoff above the player baseline, fire aimed shots, and dodge player projectiles that are on an intercept path. They never intentionally move below the player's baseline.
 - **Pentagon missile turrets (kind 4, 20 HP):** heavy stationary-in-world emplacements. They have no lateral AI and simply scroll by with the level. While above the player they launch slow homing missiles. A missile deals **2 hits** if unshielded, but a shield absorbs the entire missile for exactly **1 shield charge**.
@@ -181,6 +181,10 @@ Player impacts now use a short **0.5 second hit-invulnerability window** so over
 
 Physical contact outside a dash damages **only the player**. During the active forward dash, contact with a hazard becomes a **DASH KILL** instead: the hazard is destroyed, its normal kill score/drop rules apply, and the player takes no collision hit. Station-wall contact remains instant-lethal and is not converted into a dash kill.
 
+
+## Menu presentation
+
+Menus use compact labels and retain only actionable state: costs, levels, HP, score/research totals, weapon identity, selection state, and the one-level rental marker. Tutorial-style explanatory copy is kept out of the active menu screens.
 
 ## Controls
 
