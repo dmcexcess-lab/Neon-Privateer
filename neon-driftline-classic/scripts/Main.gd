@@ -2552,7 +2552,8 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
     draw_rect(rect, border, false, 3.0 if recommended else 2.0)
     _text("%s  L%d" % [label, lvl], rect.position + Vector2(10, 23), 16, Color("f0fbff"))
     _text(effect, rect.position + Vector2(10, 45), 13, Color("8ea9b8"))
-    var cost_text := "MAX" if at_max else ("%d" % cost)
+    var full_label := "FULL" if track == "hits" or track == "shield" else "MAX"
+    var cost_text := full_label if at_max else ("%d" % cost)
     _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max or recommended else Color("ffd166"))
     if recommended:
         _text("BEST FIRST", rect.position + Vector2(205, 18), 11, Color("6bffb0"))
@@ -2641,7 +2642,8 @@ func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect:
     draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
     _text("%s  +%d" % [label, lvl], rect.position + Vector2(10, 20), 15, Color("f0fbff"))
     _text(effect, rect.position + Vector2(10, 40), 12, Color("8ea9b8"))
-    var cost_text := "MAX" if at_max else ("%d" % cost)
+    var full_label := "FULL" if track == "hits" or track == "shield" else "MAX"
+    var cost_text := full_label if at_max else ("%d" % cost)
     _text(cost_text, rect.position + Vector2(250, 32), 14, Color("6bffb0") if at_max else Color("ffd166"))
 
 func _draw_shop() -> void:
