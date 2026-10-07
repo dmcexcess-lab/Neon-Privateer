@@ -491,6 +491,102 @@ Acceptance rules:
 - pan/zoom, current/selected/contract markers, 32 generated planets, and explicit **FLY** remain intact.
 
 
+## Slice 9 economy / contract integration
+
+Slice 9 consumes the political, law, route-segmentation, route-wealth, crime, and market systems rather than introducing a parallel contract simulation.
+
+### Contract authority
+
+Every generated contract now records:
+
+- schema version;
+- origin and destination planet IDs;
+- contract type and player-facing political role;
+- named commodity for deliveries;
+- smuggling flag;
+- issuing faction/name;
+- faction relation reward;
+- route pirate exposure;
+- base reward;
+- pirate-risk premium;
+- cargo/law premium;
+- political premium;
+- final reward.
+
+Legitimate jobs use the current world's primary faction as issuer when one exists. Underworld smuggling jobs deliberately have no legitimate faction issuer and grant no faction reputation.
+
+### Destination selection
+
+The contract board is faction/economy aware:
+
+- legal freight prefers commodities with destination demand / favorable market spread while avoiding cargo illegal at that destination;
+- smuggling searches for Arms or Narcotics destinations where the destination law is explicitly ILLEGAL;
+- passenger work prefers cross-faction, contested, or uncontrolled destinations so passenger contracts cross political geography;
+- bounties prefer routes with the greatest CONTESTED + UNCONTROLLED coverage.
+
+This does not change route topology. Contracts still use the generated sparse network and normal shortest-path planning.
+
+### Pirate exposure and payout
+
+For contract purposes:
+
+pirate exposure = contested route share + uncontrolled route share
+
+The percentage is derived from the same segmented route path used by encounter eligibility.
+
+Pirate exposure adds an explicit payout premium:
+
+- freight: moderate;
+- passenger: stronger;
+- bounty: strongest.
+
+Danger remains the asteroid-density axis. Distance remains the travel-time axis. Wealth remains the traffic/container/encounter-frequency axis. Pirate exposure is therefore a separate political-contract risk signal.
+
+### Legal / illegal cargo premium
+
+Restricted-market price multipliers now reflect enforcement risk:
+
+- LEGAL / UNREGULATED: 1.00x;
+- MIXED: 1.14x;
+- ILLEGAL: 1.30x.
+
+The multiplier applies to the market mid-price before the existing buy/sell spread, so illegal destinations can offer a genuine black-market premium while still exposing the player to faction scans.
+
+Smuggling contracts receive an additional cargo premium on top of normal route payout.
+
+### Contract cargo and scans
+
+Delivery cargo still occupies one reserved cargo slot.
+
+If a delivery's named Arms/Narcotics commodity is illegal to a scanning patrol faction, that reserved contract cargo is part of the contraband manifest even though it is not stored in the player's ordinary cargo dictionary.
+
+A completed illegal scan:
+
+- confiscates the contract cargo;
+- fails/clears that delivery contract;
+- counts the contract unit toward contraband value and fine;
+- applies the same relation/heat crime consequences as ordinary illegal cargo.
+
+This closes the loophole where a visually illegal smuggling contract could previously pass a scan because its reserved cargo was only abstract capacity.
+
+### Completion effects
+
+Successful legitimate contracts improve relation with the issuing faction:
+
+- freight: +2;
+- passenger: +3;
+- bounty: +5.
+
+Smuggling grants no faction relation.
+
+Successful freight also adds one unit of its named commodity to the destination market stock so contract traffic feeds the persistent economy.
+
+### Contract schema
+
+Contract schema version 1 upgrades older saved contracts in place.
+
+Legacy records keep their original ID, type, destination, difficulty, and reward while gaining safe defaults for origin, commodity, issuer, relation reward, pirate exposure, role, and payout-breakdown metadata. The political world and existing markets are not rerolled.
+
 ## Persistence
 
 Career world saves persist:
@@ -498,6 +594,8 @@ Career world saves persist:
 - political schema
 - economy schema
 - crime schema
+- enforcement schema
+- contract schema
 - schema
 - seed
 - planets
@@ -505,7 +603,7 @@ Career world saves persist:
 - generated route graph
 - current planet
 - market state for all seven commodities
-- cargo/contracts/passengers/economy state
+- cargo/contracts/passengers/economy state, including Slice 9 contract political/economic metadata
 
 Route political segmentation and route-wealth metadata are saved with the generated graph and can also be deterministically reproduced from the same world.
 
@@ -527,9 +625,9 @@ Migration:
 
 Reloading does not rerun migration.
 
-## Public/query APIs reserved for later slices
+## Public/query APIs
 
-Later systems should consume these authoritative queries or wrappers:
+Current and later systems consume these authoritative queries or wrappers:
 
 - political context at a map/route position
 - controlling faction
@@ -543,7 +641,7 @@ Later systems should consume these authoritative queries or wrappers:
 - planet display name
 - neighbors
 
-These APIs will later drive:
+These APIs now drive:
 
 - pirate eligibility
 - police eligibility
@@ -551,6 +649,9 @@ These APIs will later drive:
 - contraband law
 - faction reputation/crime consequences
 - route encounter composition
+- faction-aware contract issuers/destinations
+- pirate-exposure contract premiums
+- smuggling legality and scan consequences
 
 
 ## Slice 2 economy schema
@@ -571,7 +672,7 @@ Planet-type tendencies:
 - **FROZEN:** strong Medicine with modest Narcotics and weak Arms.
 - **INDUSTRIAL:** strong Electronics/Arms; weak Narcotics.
 
-Market trading remains mechanically available in Slice 2 even when a commodity is illegal. The law is surfaced now so later contraband/scanning systems can impose the actual risk.
+Market trading remains mechanically available even when a commodity is illegal. Later slices now consume that same law authority for scans/confiscation and, in Slice 9, for black-market price premiums plus smuggling-contract generation.
 
 
 ## Slice 3 crime schema
@@ -587,7 +688,7 @@ Existing relation values are preserved and clamped. The upgraded schema is persi
 
 The market, career hub, and selected-world map card expose faction reputation/heat compactly. In contested space both claimant factions remain independent; uncontrolled space has no faction criminal record.
 
-Police/pirate spawning, scans, fines, confiscation, and actual hostility remain deferred.
+The Slice 3 fields are now consumed by patrol hostility, scans/fines/confiscation, heavy enforcement, political-map inspection, and legitimate contract reputation rewards.
 
 
 ## Slice 4 cargo-container loot
