@@ -356,28 +356,27 @@ func _process(delta: float) -> void:
         repair_clock = rng.randf_range(REPAIR_INTERVAL_MIN, REPAIR_INTERVAL_MAX) if hp < max_hp else REPAIR_RETRY_FULL
 
     if lane_event_active:
+        var split_was_active := _split_rules_active()
         station_top += STATION_SPEED * world_delta
         lane_event_timer = maxf(0.0, lane_event_timer - world_delta)
+        var split_is_active := _split_rules_active()
+        if split_is_active and not split_was_active:
+            _activate_split_generation()
+
         _check_station_collision()
         if not playing:
             queue_redraw()
             return
-        if easy_spawn_clock <= 0.0:
-            _spawn_hazard(difficulty, false, true)
-            easy_spawn_clock = (rng.randf_range(1.55, 1.95) if level == 1 else _spawn_interval(1.05, 0.52, difficulty) * rng.randf_range(0.88, 1.18))
-        if hard_spawn_clock <= 0.0:
-            if level == 1:
-                _spawn_circle_bunch(true, rng.randi_range(2, 3))
-                hard_spawn_clock = rng.randf_range(1.65, 2.15)
-            else:
-                _spawn_hazard(difficulty, true, true)
-                hard_spawn_clock = _spawn_interval(0.82, 0.34, difficulty) * rng.randf_range(0.84, 1.14)
-        if station_top > H + 40.0:
+
+        if split_is_active:
+            _spawn_split_generation(difficulty)
+        else:
+            _spawn_neutral_generation(difficulty)
+
+        if station_top >= H:
             _end_lane_event()
     else:
-        if neutral_spawn_clock <= 0.0:
-            _spawn_hazard(difficulty, false, false)
-            neutral_spawn_clock = (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
+        _spawn_neutral_generation(difficulty)
         if lane_events_started < _split_count_for_level() and elapsed >= next_lane_event_at and elapsed < _level_duration() - 3.0:
             _begin_lane_event()
 
@@ -608,18 +607,19 @@ func _ship_speed_score_multiplier() -> float:
 func _dash_speed_score_multiplier() -> float:
     return _dash_speed() / DASH_FORWARD_SPEED
 
-func _enemy_event_score(kind: int, event_kind: String) -> int:
+func _enemy_event_score(kind: int, event_kind: String, hard_lane: bool = false) -> int:
     var enemy_value := float(_kill_score(kind))
+    var event_value := 0.0
     match event_kind:
         "kill":
-            return int(round(enemy_value))
+            event_value = enemy_value
         "near":
-            return int(round(enemy_value * 10.0 * _ship_speed_score_multiplier()))
+            event_value = enemy_value * 10.0 * _ship_speed_score_multiplier()
         "dash_kill":
-            return int(round(enemy_value * 10.0 * _dash_speed_score_multiplier()))
+            event_value = enemy_value * 10.0 * _dash_speed_score_multiplier()
         "dash_near":
-            return int(round(enemy_value * 100.0 * _dash_speed_score_multiplier()))
-    return 0
+            event_value = enemy_value * 100.0 * _dash_speed_score_multiplier()
+    return int(round(event_value * _hard_lane_score_multiplier(hard_lane)))
 
 func _level_duration() -> float:
     return minf(LEVEL_TIME_MAX, LEVEL_TIME_BASE + float(level - 1) * LEVEL_TIME_STEP)
@@ -1257,8 +1257,17 @@ func _clear_run_snapshot() -> void:
     cfg.set_value("run", "exists", false)
     cfg.save(RUN_SAVE_PATH)
 
+func _split_rules_active() -> bool:
+    if not lane_event_active:
+        return false
+    var station_bottom := station_top + station_height
+    return station_top < H and station_bottom > 0.0
+
+func _hard_lane_score_multiplier(hard_lane: bool) -> float:
+    return 1.35 if _split_rules_active() and hard_lane else 1.0
+
 func _lane_score_multiplier() -> float:
-    return 1.35 if _station_at_player() and _is_hard_position(player_x) else 1.0
+    return _hard_lane_score_multiplier(_is_hard_position(player_x))
 
 func _dash_score_multiplier() -> float:
     return 2.0 if dash_score_timer > 0.0 else 1.0
@@ -1268,14 +1277,36 @@ func _begin_lane_event() -> void:
     station_height = _station_height_for_level()
     station_top = -station_height - 40.0
     station_locked_side = ""
-    lane_event_timer = (H + 80.0 + station_height) / STATION_SPEED
+    lane_event_timer = (H + 40.0 + station_height) / STATION_SPEED
     lane_events_started += 1
     _schedule_next_split()
     hard_lane_right = rng.randf() < 0.5
+    lane_choice_banner_timer = 0.0
+    easy_spawn_clock = 999.0
+    hard_spawn_clock = 999.0
+
+func _activate_split_generation() -> void:
     lane_choice_banner_timer = 2.4
     easy_spawn_clock = 0.18 if level == 1 else 0.12
     hard_spawn_clock = 0.14 if level == 1 else 0.08
     shake = maxf(shake, 1.8)
+
+func _spawn_split_generation(difficulty: float) -> void:
+    if easy_spawn_clock <= 0.0:
+        _spawn_hazard(difficulty, false, true)
+        easy_spawn_clock = (rng.randf_range(1.55, 1.95) if level == 1 else _spawn_interval(1.05, 0.52, difficulty) * rng.randf_range(0.88, 1.18))
+    if hard_spawn_clock <= 0.0:
+        if level == 1:
+            _spawn_circle_bunch(true, rng.randi_range(2, 3))
+            hard_spawn_clock = rng.randf_range(1.65, 2.15)
+        else:
+            _spawn_hazard(difficulty, true, true)
+            hard_spawn_clock = _spawn_interval(0.82, 0.34, difficulty) * rng.randf_range(0.84, 1.14)
+
+func _spawn_neutral_generation(difficulty: float) -> void:
+    if neutral_spawn_clock <= 0.0:
+        _spawn_hazard(difficulty, false, false)
+        neutral_spawn_clock = (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
 
 func _end_lane_event() -> void:
     lane_event_active = false
@@ -1652,7 +1683,7 @@ func _move_shots(delta: float) -> void:
 func _award_hazard_kill(obj: Dictionary, dash_kill: bool = false) -> void:
     obj.hp = 0.0
     var event_kind := "dash_kill" if dash_kill else "kill"
-    var earned := _enemy_event_score(int(obj.kind), event_kind)
+    var earned := _enemy_event_score(int(obj.kind), event_kind, bool(obj.get("hard", false)))
     score += earned
     _queue_kill_drop(obj)
     if dash_kill:
@@ -1810,16 +1841,17 @@ func _move_enemy_shots(delta: float) -> void:
 
 func _energy_spawn_interval() -> float:
     var interval := maxf(0.85, 2.8 - float(level - 1) * 0.18)
-    if lane_event_active:
+    if _split_rules_active():
         interval *= 0.82
     return interval * rng.randf_range(0.88, 1.14)
 
 func _make_energy_orb(x: float, y: float, hard: bool = false) -> Dictionary:
-    var bounds := _lane_bounds(hard) if lane_event_active else Vector2(LEFT, RIGHT)
+    var split_active := _split_rules_active()
+    var bounds := _lane_bounds(hard) if split_active else Vector2(LEFT, RIGHT)
     return {
         "id": rng.randi(),
         "type": "energy",
-        "hard": hard and lane_event_active,
+        "hard": hard and split_active,
         "x": clampf(x, bounds.x + 16.0, bounds.y - 16.0),
         "y": y,
         "r": 12.0,
@@ -1873,8 +1905,9 @@ func _spawn_repair() -> void:
     objects.append(_make_repair_pickup(x, -34.0))
 
 func _spawn_pickup() -> void:
-    var hard_lane := lane_event_active and rng.randf() < 0.82
-    var bounds := _lane_bounds(hard_lane) if lane_event_active else Vector2(LEFT, RIGHT)
+    var split_active := _split_rules_active()
+    var hard_lane := split_active and rng.randf() < 0.82
+    var bounds := _lane_bounds(hard_lane) if split_active else Vector2(LEFT, RIGHT)
     var x := rng.randf_range(bounds.x + 16.0, bounds.y - 16.0)
     objects.append(_make_energy_orb(x, -30.0, hard_lane))
 
@@ -2006,7 +2039,7 @@ func _move_objects(delta: float) -> void:
             if obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
                 last_near_ids[obj.id] = true
                 if dx < near_dist:
-                    _register_near_miss(int(obj.kind))
+                    _register_near_miss(int(obj.kind), bool(obj.get("hard", false)))
         elif obj.type == "energy":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
                 energy += 1
@@ -2052,9 +2085,9 @@ func _move_objects(delta: float) -> void:
     _flush_pending_drops(next)
     objects = next
 
-func _register_near_miss(kind: int) -> void:
+func _register_near_miss(kind: int, hard_lane: bool = false) -> void:
     var dash_near := dash_score_timer > 0.0
-    var near_score := _enemy_event_score(kind, "dash_near" if dash_near else "near")
+    var near_score := _enemy_event_score(kind, "dash_near" if dash_near else "near", hard_lane)
     score += near_score
     near_miss_text = ("DASH NEAR +%d" if dash_near else "NEAR +%d") % near_score
     near_miss_timer = 0.62
@@ -2160,7 +2193,7 @@ func _draw() -> void:
     _draw_controls()
     _draw_pause_button()
 
-    if lane_choice_banner_timer > 0.0 and lane_event_active:
+    if lane_choice_banner_timer > 0.0 and _split_rules_active():
         var choice := "STATION SPLIT — CHOOSE A LANE"
         draw_rect(Rect2(Vector2(38, 192), Vector2(314, 42)), Color(0.02, 0.04, 0.07, 0.92), true)
         _text(choice, Vector2(62, 220), 16, Color("ffd166"))
@@ -2189,9 +2222,12 @@ func _draw() -> void:
         _draw_pause_overlay()
 
 func _hard_lane_background_rect() -> Rect2:
+    var y0 := clampf(station_top, 0.0, H)
+    var y1 := clampf(station_top + station_height, 0.0, H)
+    var height := maxf(0.0, y1 - y0)
     if hard_lane_right:
-        return Rect2(LANE_SPLIT, 0.0, W - LANE_SPLIT, H)
-    return Rect2(0.0, 0.0, LANE_SPLIT, H)
+        return Rect2(RIGHT_LANE_MIN, y0, RIGHT_LANE_MAX - RIGHT_LANE_MIN, height)
+    return Rect2(LEFT_LANE_MIN, y0, LEFT_LANE_MAX - LEFT_LANE_MIN, height)
 
 func _draw_background() -> void:
     var t := Time.get_ticks_msec() / 1000.0
@@ -2199,7 +2235,7 @@ func _draw_background() -> void:
     draw_circle(Vector2(74, 170), 118.0, Color(0.10, 0.16, 0.34, 0.055))
     draw_circle(Vector2(320, 520), 150.0, Color(0.24, 0.08, 0.30, 0.035))
 
-    if lane_event_active:
+    if _split_rules_active():
         draw_rect(_hard_lane_background_rect(), Color(0.58, 0.03, 0.08, 0.18), true)
 
     for i in 44:
@@ -2388,7 +2424,7 @@ func _draw_hud() -> void:
     _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46), 19, Color("bdeef4"))
     _text("ENERGY %02d" % energy, Vector2(20, 88), 18, Color("6bffb0"))
 
-    if lane_event_active:
+    if _split_rules_active():
         var left_hard := not hard_lane_right
         _text("HARD" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
         _text("HARD" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
