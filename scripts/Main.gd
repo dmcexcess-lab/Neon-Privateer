@@ -9,6 +9,7 @@ const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
 const CONTRACT_SCHEMA_VERSION := 3
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
+const GRAPHICS_REVISION := 2
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -5422,17 +5423,20 @@ func _take_hit(amount: int = 1) -> void:
     if hp <= 0:
         _finish(false)
 
-func _burst(pos: Vector2, count: int, color: Color) -> void:
+func _burst(pos: Vector2, count: int, color: Color, scale: float = 1.0) -> void:
     for i in count:
         var a := rng.randf_range(0.0, TAU)
-        var s := rng.randf_range(55.0, 160.0)
+        var s := rng.randf_range(55.0, 160.0) * scale
+        var life := rng.randf_range(0.22, 0.5) * (0.85 + scale * 0.15)
         particles.append({
             "x": pos.x,
             "y": pos.y,
             "vx": cos(a) * s,
             "vy": sin(a) * s,
-            "life": rng.randf_range(0.22, 0.5),
-            "max": 0.5,
+            "life": life,
+            "max": life,
+            "size": rng.randf_range(1.6, 4.4) * clampf(scale, 0.7, 1.8),
+            "trail": rng.randf() < 0.38,
             "color": color
         })
 
@@ -5447,6 +5451,68 @@ func _move_particles(delta: float) -> void:
         if p.life > 0.0:
             next.append(p)
     particles = next
+
+func _commodity_visual_color(commodity: String) -> Color:
+    match _commodity_category(commodity):
+        "food":
+            return Color("72e89a")
+        "metal":
+            return Color("8fc7df")
+        "medicine":
+            return Color("7ef6e8")
+        "weapons":
+            return Color("ff8a63")
+        "narcotics":
+            return Color("c57cff")
+        "entertainment":
+            return Color("ff70c8")
+    return Color("ffd166")
+
+func _draw_soft_glow(center: Vector2, radius: float, color: Color, intensity: float = 1.0) -> void:
+    var outer := Color(color.r, color.g, color.b, 0.035 * intensity)
+    var middle := Color(color.r, color.g, color.b, 0.075 * intensity)
+    var inner := Color(color.r, color.g, color.b, 0.14 * intensity)
+    draw_circle(center, radius * 1.85, outer)
+    draw_circle(center, radius * 1.38, middle)
+    draw_circle(center, radius, inner)
+
+func _draw_engine_flame(origin: Vector2, length: float, width: float, color: Color) -> void:
+    var pulse := 0.82 + sin(Time.get_ticks_msec() * 0.022 + origin.x * 0.07) * 0.18
+    var flame := PackedVector2Array([
+        origin + Vector2(-width, 0.0),
+        origin + Vector2(0.0, length * pulse),
+        origin + Vector2(width, 0.0)
+    ])
+    draw_colored_polygon(flame, Color(color.r, color.g, color.b, 0.34))
+    draw_line(origin, origin + Vector2(0.0, length * pulse * 0.72), Color(0.90, 0.98, 1.0, 0.78), maxf(1.0, width * 0.55))
+    draw_circle(origin, maxf(1.8, width * 0.55), Color("f3ffff"))
+
+func _draw_hull_panel(points: PackedVector2Array, fill: Color, edge: Color) -> void:
+    draw_colored_polygon(points, fill)
+    var outline := points.duplicate()
+    if not outline.is_empty():
+        outline.append(outline[0])
+        draw_polyline(outline, edge, 1.6, true)
+
+func _draw_corner_brackets(rect: Rect2, color: Color, length: float = 12.0) -> void:
+    var x0 := rect.position.x
+    var y0 := rect.position.y
+    var x1 := rect.end.x
+    var y1 := rect.end.y
+    draw_line(Vector2(x0, y0), Vector2(x0 + length, y0), color, 1.4)
+    draw_line(Vector2(x0, y0), Vector2(x0, y0 + length), color, 1.4)
+    draw_line(Vector2(x1, y0), Vector2(x1 - length, y0), color, 1.4)
+    draw_line(Vector2(x1, y0), Vector2(x1, y0 + length), color, 1.4)
+    draw_line(Vector2(x0, y1), Vector2(x0 + length, y1), color, 1.4)
+    draw_line(Vector2(x0, y1), Vector2(x0, y1 - length), color, 1.4)
+    draw_line(Vector2(x1, y1), Vector2(x1 - length, y1), color, 1.4)
+    draw_line(Vector2(x1, y1), Vector2(x1, y1 - length), color, 1.4)
+
+func _active_boss_object() -> Dictionary:
+    for obj in objects:
+        if obj.get("type", "") == "hazard" and bool(obj.get("boss", false)):
+            return obj
+    return {}
 
 func _draw() -> void:
     var offset := Vector2(rng.randf_range(-shake, shake), rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
