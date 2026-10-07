@@ -1110,15 +1110,22 @@ func _initialize() -> void:
     scene._adjust_faction_relation(controlled_faction, old_controlled_relation, false)
     scene._adjust_faction_heat(controlled_faction, old_controlled_heat, false)
 
-    # Slice 7: lawful patrols sometimes scan; faction law controls contraband.
+    # Lawful patrols sometimes scan; item-level grey law controls contraband.
     var scan_faction := ""
+    var scan_illegal := ""
+    var scan_legal := ""
     for faction in scene.political_world.factions:
-        var scan_laws: Dictionary = faction.laws
-        if not bool(scan_laws.arms_legal) or not bool(scan_laws.narcotics_legal):
-            scan_faction = String(faction.id)
+        var scan_laws: Dictionary = faction.laws.get("grey_legal", {})
+        for grey_good in scene.grey_commodity_names:
+            if not bool(scan_laws.get(grey_good, true)) and scan_illegal.is_empty():
+                scan_faction = String(faction.id)
+                scan_illegal = grey_good
+            elif bool(scan_laws.get(grey_good, false)) and String(faction.id) == scan_faction and scan_legal.is_empty():
+                scan_legal = grey_good
+        if not scan_faction.is_empty():
             break
-    if scan_faction.is_empty():
-        _fail("generated world has no faction with restricted contraband law")
+    if scan_faction.is_empty() or scan_illegal.is_empty():
+        _fail("generated world has no faction with an illegal grey good")
         return
 
     scene._adjust_faction_relation(scan_faction, -scene._faction_relation(scan_faction), false)
@@ -1145,7 +1152,7 @@ func _initialize() -> void:
         return
     scene._cancel_police_scan()
 
-    # Clear scan causes no faction consequence.
+    # Green-market cargo is never contraband.
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
     scene.cargo["Grain"] = 2
@@ -1156,55 +1163,40 @@ func _initialize() -> void:
         return
     scene._update_police_scan(0.02)
     if scene.police_scan_active or scene.police_scan_result_text != "SCAN CLEAR":
-        _fail("clear cargo scan did not complete cleanly")
+        _fail("green cargo scan did not complete cleanly")
         return
     if scene._faction_relation(scan_faction) != clear_rel_before or scene._faction_heat(scan_faction) != clear_heat_before:
         _fail("clear scan changed faction relation/heat")
         return
 
-    # Contraband scan confiscates only commodities illegal to that specific faction.
-    var scan_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, scan_faction)
-    var scan_laws: Dictionary = scan_record.laws
+    # Contraband scan confiscates the specific grey goods banned by that faction.
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
     scene.cargo["Grain"] = 1
-    scene.cargo["Small Arms"] = 2
-    scene.cargo["Stims"] = 2
+    scene.cargo[scan_illegal] = 2
+    if not scan_legal.is_empty():
+        scene.cargo[scan_legal] = 2
     scene.research_credits = 5000
     scene.encounter_hostile = false
-    var expected_illegal_units := 0
-    if not bool(scan_laws.arms_legal):
-        expected_illegal_units += 2
-    if not bool(scan_laws.narcotics_legal):
-        expected_illegal_units += 2
     var credits_before_scan: int = scene.research_credits
     if not scene._begin_police_scan(scan_faction, 0.01):
         _fail("could not begin deterministic contraband scan")
         return
-    var scan_result: Dictionary = {}
     scene._update_police_scan(0.02)
-    if scene.police_scan_result_text.begins_with("CONTRABAND"):
-        scan_result = {"clear": false}
-    if scan_result.is_empty() or expected_illegal_units <= 0:
-        _fail("contraband scan did not detect faction-illegal cargo")
+    if not scene.police_scan_result_text.begins_with("CONTRABAND"):
+        _fail("contraband scan did not detect faction-illegal grey cargo")
         return
     if int(scene.cargo.get("Grain", 0)) != 1:
-        _fail("contraband scan confiscated unrestricted Food")
+        _fail("contraband scan confiscated green-market cargo")
         return
-    if bool(scan_laws.arms_legal) and int(scene.cargo.get("Small Arms", 0)) != 2:
-        _fail("scan confiscated Arms that are legal to scanning faction")
+    if int(scene.cargo.get(scan_illegal, 0)) != 0:
+        _fail("scan failed to confiscate item-level illegal grey cargo")
         return
-    if not bool(scan_laws.arms_legal) and int(scene.cargo.get("Small Arms", 0)) != 0:
-        _fail("scan failed to confiscate illegal Arms")
-        return
-    if bool(scan_laws.narcotics_legal) and int(scene.cargo.get("Stims", 0)) != 2:
-        _fail("scan confiscated Narcotics that are legal to scanning faction")
-        return
-    if not bool(scan_laws.narcotics_legal) and int(scene.cargo.get("Stims", 0)) != 0:
-        _fail("scan failed to confiscate illegal Narcotics")
+    if not scan_legal.is_empty() and int(scene.cargo.get(scan_legal, 0)) != 2:
+        _fail("scan confiscated grey cargo legal to the scanning faction")
         return
     if scene.research_credits >= credits_before_scan:
-        _fail("contraband scan did not apply a fine")
+        _fail("contraband scan did not apply a cash fine")
         return
     if scene._faction_heat(scan_faction) < 30 or not scene.encounter_hostile:
         _fail("contraband discovery did not create hostile criminal enforcement state")
