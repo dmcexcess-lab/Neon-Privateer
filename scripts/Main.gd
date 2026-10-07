@@ -5887,69 +5887,100 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
     elif kind == 3:
         var r3 := float(obj.r)
         var role3 := String(obj.get("encounter_role", ""))
-        var body3 := Color("66527d")
-        var glow3 := Color(0.70, 0.38, 1.0, 0.10)
+        var body3 := Color("5f4a78")
         var accent3 := Color("c9a5ff")
         if role3 == "pirate":
-            body3 = Color("7f4032")
-            glow3 = Color(1.0, 0.30, 0.16, 0.12)
-            accent3 = Color("ff9b68")
+            body3 = Color("6f3028")
+            accent3 = Color("ff8a63")
         elif role3 == "police":
             var police3 := _faction_color(String(obj.get("encounter_faction_id", "")))
-            body3 = Color(police3.r * 0.58, police3.g * 0.58, police3.b * 0.58, 1.0)
-            glow3 = Color(police3.r, police3.g, police3.b, 0.13)
+            body3 = Color(police3.r * 0.44, police3.g * 0.44, police3.b * 0.44, 1.0)
             accent3 = police3
-        draw_circle(p, r3 + 6.0, glow3)
-        draw_colored_polygon(PackedVector2Array([
-            p + Vector2(-r3 * 0.72, -r3 * 0.72),
-            p + Vector2(r3 * 0.72, -r3 * 0.72),
-            p + Vector2(r3 * 1.18, r3 * 0.70),
-            p + Vector2(-r3 * 1.18, r3 * 0.70)
-        ]), body3)
-        draw_line(p + Vector2(0, 3), p + Vector2(0, r3 + 8.0), accent3, 3.0)
-        draw_circle(p, 4.0, accent3)
+        _draw_soft_glow(p, r3 + 6.0, accent3, 0.72)
+        _draw_engine_flame(p + Vector2(-r3 * 0.42, r3 * 0.72), r3 * 0.72, 2.3, accent3)
+        _draw_engine_flame(p + Vector2(r3 * 0.42, r3 * 0.72), r3 * 0.72, 2.3, accent3)
+        var fighter := PackedVector2Array([
+            p + Vector2(0.0, -r3 * 1.10),
+            p + Vector2(r3 * 0.44, -r3 * 0.52),
+            p + Vector2(r3 * 1.18, r3 * 0.54),
+            p + Vector2(r3 * 0.55, r3 * 0.42),
+            p + Vector2(r3 * 0.30, r3 * 0.82),
+            p + Vector2(-r3 * 0.30, r3 * 0.82),
+            p + Vector2(-r3 * 0.55, r3 * 0.42),
+            p + Vector2(-r3 * 1.18, r3 * 0.54),
+            p + Vector2(-r3 * 0.44, -r3 * 0.52)
+        ])
+        _draw_hull_panel(fighter, body3, accent3)
+        var canopy3 := PackedVector2Array([
+            p + Vector2(0.0, -r3 * 0.64),
+            p + Vector2(r3 * 0.24, -r3 * 0.10),
+            p + Vector2(0.0, r3 * 0.34),
+            p + Vector2(-r3 * 0.24, -r3 * 0.10)
+        ])
+        draw_colored_polygon(canopy3, Color("17202a"))
+        draw_arc(p, r3 * 0.30, -2.7, -0.45, 12, Color(accent3.r, accent3.g, accent3.b, 0.62), 1.4)
+        draw_circle(p + Vector2(-r3 * 0.78, r3 * 0.42), 2.0, accent3)
+        draw_circle(p + Vector2(r3 * 0.78, r3 * 0.42), 2.0, accent3)
+        if role3 == "pirate":
+            draw_line(p + Vector2(-r3 * 0.42, -r3 * 0.08), p + Vector2(r3 * 0.42, r3 * 0.18), Color("ffb099"), 2.2)
 
     elif kind == 4:
         var r4 := float(obj.r)
         var role4 := String(obj.get("encounter_role", ""))
-        var body4 := Color("88413b")
-        var glow4 := Color(1.0, 0.24, 0.18, 0.10)
-        var accent4 := Color("ffb27c")
+        var body4 := Color("6f302d")
+        var accent4 := Color("ff9b68")
         if role4 == "police":
             var police4 := _faction_color(String(obj.get("encounter_faction_id", "")))
-            body4 = Color(police4.r * 0.52, police4.g * 0.52, police4.b * 0.52, 1.0)
-            glow4 = Color(police4.r, police4.g, police4.b, 0.16)
+            body4 = Color(police4.r * 0.40, police4.g * 0.40, police4.b * 0.40, 1.0)
             accent4 = police4
-        draw_circle(p, r4 + 8.0, glow4)
+        _draw_soft_glow(p, r4 + 9.0, accent4, 0.88)
         var pent := PackedVector2Array()
         for i in 5:
             var a := -PI * 0.5 + TAU * float(i) / 5.0
             pent.append(p + Vector2(cos(a), sin(a)) * r4)
-        draw_colored_polygon(pent, body4)
+        _draw_hull_panel(pent, body4, accent4)
         var inner := PackedVector2Array()
         for i in 5:
             var a2 := -PI * 0.5 + TAU * float(i) / 5.0
-            inner.append(p + Vector2(cos(a2), sin(a2)) * r4 * 0.56)
-        draw_colored_polygon(inner, Color("271719"))
-        draw_circle(p, 5.0, accent4)
-        draw_line(p + Vector2(0, 2), p + Vector2(0, r4 + 9.0), accent4, 4.0)
+            inner.append(p + Vector2(cos(a2), sin(a2)) * r4 * 0.58)
+        _draw_hull_panel(inner, Color("20181a"), Color(accent4.r, accent4.g, accent4.b, 0.46))
+        draw_circle(p, r4 * 0.24, Color("111418"))
+        draw_circle(p, r4 * 0.15, accent4)
+        draw_line(p, p + Vector2(0.0, r4 * 0.78), accent4, 4.0)
+        draw_circle(p + Vector2(0.0, r4 * 0.54), 3.2, Color("fff0d2"))
+        for ti in 5:
+            var ta := -PI * 0.5 + TAU * float(ti) / 5.0
+            var tp := p + Vector2(cos(ta), sin(ta)) * r4 * 0.74
+            draw_circle(tp, 2.2, Color(accent4.r, accent4.g, accent4.b, 0.86))
 
     else:
         var r5 := float(obj.r)
-        draw_circle(p, r5 + 12.0, Color(1.0, 0.22, 0.28, 0.18))
+        var flagship := Color("6c234e")
+        var flagship_edge := Color("ff6f9f")
+        _draw_soft_glow(p, r5 + 14.0, flagship_edge, 1.25)
         var oct := PackedVector2Array()
         for i in 8:
             var a5 := -PI * 0.5 + TAU * float(i) / 8.0
             oct.append(p + Vector2(cos(a5), sin(a5)) * r5)
-        draw_colored_polygon(oct, Color("702846"))
+        _draw_hull_panel(oct, flagship, flagship_edge)
         var oct_inner := PackedVector2Array()
         for i in 8:
             var a6 := -PI * 0.5 + TAU * float(i) / 8.0
-            oct_inner.append(p + Vector2(cos(a6), sin(a6)) * r5 * 0.58)
-        draw_colored_polygon(oct_inner, Color("241123"))
-        draw_circle(p, 8.0, Color("ff6a8f"))
-        draw_line(p + Vector2(-r5 * 0.65, 0), p + Vector2(r5 * 0.65, 0), Color("ffb0c0"), 4.0)
-        draw_line(p + Vector2(0, -r5 * 0.65), p + Vector2(0, r5 * 0.65), Color("ffb0c0"), 4.0)
+            oct_inner.append(p + Vector2(cos(a6), sin(a6)) * r5 * 0.66)
+        _draw_hull_panel(oct_inner, Color("1c1421"), Color(1.0, 0.45, 0.68, 0.42))
+        for arm in 4:
+            var aa := PI * 0.25 + TAU * float(arm) / 4.0
+            draw_line(p + Vector2(cos(aa), sin(aa)) * r5 * 0.24, p + Vector2(cos(aa), sin(aa)) * r5 * 0.78, Color(1.0, 0.42, 0.62, 0.46), 3.0)
+        for turret in [-1.0, 1.0]:
+            var turret_p := p + Vector2(turret * r5 * 0.48, -r5 * 0.04)
+            draw_circle(turret_p, 6.0, Color("2d1a2c"))
+            draw_circle(turret_p, 3.5, Color("ff9ab9"))
+            draw_line(turret_p, turret_p + Vector2(0.0, -r5 * 0.34), Color("ffb0c0"), 2.3)
+        draw_circle(p, r5 * 0.22, Color("30162b"))
+        draw_circle(p, r5 * 0.13, flagship_edge)
+        draw_circle(p, r5 * 0.055, Color("fff0f6"))
+        _draw_engine_flame(p + Vector2(-r5 * 0.36, r5 * 0.78), r5 * 0.56, 3.4, flagship_edge)
+        _draw_engine_flame(p + Vector2(r5 * 0.36, r5 * 0.78), r5 * 0.56, 3.4, flagship_edge)
 
     if (kind == 1 or kind == 2) and not String(obj.get("owner_faction", "")).is_empty():
         var owner_color := _faction_color(String(obj.owner_faction))
