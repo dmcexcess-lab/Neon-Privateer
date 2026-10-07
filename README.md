@@ -175,20 +175,34 @@ Every contract stores its origin, destination, issuer, route pirate exposure, pa
 
 CONTESTED + UNCONTROLLED route coverage is the authoritative **pirate exposure** percentage for contracts. It produces an explicit payout premium for freight, passengers, and especially bounties. Route danger still controls asteroid density and route length still controls travel time; neither substitutes for the political risk premium.
 
-## Generated Privateer menu art
+## Graphics overhaul
 
-Docked/privateer-facing screens use generated sci-fi artwork while the arcade flight layer remains procedural and unchanged.
+Privateer now uses a two-layer visual pipeline designed for phone/Web performance.
 
-The four planet portraits are now reusable archetype art:
+Docked screens keep the generated sci-fi atlas as their background layer, but the presentation pass adds animated scan-line treatment, cinematic darkening, double-framed/corner-bracket panels, stronger planet glows/rings, and higher-contrast information cards. The four planet portraits remain reusable archetype art:
 
-- **LUSH:** ocean/jungle world.
-- **VOLCANIC:** lava world.
-- **FROZEN:** ice world.
-- **INDUSTRIAL:** smog/industrial world.
+- **LUSH:** ocean/jungle world with green atmospheric treatment.
+- **VOLCANIC:** lava world with hot orange/red treatment.
+- **FROZEN:** ice world with cyan/blue treatment.
+- **INDUSTRIAL:** smog/industrial world with amber treatment.
 
-Hub/career, market, navigation/contracts, and ship-upgrade screens continue using the generated station interiors. The 32 generated worlds reuse the portrait matching their type.
+The arcade flight layer remains procedural so it stays lightweight, but the placeholder-flat geometry has been replaced with a richer production renderer:
 
-The atlas remains menu-only; the arcade renderer does not reference it.
+- layered nebula/parallax starfield and speed streaks;
+- detailed player hull, canopy, wing insets, running lights, twin engines, animated exhaust, dash trails, and shield arcs;
+- distinct pirate/police fighter silhouettes with faction lighting;
+- armored pentagon enforcement/bounty platforms;
+- a multi-turret octagon flagship with layered armor, core lighting, and engines;
+- dimensional asteroids with lit edges and multiple crater layers;
+- differentiated basic/reinforced containers;
+- category-colored cargo pods;
+- hex weapon pickups, medical pods, and animated energy cores;
+- projectile glows/cores, missile geometry, laser layering, debris streaks, and variable explosion particles;
+- redesigned flight HUD with route progress, segmented hull/fuel state, boss HP, and clearer touch controls.
+
+`GRAPHICS_REVISION` is currently **2** and is enforced by Privateer smoke so the overhaul cannot silently regress to the old presentation layer.
+
+The visual overhaul intentionally changes presentation only; flight rules, economy, political simulation, contracts, and Classic Neon Driftline behavior remain separate.
 
 ## Space travel
 
@@ -231,7 +245,7 @@ Destroying faction enforcement has additional consequences:
 
 Faction ships use their superpower color; pirate ships use a distinct pirate treatment.
 
-Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, pickups, shields, hit points, and procedural SFX remain unchanged. **Privateer travel no longer has station/lane splits:** flights are one continuous open field from departure to arrival.
+Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, pickups, shields, hit points, and gameplay rules remain unchanged by the graphics pass. **Privateer travel has no station/lane splits:** flights are one continuous open field from departure to arrival.
 
 ### Random police encounters and cargo scans
 
