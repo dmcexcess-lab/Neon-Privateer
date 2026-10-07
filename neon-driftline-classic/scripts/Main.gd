@@ -392,6 +392,13 @@ func _process(delta: float) -> void:
     queue_redraw()
 
 func _input(event: InputEvent) -> void:
+    # Godot can synthesize touch from mouse and mouse from touch. Because this
+    # game handles both physical event types directly, accepting the synthesized
+    # partner would activate tap actions twice (page toggles would flip and
+    # immediately flip back).
+    if event.device == InputEvent.DEVICE_ID_EMULATION:
+        return
+
     if event is InputEventScreenTouch:
         if event.pressed:
             _handle_tap(event.position, event.index)

@@ -1024,10 +1024,40 @@ func _initialize() -> void:
         _fail("run-only hit/shield upgrades applied incorrectly")
         return
 
-    # Switch to weapons/repair page.
-    scene._handle_shop_tap(scene.SHOP_PAGE_TOGGLE_RECT.get_center())
+    # Shop page switching must activate once even when Godot emits a synthesized
+    # compatibility event alongside the physical pointer event.
+    var shop_toggle_pos: Vector2 = scene.SHOP_PAGE_TOGGLE_RECT.get_center()
+    var desktop_click := InputEventMouseButton.new()
+    desktop_click.device = InputEvent.DEVICE_ID_MOUSE
+    desktop_click.button_index = MOUSE_BUTTON_LEFT
+    desktop_click.position = shop_toggle_pos
+    desktop_click.pressed = true
+    scene._input(desktop_click)
+    var emulated_touch := InputEventScreenTouch.new()
+    emulated_touch.device = InputEvent.DEVICE_ID_EMULATION
+    emulated_touch.index = 77
+    emulated_touch.position = shop_toggle_pos
+    emulated_touch.pressed = true
+    scene._input(emulated_touch)
     if scene.shop_page != 1:
-        _fail("shop page toggle did not open weapons/repair")
+        _fail("desktop shop page toggle was double-activated by emulated touch")
+        return
+
+    scene.shop_page = 0
+    var phone_touch := InputEventScreenTouch.new()
+    phone_touch.device = 0
+    phone_touch.index = 78
+    phone_touch.position = shop_toggle_pos
+    phone_touch.pressed = true
+    scene._input(phone_touch)
+    var emulated_mouse := InputEventMouseButton.new()
+    emulated_mouse.device = InputEvent.DEVICE_ID_EMULATION
+    emulated_mouse.button_index = MOUSE_BUTTON_LEFT
+    emulated_mouse.position = shop_toggle_pos
+    emulated_mouse.pressed = true
+    scene._input(emulated_mouse)
+    if scene.shop_page != 1:
+        _fail("phone shop page toggle was double-activated by emulated mouse")
         return
 
     # Shop repair spends score and restores one hit.
