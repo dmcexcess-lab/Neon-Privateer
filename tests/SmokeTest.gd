@@ -5,7 +5,32 @@ func _fail(message: String) -> void:
     quit(1)
 
 func _world_signature(world: Dictionary) -> String:
-    return var_to_str(world)
+    var parts: Array[String] = []
+    parts.append("schema=%d seed=%d" % [int(world.get("schema", 0)), int(world.get("seed", 0))])
+    for planet in world.get("planets", []):
+        var p: Vector2 = Vector2(planet.pos)
+        parts.append("planet,%s,%s,%s,%.4f,%.4f" % [String(planet.id), String(planet.name), String(planet.type), p.x, p.y])
+    for faction in world.get("factions", []):
+        var laws: Dictionary = faction.laws
+        var color: Color = Color(faction.color)
+        parts.append("faction,%s,%s,%s,%.5f,%.5f,%.4f,%.4f,%.4f,%.4f,%s,%s" % [
+            String(faction.id), String(faction.name), String(faction.capital_id),
+            float(faction.radius), float(faction.strength),
+            color.r, color.g, color.b, color.a,
+            str(bool(laws.arms_legal)), str(bool(laws.narcotics_legal))
+        ])
+    for route in world.get("routes", []):
+        parts.append("route,%s,%s,%s,%.5f,%d,%d" % [
+            String(route.id), String(route.a), String(route.b),
+            float(route.length), int(route.distance), int(route.danger)
+        ])
+        for segment in route.get("segments", []):
+            parts.append("segment,%s,%s,%s,%.6f,%.6f" % [
+                String(segment.state), String(segment.faction_id),
+                String(segment.second_faction_id),
+                float(segment.start_t), float(segment.end_t)
+            ])
+    return "\n".join(parts)
 
 func _reachable_planets(scene, start_id: String) -> Dictionary:
     var seen: Dictionary = {start_id: true}
