@@ -29,7 +29,7 @@ func _initialize() -> void:
         "_save_run_snapshot", "_load_run_snapshot", "_pause_run",
         "_create_new_career", "_load_career", "_continue_career",
         "_career_slot_exists", "_career_slot_summary", "_open_profile_menu",
-        "_privateer_art_ready", "_planet_art_region", "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel"
+        "_load_privateer_ui_art", "_privateer_art_ready", "_planet_art_region", "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel"
     ]:
         if not scene.has_method(method_name):
             _fail("missing method " + method_name)

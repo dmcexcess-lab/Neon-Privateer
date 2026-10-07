@@ -2,7 +2,7 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS: Texture2D = preload("res://assets/privateer_ui/privateer_ui_atlas.webp")
+const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.webp"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -120,6 +120,7 @@ const ENEMY_MISSILE_TURN_RATE := 3.2
 const HIT_INVULN_TIME := 0.5
 
 var rng := RandomNumberGenerator.new()
+var privateer_ui_atlas: Texture2D
 var playing := false
 var game_over := false
 var won := false
@@ -257,6 +258,7 @@ var laser_sfx_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
+    _load_privateer_ui_art()
     _setup_audio()
     _load_career_index()
     _migrate_legacy_career_if_needed()
@@ -3251,8 +3253,18 @@ func _draw_career_slots_menu() -> void:
     draw_rect(PROFILE_SLOT_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
+func _load_privateer_ui_art() -> void:
+    privateer_ui_atlas = null
+    var bytes := FileAccess.get_file_as_bytes(PRIVATEER_UI_ATLAS_PATH)
+    if bytes.is_empty():
+        return
+    var image := Image.new()
+    if image.load_webp_from_buffer(bytes) != OK:
+        return
+    privateer_ui_atlas = ImageTexture.create_from_image(image)
+
 func _privateer_art_ready() -> bool:
-    return PRIVATEER_UI_ATLAS != null and PRIVATEER_UI_ATLAS.get_width() == 390 and PRIVATEER_UI_ATLAS.get_height() == 1228
+    return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
 
 func _planet_art_region(planet: String) -> Rect2:
     match planet:
@@ -3267,21 +3279,26 @@ func _planet_art_region(planet: String) -> Rect2:
     return ART_PLANET_ASTER
 
 func _draw_menu_art(region: Rect2, darken: float = 0.56) -> void:
-    draw_texture_rect_region(
-        PRIVATEER_UI_ATLAS,
-        Rect2(Vector2.ZERO, Vector2(W, H)),
-        region,
-        Color.WHITE
-    )
+    if privateer_ui_atlas != null:
+        draw_texture_rect_region(
+            privateer_ui_atlas,
+            Rect2(Vector2.ZERO, Vector2(W, H)),
+            region,
+            Color.WHITE
+        )
+    else:
+        draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"), true)
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(0.01, 0.02, 0.045, darken), true)
 
 func _draw_planet_art(planet: String, rect: Rect2, alpha: float = 1.0) -> void:
+    if privateer_ui_atlas == null:
+        return
     var region := _planet_art_region(planet)
     var center := rect.get_center()
     var radius := minf(rect.size.x, rect.size.y) * 0.54
     draw_circle(center, radius, Color(0.22, 0.85, 1.0, 0.07 * alpha))
     draw_texture_rect_region(
-        PRIVATEER_UI_ATLAS,
+        privateer_ui_atlas,
         rect,
         region,
         Color(1.0, 1.0, 1.0, alpha)
