@@ -134,15 +134,15 @@ The playfield now reads as open space rather than a lane/road: layered scrolling
 - **Trapezoid drones (kind 3, 4 HP):** weak ranged skirmishers. They can move both up and down, try to maintain a standoff above the player baseline, fire aimed shots, and dodge player projectiles that are on an intercept path. They never intentionally move below the player's baseline.
 - **Pentagon missile turrets (kind 4, 20 HP):** heavy stationary-in-world emplacements. They have no lateral AI and simply scroll by with the level. While above the player they launch slow homing missiles. A missile deals **2 hits** if unshielded, but a shield absorbs the entire missile for exactly **1 shield charge**.
 
-Enemy progression remains gradual:
+Enemy progression now has long mastery windows:
 
-- **Level 1:** sparse asteroids only; the short hard lane gets small asteroid clusters.
-- **Level 2:** square drones begin.
-- **Level 4:** smart diamond drones begin.
-- **Level 6:** ranged trapezoid drones begin.
-- **Level 8:** heavy pentagon missile turrets begin. They do not pursue, dodge, or hold position on-screen; they simply scroll past with the level while firing homing missiles.
+- **Levels 1–2:** asteroids only; hard lanes can still bunch them into denser clusters.
+- **Level 3:** easy square drones begin.
+- **Level 7:** smart diamond drones begin.
+- **Level 11:** ranged trapezoid drones begin.
+- **Level 15:** heavy pentagon missile turrets begin. They do not pursue, dodge, or hold position on-screen; they simply scroll past with the level while firing homing missiles.
 
-Levels gradually lengthen, station splits become longer and more numerous, and enemy pressure rises slowly.
+The generic difficulty curve is also softer. Per-level pressure rises by **0.075** instead of 0.12, and within-level pressure contributes at most **0.12** instead of 0.18. This gives several levels to learn each roster before density and speed become aggressive.
 
 ## Split structure lifecycle
 

@@ -649,9 +649,10 @@ func _schedule_next_split() -> void:
     next_lane_event_at = maxf(target, elapsed + 1.25)
 
 func _level_difficulty() -> float:
-    var level_pressure := float(level - 1) * 0.12
-    var stage_pressure := clampf(elapsed / _level_duration(), 0.0, 1.0) * 0.18
-    return minf(1.65, level_pressure + stage_pressure)
+    # Longer mastery runway between enemy unlocks.
+    var level_pressure := float(level - 1) * 0.075
+    var stage_pressure := clampf(elapsed / _level_duration(), 0.0, 1.0) * 0.12
+    return minf(1.35, level_pressure + stage_pressure)
 
 func _spawn_interval(easy_value: float, hard_value: float, difficulty: float) -> float:
     var base := lerpf(easy_value, hard_value, clampf(difficulty, 0.0, 1.0))
@@ -1403,13 +1404,13 @@ func _lane_center(hard_lane: bool) -> float:
     return (bounds.x + bounds.y) * 0.5
 
 func _enemy_kind_cap_for_level() -> int:
-    if level <= 1:
+    if level < 3:
         return 0
-    if level <= 3:
+    if level < 7:
         return 1
-    if level <= 5:
+    if level < 11:
         return 2
-    if level <= 7:
+    if level < 15:
         return 3
     return 4
 

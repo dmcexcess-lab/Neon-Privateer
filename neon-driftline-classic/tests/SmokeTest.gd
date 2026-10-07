@@ -651,9 +651,15 @@ func _initialize() -> void:
     var level_two_height: float = scene._station_height_for_level()
     scene.level = 3
     var level_three_start: float = scene._level_difficulty()
-    if level_one_start > 0.01 or level_one_end <= level_one_start or level_three_start <= level_one_start:
+    scene.level = 7
+    var level_seven_start: float = scene._level_difficulty()
+    if level_one_start > 0.01 or level_one_end <= level_one_start or level_three_start <= level_one_start or level_seven_start <= level_three_start:
         _fail("level difficulty does not ramp correctly")
         return
+    if level_three_start >= 0.20 or level_seven_start >= 0.50:
+        _fail("level difficulty still climbs too quickly in the early game")
+        return
+    scene.level = 3
     if level_two_duration != 21.0 or scene._level_duration() != 24.0:
         _fail("level duration does not increase gradually")
         return
@@ -670,25 +676,42 @@ func _initialize() -> void:
     # Restore clean level-1 state for combat tests.
     scene._start_game()
 
-    # Enemy ladder: L1 circles only, then squares, diamonds, and shooting rhomboids unlock later.
+    # Enemy ladder: long mastery windows before each new archetype.
+    scene.level = 1
     if scene._enemy_kind_cap_for_level() != 0:
-        _fail("level 1 should unlock circles only")
+        _fail("level 1 should unlock asteroids only")
         return
     scene.level = 2
-    if scene._enemy_kind_cap_for_level() != 1:
-        _fail("moving squares should unlock at level 2")
+    if scene._enemy_kind_cap_for_level() != 0:
+        _fail("level 2 should still be asteroid-only")
         return
-    scene.level = 4
-    if scene._enemy_kind_cap_for_level() != 2:
-        _fail("smart diamonds should unlock at level 4")
+    scene.level = 3
+    if scene._enemy_kind_cap_for_level() != 1:
+        _fail("easy square drones should unlock at level 3")
         return
     scene.level = 6
-    if scene._enemy_kind_cap_for_level() != 3:
-        _fail("shooting trapezoids should unlock at level 6")
+    if scene._enemy_kind_cap_for_level() != 1:
+        _fail("level 6 should still cap at square drones")
         return
-    scene.level = 8
+    scene.level = 7
+    if scene._enemy_kind_cap_for_level() != 2:
+        _fail("smart diamonds should unlock at level 7")
+        return
+    scene.level = 10
+    if scene._enemy_kind_cap_for_level() != 2:
+        _fail("level 10 should still cap at diamonds")
+        return
+    scene.level = 11
+    if scene._enemy_kind_cap_for_level() != 3:
+        _fail("shooting trapezoids should unlock at level 11")
+        return
+    scene.level = 14
+    if scene._enemy_kind_cap_for_level() != 3:
+        _fail("level 14 should still cap at trapezoids")
+        return
+    scene.level = 15
     if scene._enemy_kind_cap_for_level() != 4:
-        _fail("pentagon missile turrets should unlock at level 8")
+        _fail("pentagon missile turrets should unlock at level 15")
         return
 
     scene._start_game()
