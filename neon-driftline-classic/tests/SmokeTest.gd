@@ -40,7 +40,7 @@ func _initialize() -> void:
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon", "_unlocked_start_weapon_options", "_cycle_starting_weapon",
         "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
-        "_load_run_snapshot", "_clear_run_snapshot", "_make_tone", "_make_sweep", "_play_sfx"
+        "_load_run_snapshot", "_clear_run_snapshot", "_spawn_feedback_popup", "_spawn_feedback_ring", "_move_feedback", "_make_tone", "_make_sweep", "_play_sfx"
     ]:
         if not scene.has_method(method_name):
             _fail("missing gameplay method " + method_name)
@@ -903,6 +903,12 @@ func _initialize() -> void:
     if scene.score != scene.ENERGY_ORB_BASE_SCORE or scene.score < 10 or scene.score >= 100 or scene.energy != 1:
         _fail("normal energy orb should score in the tens")
         return
+    if scene.feedback_popups.is_empty() or String(scene.feedback_popups[-1].text) != "+%d" % scene.ENERGY_ORB_BASE_SCORE:
+        _fail("normal energy orb pickup did not create score feedback")
+        return
+    if scene.feedback_rings.is_empty():
+        _fail("normal energy orb pickup did not create ring feedback")
+        return
 
     scene.objects.clear()
     scene.score = 0
@@ -914,6 +920,9 @@ func _initialize() -> void:
     scene._move_objects(0.0)
     if scene.score != int(scene.ENERGY_ORB_BASE_SCORE * scene.ENERGY_ORB_DASH_MULT) or scene.score < 100:
         _fail("dash energy orb should score in the hundreds")
+        return
+    if scene.feedback_popups.is_empty() or not String(scene.feedback_popups[-1].text).begins_with("DASH +"):
+        _fail("dash orb pickup did not create explicit dash pickup feedback")
         return
 
     # Random orb cadence increases by level and only gets faster while the
@@ -1509,8 +1518,17 @@ func _initialize() -> void:
     scene.target_x = 195.0
     scene.player_y = scene.PLAYER_Y
     scene.dash_cooldown = 0.0
+    scene.feedback_popups.clear()
+    scene.feedback_rings.clear()
     scene._dash()
+    if scene.feedback_popups.is_empty() or String(scene.feedback_popups[-1].text) != "DASH" or scene.feedback_rings.is_empty():
+        _fail("dash activation did not create visible feedback")
+        return
     scene._process(0.30)
+    scene._move_feedback(1.0)
+    if not scene.feedback_popups.is_empty() or not scene.feedback_rings.is_empty():
+        _fail("floating feedback did not expire cleanly")
+        return
     var baseline_dash_distance: float = scene.PLAYER_Y - scene.player_y
     if baseline_dash_distance < 145.0 or baseline_dash_distance > 175.0:
         _fail("baseline dash should travel only about 160 pixels")

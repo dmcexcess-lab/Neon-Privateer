@@ -192,6 +192,8 @@ var shots: Array[Dictionary] = []
 var enemy_shots: Array[Dictionary] = []
 var pending_drops: Array[Dictionary] = []
 var particles: Array[Dictionary] = []
+var feedback_popups: Array[Dictionary] = []
+var feedback_rings: Array[Dictionary] = []
 var last_near_ids: Dictionary = {}
 var sfx_players: Array[AudioStreamPlayer] = []
 var sfx_cursor := 0
@@ -396,6 +398,7 @@ func _process(delta: float) -> void:
     _move_objects(world_delta)
     _move_enemy_shots(game_delta)
     _move_particles(delta)
+    _move_feedback(delta)
 
     if elapsed >= _level_duration() and playing:
         _open_shop()
@@ -521,7 +524,10 @@ func _dash() -> void:
     dash_score_timer = DASH_SCORE_DURATION
     invuln = maxf(invuln, 0.24)
     shake = maxf(shake, 3.5)
+    var dash_pos := Vector2(player_x, player_y - 18.0)
     _burst(Vector2(player_x, player_y), 10, Color("77f7ff"))
+    _spawn_feedback_popup(dash_pos, "DASH", Color("77f7ff"), 0.42, -48.0, 17)
+    _spawn_feedback_ring(Vector2(player_x, player_y), Color("b56cff"), 0.34, 20.0, 54.0)
     _play_sfx(dash_sfx)
 
 func _start_game() -> void:
@@ -593,6 +599,8 @@ func _start_game() -> void:
     enemy_shots.clear()
     pending_drops.clear()
     particles.clear()
+    feedback_popups.clear()
+    feedback_rings.clear()
     last_near_ids.clear()
     _clear_run_snapshot()
     _autosave_permanent_progress()
@@ -2097,12 +2105,21 @@ func _move_objects(delta: float) -> void:
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
                 energy += 1
                 var orb_score := float(ENERGY_ORB_BASE_SCORE)
-                if dash_score_timer > 0.0:
+                var dash_pickup := dash_score_timer > 0.0
+                if dash_pickup:
                     orb_score *= ENERGY_ORB_DASH_MULT
                 orb_score *= _lane_score_multiplier()
-                score += int(round(orb_score))
-                _burst(Vector2(obj.x, obj.y), 9, Color("6bffb0"))
-                _play_sfx(energy_sfx, 1.06 if dash_score_timer > 0.0 else 1.0, -3.0)
+                var awarded := int(round(orb_score))
+                score += awarded
+                var pickup_pos := Vector2(float(obj.x), float(obj.y))
+                _burst(pickup_pos, 9, Color("6bffb0"))
+                if dash_pickup:
+                    _spawn_feedback_popup(pickup_pos, "DASH +%d" % awarded, Color("77f7ff"), 0.62, -58.0, 18)
+                    _spawn_feedback_ring(pickup_pos, Color("6bffb0"), 0.46, 10.0, 40.0)
+                else:
+                    _spawn_feedback_popup(pickup_pos, "+%d" % awarded, Color("6bffb0"), 0.56, -52.0, 18)
+                    _spawn_feedback_ring(pickup_pos, Color("6bffb0"), 0.38, 9.0, 32.0)
+                _play_sfx(energy_sfx, 1.06 if dash_pickup else 1.0, -3.0)
                 continue
         elif obj.type == "repair":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
@@ -2176,6 +2193,46 @@ func _burst(pos: Vector2, count: int, color: Color) -> void:
             "color": color
         })
 
+func _spawn_feedback_popup(pos: Vector2, text_value: String, color: Color, life: float = 0.55, vy: float = -52.0, size: int = 18) -> void:
+    feedback_popups.append({
+        "x": pos.x,
+        "y": pos.y,
+        "vy": vy,
+        "text": text_value,
+        "life": life,
+        "max": life,
+        "size": size,
+        "color": color
+    })
+
+func _spawn_feedback_ring(pos: Vector2, color: Color, life: float = 0.40, start_radius: float = 10.0, end_radius: float = 34.0) -> void:
+    feedback_rings.append({
+        "x": pos.x,
+        "y": pos.y,
+        "life": life,
+        "max": life,
+        "start": start_radius,
+        "end": end_radius,
+        "color": color
+    })
+
+func _move_feedback(delta: float) -> void:
+    var next_popups: Array[Dictionary] = []
+    for popup in feedback_popups:
+        popup.life -= delta
+        popup.y += float(popup.vy) * delta
+        popup.vy *= 0.96
+        if popup.life > 0.0:
+            next_popups.append(popup)
+    feedback_popups = next_popups
+
+    var next_rings: Array[Dictionary] = []
+    for ring in feedback_rings:
+        ring.life -= delta
+        if ring.life > 0.0:
+            next_rings.append(ring)
+    feedback_rings = next_rings
+
 func _move_particles(delta: float) -> void:
     var next: Array[Dictionary] = []
     for p in particles:
@@ -2242,6 +2299,7 @@ func _draw() -> void:
         var pc: Color = p.color
         draw_circle(Vector2(p.x, p.y) + offset, 3.0, Color(pc.r, pc.g, pc.b, alpha))
 
+    _draw_feedback(offset)
     _draw_player(offset)
     _draw_hud()
     _draw_controls()
@@ -2525,19 +2583,113 @@ func _draw_controls() -> void:
     draw_rect(RIGHT_CONTROL_RECT, held_border if right_held else move_border, false, 3.0)
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
+func _draw_menu_backdrop() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("070914"))
+    draw_circle(Vector2(54, 120), 150.0, Color(0.10, 0.85, 1.0, 0.045))
+    draw_circle(Vector2(344, 610), 190.0, Color(0.80, 0.18, 1.0, 0.040))
+    draw_line(Vector2(20, 0), Vector2(20, H), Color(0.20, 0.90, 1.0, 0.08), 1.0)
+    draw_line(Vector2(W - 20, 0), Vector2(W - 20, H), Color(0.90, 0.20, 1.0, 0.08), 1.0)
+
+func _text_center(s: String, y: float, size: int, color: Color, left_x: float = 0.0, right_x: float = W) -> void:
+    draw_string(ThemeDB.fallback_font, Vector2(left_x, y), s, HORIZONTAL_ALIGNMENT_CENTER, right_x - left_x, size, color)
+
+func _text_right(s: String, right_x: float, y: float, size: int, color: Color, width: float = 110.0) -> void:
+    draw_string(ThemeDB.fallback_font, Vector2(right_x - width, y), s, HORIZONTAL_ALIGNMENT_RIGHT, width, size, color)
+
+func _neon_panel(rect: Rect2, fill: Color, border: Color, active: bool = true, width: float = 2.0) -> void:
+    if active:
+        draw_rect(rect.grow(4.0), Color(border.r, border.g, border.b, 0.10), false, 5.0)
+        draw_rect(rect.grow(2.0), Color(border.r, border.g, border.b, 0.18), false, 3.0)
+    draw_rect(rect, fill, true)
+    draw_rect(rect, border, false, width)
+
+func _draw_neon_shape(center: Vector2, radius: float, sides: int, rotation: float, color: Color) -> void:
+    var points := PackedVector2Array()
+    for i in sides:
+        var a := rotation + TAU * float(i) / float(sides)
+        points.append(center + Vector2(cos(a), sin(a)) * radius)
+    points.append(points[0])
+    draw_polyline(points, Color(color.r, color.g, color.b, 0.16), 8.0, true)
+    draw_polyline(points, Color(color.r, color.g, color.b, 0.40), 4.0, true)
+    draw_polyline(points, color, 1.8, true)
+
+func _glow_text_center(s: String, y: float, size: int, core: Color, glow: Color) -> void:
+    _text_center(s, y + 2.0, size, Color(glow.r, glow.g, glow.b, 0.18), -2.0, W - 2.0)
+    _text_center(s, y - 2.0, size, Color(glow.r, glow.g, glow.b, 0.18), 2.0, W + 2.0)
+    _text_center(s, y, size, core)
+
+func _draw_title_logo() -> void:
+    var cyan := Color("77f7ff")
+    var magenta := Color("d56cff")
+    var lime := Color("6bffb0")
+
+    # Split-lane motif.
+    draw_rect(Rect2(76.0, 78.0, 105.0, 62.0), Color(0.10, 0.95, 1.0, 0.035), true)
+    draw_rect(Rect2(209.0, 78.0, 105.0, 62.0), Color(1.0, 0.08, 0.28, 0.045), true)
+    draw_line(Vector2(181, 78), Vector2(181, 140), Color(cyan.r, cyan.g, cyan.b, 0.38), 2.0)
+    draw_line(Vector2(209, 78), Vector2(209, 140), Color(magenta.r, magenta.g, magenta.b, 0.42), 2.0)
+
+    # Ship silhouette.
+    var ship_center := Vector2(W * 0.5, 103.0)
+    draw_circle(ship_center, 34.0, Color(cyan.r, cyan.g, cyan.b, 0.055))
+    draw_circle(ship_center, 27.0, Color(magenta.r, magenta.g, magenta.b, 0.035))
+    var ship := PackedVector2Array([
+        ship_center + Vector2(0, -25),
+        ship_center + Vector2(10, -4),
+        ship_center + Vector2(24, 15),
+        ship_center + Vector2(7, 10),
+        ship_center + Vector2(0, 20),
+        ship_center + Vector2(-7, 10),
+        ship_center + Vector2(-24, 15),
+        ship_center + Vector2(-10, -4)
+    ])
+    var ship_outline := ship.duplicate()
+    ship_outline.append(ship[0])
+    draw_colored_polygon(ship, Color(0.15, 0.92, 1.0, 0.12))
+    draw_polyline(ship_outline, Color(cyan.r, cyan.g, cyan.b, 0.20), 8.0, true)
+    draw_polyline(ship_outline, cyan, 2.0, true)
+    draw_line(ship_center + Vector2(0, 18), ship_center + Vector2(0, 37), Color(magenta.r, magenta.g, magenta.b, 0.55), 5.0)
+
+    # Enemy motif: the same geometric language used in play.
+    draw_arc(Vector2(103, 112), 12.0, 0.0, TAU, 24, Color(lime.r, lime.g, lime.b, 0.22), 6.0, true)
+    draw_arc(Vector2(103, 112), 12.0, 0.0, TAU, 24, lime, 1.8, true)
+    _draw_neon_shape(Vector2(135, 101), 11.0, 4, PI * 0.25, cyan)
+    _draw_neon_shape(Vector2(255, 101), 11.0, 4, 0.0, Color("ffd166"))
+    _draw_neon_shape(Vector2(288, 112), 12.0, 5, -PI * 0.5, magenta)
+
+    _glow_text_center("NEON", 188.0, 52, Color("f0fbff"), cyan)
+    _glow_text_center("DRIFTLINE", 238.0, 46, Color("f0fbff"), magenta)
+
+func _draw_feedback(offset: Vector2) -> void:
+    for ring in feedback_rings:
+        var life_ratio := clampf(float(ring.life) / float(ring.max), 0.0, 1.0)
+        var progress := 1.0 - life_ratio
+        var radius := lerpf(float(ring.start), float(ring.end), progress)
+        var rc: Color = ring.color
+        var pos := Vector2(float(ring.x), float(ring.y)) + offset
+        draw_arc(pos, radius, 0.0, TAU, 28, Color(rc.r, rc.g, rc.b, life_ratio * 0.72), 2.5, true)
+
+    for popup in feedback_popups:
+        var life_ratio := clampf(float(popup.life) / float(popup.max), 0.0, 1.0)
+        var pc: Color = popup.color
+        var x := float(popup.x) + offset.x
+        var y := float(popup.y) + offset.y
+        var size := int(popup.size)
+        draw_string(ThemeDB.fallback_font, Vector2(x - 72.0, y), String(popup.text), HORIZONTAL_ALIGNMENT_CENTER, 144.0, size, Color(pc.r, pc.g, pc.b, life_ratio))
+
 func _draw_title() -> void:
-    _text("NEON", Vector2(102, 180), 52, Color("77f7ff"))
-    _text("DRIFTLINE", Vector2(54, 236), 47, Color("f0fbff"))
-    _text("R %07d" % research_credits, Vector2(126, 306), 20, Color("ffd166"))
-    draw_rect(MAIN_LOADOUT_RECT, Color("17243a"), true)
-    draw_rect(MAIN_LOADOUT_RECT, Color("b56cff"), false, 2.0)
-    _text("%s  >" % _weapon_label(_valid_starting_weapon()), MAIN_LOADOUT_RECT.position + Vector2(18, 34), 16, Color("f1dcff"))
-    draw_rect(MAIN_START_RECT, Color("123544"), true)
-    draw_rect(MAIN_START_RECT, Color("77f7ff"), false, 3.0)
-    _text("START", MAIN_START_RECT.position + Vector2(96, 42), 24, Color("f0fbff"))
-    draw_rect(MAIN_RESEARCH_RECT, Color("231835"), true)
-    draw_rect(MAIN_RESEARCH_RECT, Color("b56cff"), false, 3.0)
-    _text("RESEARCH", MAIN_RESEARCH_RECT.position + Vector2(72, 42), 23, Color("f1dcff"))
+    _draw_title_logo()
+    var pulse := 0.84 + sin(Time.get_ticks_msec() * 0.004) * 0.12
+    _text_center("R %07d" % research_credits, 306.0, 20, Color(1.0, 0.82, 0.40, pulse), 54.0, 336.0)
+
+    _neon_panel(MAIN_LOADOUT_RECT, Color("151b31"), Color("b56cff"), true, 2.0)
+    _text_center("%s  >" % _weapon_label(_valid_starting_weapon()), MAIN_LOADOUT_RECT.position.y + 34.0, 16, Color("f1dcff"), MAIN_LOADOUT_RECT.position.x, MAIN_LOADOUT_RECT.end.x)
+
+    _neon_panel(MAIN_START_RECT, Color("102b35"), Color("77f7ff"), true, 3.0)
+    _text_center("START", MAIN_START_RECT.position.y + 42.0, 24, Color("f0fbff"), MAIN_START_RECT.position.x, MAIN_START_RECT.end.x)
+
+    _neon_panel(MAIN_RESEARCH_RECT, Color("25152f"), Color("d56cff"), true, 3.0)
+    _text_center("RESEARCH", MAIN_RESEARCH_RECT.position.y + 42.0, 23, Color("f1dcff"), MAIN_RESEARCH_RECT.position.x, MAIN_RESEARCH_RECT.end.x)
 
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
@@ -2546,22 +2698,21 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
     var cost := _research_cost(track)
     var can_buy := not at_max and research_credits >= cost
     var recommended := track == "hits" and lvl == 0
-    var fill := Color("173524") if recommended else (Color("14232f") if can_buy else Color("0d1118"))
-    var border := Color("6bffb0") if recommended else (Color("77f7ff") if can_buy else Color("46515c"))
-    draw_rect(rect, fill, true)
-    draw_rect(rect, border, false, 3.0 if recommended else 2.0)
-    _text("%s  L%d" % [label, lvl], rect.position + Vector2(10, 23), 16, Color("f0fbff"))
-    _text(effect, rect.position + Vector2(10, 45), 13, Color("8ea9b8"))
+    var fill := Color("173524") if recommended else (Color("101c2a") if can_buy else Color("0b0f18"))
+    var border := Color("6bffb0") if recommended else (Color("77f7ff") if can_buy else Color("3e4c5a"))
+    _neon_panel(rect, fill, border, can_buy or recommended, 3.0 if recommended else 2.0)
+    _text("%s  L%d" % [label, lvl], rect.position + Vector2(14, 23), 16, Color("f0fbff"))
+    _text(effect, rect.position + Vector2(14, 45), 13, Color("8ea9b8"))
     var full_label := "FULL" if track == "hits" or track == "shield" else "MAX"
     var cost_text := full_label if at_max else ("%d" % cost)
-    _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max or recommended else Color("ffd166"))
+    _text_right(cost_text, rect.end.x - 14.0, rect.position.y + 36.0, 15, Color("6bffb0") if at_max or recommended else Color("ffd166"), 92.0)
     if recommended:
-        _text("BEST FIRST", rect.position + Vector2(205, 18), 11, Color("6bffb0"))
+        _text_right("FIRST", rect.end.x - 14.0, rect.position.y + 18.0, 11, Color("6bffb0"), 72.0)
 
 func _draw_research() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
-    _text("R %07d" % research_credits, Vector2(126, 112), 18, Color("ffd166"))
+    _draw_menu_backdrop()
+    _glow_text_center("RESEARCH", 76.0, 34, Color("f0fbff"), Color("d56cff"))
+    _text_center("R %07d" % research_credits, 114.0, 18, Color("ffd166"), 54.0, 336.0)
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3%")
@@ -2579,21 +2730,20 @@ func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> v
     var selected := starting_weapon == weapon
     var cost := 0 if weapon == "none" else _weapon_research_cost(weapon)
     var can_buy := unlocked or research_credits >= cost
-    var fill := Color("14232f") if can_buy else Color("0d1118")
-    var border := Color("77f7ff") if can_buy else Color("46515c")
+    var fill := Color("101c2a") if can_buy else Color("0b0f18")
+    var border := Color("77f7ff") if can_buy else Color("3e4c5a")
     if selected:
-        fill = Color("183524")
+        fill = Color("143127")
         border = Color("6bffb0")
-    draw_rect(rect, fill, true)
-    draw_rect(rect, border, false, 2.0)
-    _text(label, rect.position + Vector2(12, 23), 16, Color("f0fbff"))
+    _neon_panel(rect, fill, border, can_buy or selected, 2.0)
+    _text(label, rect.position + Vector2(14, 34), 16, Color("f0fbff"))
     var right := "SELECTED" if selected else ("SELECT" if unlocked else ("%d" % cost))
-    _text(right, rect.position + Vector2(215, 34), 13, Color("6bffb0") if unlocked or selected else Color("ffd166"))
+    _text_right(right, rect.end.x - 14.0, rect.position.y + 34.0, 13, Color("6bffb0") if unlocked or selected else Color("ffd166"), 105.0)
 
 func _draw_weapon_research() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("WEAPONS", Vector2(112, 76), 30, Color("b56cff"))
-    _text("R %07d" % research_credits, Vector2(126, 112), 18, Color("ffd166"))
+    _draw_menu_backdrop()
+    _glow_text_center("WEAPONS", 76.0, 30, Color("f0fbff"), Color("d56cff"))
+    _text_center("R %07d" % research_credits, 114.0, 18, Color("ffd166"), 54.0, 336.0)
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
@@ -2621,16 +2771,15 @@ func _draw_pause_overlay() -> void:
     _text("BANK + QUIT", PAUSE_QUIT_RECT.position + Vector2(73, 46), 20, Color("ffd166"))
 
 func _draw_shop_button(rect: Rect2, label: String, cost: int, enabled: bool, owned: bool = false) -> void:
-    var fill := Color("17303b") if enabled else Color(0.09, 0.10, 0.13, 0.92)
-    var border := Color("77f7ff") if enabled else Color(0.28, 0.32, 0.36, 0.8)
+    var fill := Color("101f2c") if enabled else Color(0.055, 0.065, 0.09, 0.95)
+    var border := Color("77f7ff") if enabled else Color(0.24, 0.30, 0.36, 0.8)
     if owned:
-        fill = Color(0.13, 0.20, 0.16, 0.95)
+        fill = Color("143127")
         border = Color("6bffb0")
-    draw_rect(rect, fill, true)
-    draw_rect(rect, border, false, 2.0)
+    _neon_panel(rect, fill, border, enabled or owned, 2.0)
     var suffix := "OWNED" if owned else ("%d" % cost)
-    _text(label, rect.position + Vector2(10, 24), 15, Color("f0fbff"))
-    _text(suffix, rect.position + Vector2(10, 47), 14, Color("6bffb0") if owned else Color("ffd166"))
+    _text(label, rect.position + Vector2(14, 35), 15, Color("f0fbff"))
+    _text_right(suffix, rect.end.x - 12.0, rect.position.y + 35.0, 14, Color("6bffb0") if owned else Color("ffd166"), 90.0)
 
 func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _run_upgrade_level(track)
@@ -2638,24 +2787,25 @@ func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect:
     var at_max := lvl >= max_lvl
     var cost := _run_upgrade_cost(track)
     var can_buy := not at_max and score >= cost
-    draw_rect(rect, Color("14232f") if can_buy else Color("0d1118"), true)
-    draw_rect(rect, Color("77f7ff") if can_buy else Color("46515c"), false, 2.0)
-    _text("%s  +%d" % [label, lvl], rect.position + Vector2(10, 20), 15, Color("f0fbff"))
-    _text(effect, rect.position + Vector2(10, 40), 12, Color("8ea9b8"))
+    var border := Color("77f7ff") if can_buy else Color("3e4c5a")
+    _neon_panel(rect, Color("101c2a") if can_buy else Color("0b0f18"), border, can_buy, 2.0)
+    _text("%s  +%d" % [label, lvl], rect.position + Vector2(14, 21), 15, Color("f0fbff"))
+    _text(effect, rect.position + Vector2(14, 42), 12, Color("8ea9b8"))
     var full_label := "FULL" if track == "hits" or track == "shield" else "MAX"
     var cost_text := full_label if at_max else ("%d" % cost)
-    _text(cost_text, rect.position + Vector2(250, 32), 14, Color("6bffb0") if at_max else Color("ffd166"))
+    _text_right(cost_text, rect.end.x - 14.0, rect.position.y + 34.0, 14, Color("6bffb0") if at_max else Color("ffd166"), 82.0)
 
 func _draw_shop() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("LEVEL %d" % level, Vector2(137, 72), 28, Color("77f7ff"))
-    _text("+%d" % last_level_bonus, Vector2(174, 102), 16, Color("6bffb0"))
-    _text("%06d" % score, Vector2(153, 138), 20, Color("ffd166"))
-    _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 171), 16, Color("bdeef4"))
-    _text("BASE %s" % _weapon_label(_valid_starting_weapon()), Vector2(134, 194), 12, Color("8ea9b8"))
+    _draw_menu_backdrop()
+    _glow_text_center("LEVEL %d" % level, 72.0, 28, Color("f0fbff"), Color("77f7ff"))
+    var reward_pulse := 0.82 + sin(Time.get_ticks_msec() * 0.005) * 0.12
+    _text_center("+%d" % last_level_bonus, 103.0, 16, Color(0.42, 1.0, 0.69, reward_pulse), 54.0, 336.0)
+    _text_center("%06d" % score, 139.0, 20, Color("ffd166"), 54.0, 336.0)
+    _text_center("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], 171.0, 16, Color("bdeef4"), 35.0, 355.0)
+    _text_center("BASE %s" % _weapon_label(_valid_starting_weapon()), 194.0, 12, Color("8ea9b8"), 54.0, 336.0)
 
     if shop_page == 0:
-        _text("UPGRADES", Vector2(151, 203), 15, Color("b56cff"))
+        _text_center("UPGRADES", 203.0, 15, Color("d56cff"), 54.0, 336.0)
         _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
         _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
         _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3%")
@@ -2663,9 +2813,9 @@ func _draw_shop() -> void:
         _draw_run_upgrade_button(SHOP_RUN_SHIELD_RECT, "shield", "SHIELD", "+1")
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("231835"), true)
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("b56cff"), false, 2.0)
-        _text("WEAPONS", SHOP_PAGE_TOGGLE_RECT.position + Vector2(119, 34), 17, Color("f1dcff"))
+        _text_center("WEAPONS", SHOP_PAGE_TOGGLE_RECT.position.y + 34.0, 17, Color("f1dcff"), SHOP_PAGE_TOGGLE_RECT.position.x, SHOP_PAGE_TOGGLE_RECT.end.x)
     else:
-        _text("WEAPONS • 1 LEVEL", Vector2(125, 203), 13, Color("b56cff"))
+        _text_center("WEAPONS • 1 LEVEL", 203.0, 13, Color("d56cff"), 54.0, 336.0)
         var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
         _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
         _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
@@ -2675,21 +2825,21 @@ func _draw_shop() -> void:
         _draw_shop_button(SHOP_LASER_RECT, "LASER 3 DPS", SHOP_LASER_COST, score >= SHOP_LASER_COST and current_weapon != "laser", current_weapon == "laser")
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("17303b"), true)
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("77f7ff"), false, 2.0)
-        _text("UPGRADES", SHOP_PAGE_TOGGLE_RECT.position + Vector2(115, 34), 17, Color("f0fbff"))
+        _text_center("UPGRADES", SHOP_PAGE_TOGGLE_RECT.position.y + 34.0, 17, Color("f0fbff"), SHOP_PAGE_TOGGLE_RECT.position.x, SHOP_PAGE_TOGGLE_RECT.end.x)
 
     draw_rect(SHOP_CONTINUE_RECT, Color("123544"), true)
     draw_rect(SHOP_CONTINUE_RECT, Color("77f7ff"), false, 3.0)
-    _text("LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(111, 41), 21, Color("f0fbff"))
+    _text_center("LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position.y + 41.0, 21, Color("f0fbff"), SHOP_CONTINUE_RECT.position.x, SHOP_CONTINUE_RECT.end.x)
 
 func _draw_results() -> void:
-    draw_rect(Rect2(Vector2(30, 210), Vector2(330, 410)), Color(0.03,0.05,0.09,0.94), true)
-    draw_rect(Rect2(Vector2(30, 210), Vector2(330, 410)), Color("77f7ff") if won else Color("ff426f"), false, 3.0)
-    _text("CLEAR" if won else "ENDED", Vector2(123 if won else 119, 275), 34, Color("77f7ff") if won else Color("ff6687"))
-    _text(result_reason, Vector2(94, 314), 17, Color("8ea9b8"))
-    _text("L %02d" % level, Vector2(163, 350), 22, Color("bdeef4"))
-    _text("+%07d" % last_banked_score, Vector2(112, 392), 24, Color("ffd166"))
-    _text("R %07d" % research_credits, Vector2(116, 435), 20, Color("b56cff"))
-    _text("TAP", Vector2(166, 560), 22, Color("bdeef4"))
+    var panel := Rect2(Vector2(30, 210), Vector2(330, 410))
+    _neon_panel(panel, Color(0.025, 0.035, 0.075, 0.96), Color("77f7ff") if won else Color("ff426f"), true, 3.0)
+    _glow_text_center("CLEAR" if won else "ENDED", 275.0, 34, Color("f0fbff"), Color("77f7ff") if won else Color("ff426f"))
+    _text_center(result_reason, 314.0, 17, Color("8ea9b8"), 48.0, 342.0)
+    _text_center("L %02d" % level, 350.0, 22, Color("bdeef4"), 54.0, 336.0)
+    _text_center("+%07d" % last_banked_score, 392.0, 24, Color("ffd166"), 54.0, 336.0)
+    _text_center("R %07d" % research_credits, 435.0, 20, Color("d56cff"), 54.0, 336.0)
+    _text_center("TAP", 560.0, 22, Color("bdeef4"), 54.0, 336.0)
 
 func _text(s: String, pos: Vector2, size: int, color: Color) -> void:
     draw_string(ThemeDB.fallback_font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size, color)

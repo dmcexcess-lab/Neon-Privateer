@@ -184,7 +184,11 @@ Physical contact outside a dash damages **only the player**. During the active f
 
 ## Menu presentation
 
-Menus use compact labels and retain only actionable state: costs, levels, HP, score/research totals, weapon identity, selection state, and the one-level rental marker. Tutorial-style explanatory copy is kept out of the active menu screens.
+Menus use compact labels and retained actionable state only. Layout now uses shared centered/right-aligned text helpers so costs, statuses, headers, and button copy stay aligned as values change.
+
+The presentation remains asset-free: the title logo, ship silhouette, enemy motifs, split-lane accents, panel glows, pickup rings, and floating score feedback are all drawn from the same geometric primitives used by the game. Cyan/magenta neon accents are stronger while the playfield remains dark for contrast.
+
+Green-orb pickups show their actual awarded score as floating lime text. Dash-boosted orb pickups show an explicit **DASH +N** indicator, and activating dash creates a short cyan/magenta pulse around the ship.
 
 ## Controls
 
