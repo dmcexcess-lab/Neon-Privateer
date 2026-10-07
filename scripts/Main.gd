@@ -103,7 +103,7 @@ const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
 const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 582.0, 342.0, 156.0)
 const SYSTEM_MAP_BACK_RECT := Rect2(24.0, 756.0, 158.0, 54.0)
 const SYSTEM_FLY_RECT := Rect2(208.0, 756.0, 158.0, 54.0)
-const SYSTEM_REFUEL_RECT := Rect2(270.0, 54.0, 94.0, 32.0)
+const SYSTEM_REFUEL_RECT := Rect2(264.0, 58.0, 102.0, 44.0)
 const SYSTEM_RESET_RECT := Rect2(292.0, 114.0, 68.0, 34.0)
 const SYSTEM_STAR_POS := Vector2(195.0, 350.0)
 const SYSTEM_PLANET_HIT_SIZE := 52.0
@@ -3555,6 +3555,19 @@ func _currency_faction_ids() -> Array[String]:
 func _contract_row_rect(index: int) -> Rect2:
     return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
 
+func _contract_status_suffix(contract: Dictionary) -> String:
+    var kind := String(contract.get("type", ""))
+    var hops := int(contract.get("planned_hops", 1))
+    if kind == "delivery" and bool(contract.get("special_delivery", false)):
+        var remaining := maxf(0.0, float(contract.get("time_limit", 0.0)) - float(contract.get("elapsed_seconds", 0.0)))
+        return "H%d  T-%ds" % [hops, int(ceil(remaining))]
+    if kind == "passenger":
+        var elapsed_contract := float(contract.get("elapsed_seconds", 0.0))
+        return "H%d  WAIT %dm" % [hops, int(floor(elapsed_contract / 60.0))]
+    if kind == "bounty":
+        return String(contract.get("boss_archetype", "target")).to_upper()
+    return "H%d" % hops
+
 func _handle_hub_tap(pos: Vector2) -> void:
     if HUB_TRAVEL_RECT.has_point(pos):
         travel_selected_planet = _default_travel_selection()
@@ -5511,7 +5524,7 @@ func _draw() -> void:
 
     if weapon_banner_timer > 0.0:
         draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" or (weapon_banner_text.ends_with(" PATROL") or weapon_banner_text.ends_with(" ENFORCEMENT")) else "WEAPON: "
+        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text.begins_with("BOUNTY") or (weapon_banner_text.ends_with(" PATROL") or weapon_banner_text.ends_with(" ENFORCEMENT")) else "WEAPON: "
         _text(banner_prefix + weapon_banner_text, Vector2(82, 270), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
@@ -5956,7 +5969,7 @@ func _draw_title() -> void:
         var ct := String(active_contract.get("type", "")).to_upper()
         var cd := String(active_contract.get("destination", ""))
         var cr := int(active_contract.get("reward", 0))
-        _text_center("%s > %s  %d CR" % [ct, _planet_display_name(cd), cr], 344.0, 13, Color("6bffb0"), 38.0, 352.0)
+        _text_center("%s > %s  %d CR  %s" % [ct, _planet_display_name(cd), cr, _contract_status_suffix(active_contract)], 344.0, 11, Color("6bffb0"), 30.0, 360.0)
     else:
         _text_center("NO ACTIVE CONTRACT", 344.0, 13, Color("8ea9b8"), 38.0, 352.0)
 
@@ -6111,7 +6124,7 @@ func _draw_travel_menu() -> void:
         next_hop = _next_hop_toward(selected)
         var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
         var selected_level := _route_level_for(int(selected_spec.get("distance", 0)), int(selected_spec.get("danger", 1)), contract_diff)
-        var selected_duration := _route_duration_for(int(selected_spec.get("distance", 1)), int(selected_spec.get("danger", 1)), contract_diff)
+        var selected_duration := _route_duration_for(int(selected_spec.get("distance", 1)), int(selected_spec.get("danger", 1)), contract_diff) / _ship_speed_multiplier()
         var pct := _route_political_percentages_for_spec(selected_spec)
         if selected_spec.get("path", []).is_empty():
             _text("OUT OF JUMP RANGE  •  MAX J%d" % _jump_range(), Vector2(126.0, 646.0), 9, Color("ff8fa6"))
@@ -6243,7 +6256,7 @@ func _draw_contracts_menu() -> void:
     _text("CONTRACT BOARD", Vector2(28, 55), 27, Color("77f7ff"))
     if not active_contract.is_empty():
         var active_label := "SMUGGLE" if bool(active_contract.get("smuggling", false)) else String(active_contract.get("type", "")).to_upper()
-        _text("ACTIVE: %s > %s" % [active_label, _planet_display_name(String(active_contract.destination))], Vector2(30, 94), 14, Color("6bffb0"))
+        _text("ACTIVE: %s > %s  %s" % [active_label, _planet_display_name(String(active_contract.destination)), _contract_status_suffix(active_contract)], Vector2(30, 94), 11, Color("6bffb0"))
     else:
         _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
     for i in contract_board.size():
@@ -6261,12 +6274,14 @@ func _draw_contracts_menu() -> void:
         var relation_gain := int(contract.get("relation_reward", 0))
         _text("%s  PIR %d%%  REP +%d" % [issuer, exposure, relation_gain], rect.position + Vector2(12, 73), 9, Color("bdeef4"))
         if String(contract.type) == "delivery":
-            var cargo_label := String(contract.get("commodity", "CARGO")).to_upper()
-            _text(cargo_label, rect.position + Vector2(254, 23), 10, Color("ff8fa6") if smuggling else Color("bdeef4"))
+            var cargo_label := _short_map_label(String(contract.get("commodity", "CARGO")).to_upper(), 12)
+            _text(cargo_label, rect.position + Vector2(224, 23), 9, Color("ff8fa6") if smuggling else Color("bdeef4"))
+            if bool(contract.get("special_delivery", false)):
+                _text(_contract_status_suffix(contract), rect.position + Vector2(220, 72), 9, Color("ffd166"))
         elif String(contract.type) == "passenger":
-            _text("1 PAX", rect.position + Vector2(252, 23), 10, Color("bdeef4"))
+            _text(_contract_status_suffix(contract), rect.position + Vector2(238, 23), 9, Color("bdeef4"))
         else:
-            _text("BOSS", rect.position + Vector2(258, 23), 10, Color("ff8fa6"))
+            _text(_contract_status_suffix(contract), rect.position + Vector2(230, 23), 9, Color("ff8fa6"))
     _draw_submenu_back()
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
