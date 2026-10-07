@@ -37,7 +37,7 @@ func _initialize() -> void:
 
     # Generated Privateer menu art is present and each world maps to its own atlas region.
     if not scene._privateer_art_ready():
-        _fail("Privateer generated-art texture did not import/load at expected dimensions")
+        _fail("Privateer native generated-art texture did not load at expected dimensions")
         return
     for chunk_index in scene.PRIVATEER_UI_ATLAS_CHUNKS:
         if not FileAccess.file_exists(scene.PRIVATEER_UI_ATLAS_PATH % chunk_index):
