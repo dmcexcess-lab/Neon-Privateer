@@ -257,7 +257,7 @@ func _initialize() -> void:
         "_ensure_market_index_schema", "_ensure_currency_schema",
         "_planet_specialty", "_faction_currency_base_price", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
         "_market_index_price", "_market_index_buy_price", "_market_index_sell_price", "_buy_market_index", "_sell_market_index",
-        "_deposit_all_cash", "_withdraw_all_bank", "_apply_bank_interest", "_buy_currency", "_sell_currency",
+        "_deposit_all_cash", "_withdraw_all_bank", "_apply_bank_interest", "_buy_currency", "_sell_currency", "_reset_destroyed_ship",
         "_record_simulated_trade", "_trade_specialty_along_route", "_simulate_route_trade", "_update_aggregate_market_indices",
         "_frontier_pairs", "_simulate_empire_macro_tick", "_top_traded_commodities", "_currency_faction_ids",
         "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
@@ -2173,23 +2173,84 @@ func _initialize() -> void:
         _fail("faction currency sell did not liquidate position")
         return
 
-    # Ship destruction loses carried cash only; protected bank balance survives.
+    # Ship destruction is a full ship loss: cash, upgrades, weapons, cargo
+    # and passengers are destroyed; financial assets survive; respawn is the
+    # last successfully landed planet (route origin).
+    scene.current_planet = lush
+    scene.route_origin = lush
+    scene.destination_planet = volcanic
     scene.research_credits = 777
     scene.bank_balance = 1234
+    scene.market_index_holdings["green"] = 2
+    scene.market_index_holdings["grey"] = 3
+    scene.currency_holdings[currency_faction] = 4
+    scene.research_ship_speed = 2
+    scene.research_dash = 3
+    scene.research_damage = 4
+    scene.research_hits = 2
+    scene.research_shield = 1
+    scene.research_start_single = true
+    scene.research_start_dual = true
+    scene.research_start_laser = true
+    scene.research_start_cone = true
+    scene.research_start_seeker = true
+    scene.starting_weapon = "seeker"
+    scene.current_weapon = "laser"
+    scene.cargo["Grain"] = 2
+    scene.cargo["Small Arms"] = 1
+    scene.passengers = 1
+    scene.active_contract = {"type": "passenger", "destination": volcanic}
     scene.route_active = true
     scene.playing = true
-    scene.active_contract.clear()
     scene._fail_route("TEST SHIP LOSS", true)
-    if scene.research_credits != 0 or scene.bank_balance != 1234:
-        _fail("ship loss did not wipe only unbanked cash")
+
+    if scene.current_planet != lush or not scene.destination_planet.is_empty():
+        _fail("ship loss did not respawn at last landed planet")
         return
+    if scene.research_credits != 0:
+        _fail("ship loss did not wipe unbanked cash")
+        return
+    if scene.bank_balance != 1234 or int(scene.market_index_holdings.get("green", 0)) != 2 or int(scene.market_index_holdings.get("grey", 0)) != 3 or int(scene.currency_holdings.get(currency_faction, 0)) != 4:
+        _fail("ship loss destroyed protected financial assets")
+        return
+    if scene.research_ship_speed != 0 or scene.research_dash != 0 or scene.research_damage != 0 or scene.research_hits != 0 or scene.research_shield != 0:
+        _fail("ship loss did not remove all ship upgrades")
+        return
+    if scene.research_start_single or scene.research_start_dual or scene.research_start_laser or scene.research_start_cone or scene.research_start_seeker or scene.starting_weapon != "none" or scene.current_weapon != "none":
+        _fail("ship loss did not remove all weapon unlocks/loadout")
+        return
+    if int(scene.cargo.get("Grain", 0)) != 0 or int(scene.cargo.get("Small Arms", 0)) != 0 or scene._cargo_used() != 0:
+        _fail("ship loss did not destroy all cargo")
+        return
+    if scene.passengers != 0 or not scene.active_contract.is_empty():
+        _fail("ship loss did not remove passengers/active contract")
+        return
+
+    # A non-death abort still preserves the ship and its physical cargo.
     scene.research_credits = 555
+    scene.research_ship_speed = 1
+    scene.research_start_single = true
+    scene.starting_weapon = "single"
+    scene.cargo["Grain"] = 1
+    scene.route_origin = lush
+    scene.destination_planet = volcanic
     scene.route_active = true
     scene.playing = true
     scene._fail_route("TEST ABORT", false)
     if scene.research_credits != 555 or scene.bank_balance != 1234:
         _fail("non-death route failure incorrectly destroyed cash or bank balance")
         return
+    if scene.research_ship_speed != 1 or not scene.research_start_single or scene.starting_weapon != "single" or int(scene.cargo.get("Grain", 0)) != 1:
+        _fail("non-death abort incorrectly reset ship progression/cargo")
+        return
+
+    # Restore neutral test state for later market assertions.
+    scene.research_ship_speed = 0
+    scene.research_start_single = false
+    scene.starting_weapon = "none"
+    scene.cargo["Grain"] = 0
+    scene.market_index_holdings = {"green": 0, "grey": 0}
+    scene.currency_holdings[currency_faction] = 0
     scene.bank_balance = 0
     scene.bank_interest_cycles = 0
     scene.bank_last_interest = 0
