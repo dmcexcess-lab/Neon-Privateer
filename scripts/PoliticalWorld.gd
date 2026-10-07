@@ -117,7 +117,7 @@ static func _calibrate_political_thresholds(world: Dictionary) -> void:
         if strongest < threshold or second <= 0.0:
             continue
         max_ratio = maxf(max_ratio, second / maxf(strongest, 0.0001))
-    world.contest_ratio = clampf(max_ratio * 0.90, 0.08, 0.58)
+    world.contest_ratio = clampf(max_ratio * 0.90, 0.01, 0.58)
 
 static func _generate_planets(rng: RandomNumberGenerator) -> Array:
     var cells: Array = []
@@ -198,15 +198,35 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
         capital_ids.append(best_id)
 
     var factions: Array = []
-    var law_offset := rng.randi_range(0, 3)
+    var law_offset: int = rng.randi_range(0, 3)
     for i in count:
-        var combo := (i + law_offset) % 4
+        var combo: int = (i + law_offset) % 4
+        var capital_id: String = capital_ids[i]
+        var capital_pos: Vector2 = planet_position({"planets": planets}, capital_id)
+        var nearest_rival_distance: float = INF
+        for rival_id in capital_ids:
+            if rival_id == capital_id:
+                continue
+            nearest_rival_distance = minf(
+                nearest_rival_distance,
+                capital_pos.distance_to(planet_position({"planets": planets}, rival_id))
+            )
+        if nearest_rival_distance == INF:
+            nearest_rival_distance = 1050.0
+        # Rival distance is part of the influence scale: powers must overlap
+        # enough to form an actual frontier, but control thresholds are
+        # calibrated later so remote gaps remain uncontrolled.
+        var influence_radius: float = clampf(
+            nearest_rival_distance * 0.72 + rng.randf_range(-24.0, 24.0),
+            760.0,
+            1120.0
+        )
         factions.append({
             "id": "f%02d" % i,
-            "name": FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()] + " " + FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()],
+            "name": String(FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()]) + " " + String(FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()]),
             "color": FACTION_COLORS[i % FACTION_COLORS.size()],
-            "capital_id": capital_ids[i],
-            "radius": rng.randf_range(760.0, 900.0),
+            "capital_id": capital_id,
+            "radius": influence_radius,
             "strength": rng.randf_range(0.98, 1.16),
             "relation": 0,
             "laws": {
