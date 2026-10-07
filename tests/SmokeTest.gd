@@ -507,7 +507,7 @@ func _initialize() -> void:
         if not scene.markets.has(pid):
             _fail("missing market for generated planet " + pid)
             return
-        var specialty := scene._planet_specialty(pid)
+        var specialty: String = String(scene._planet_specialty(pid))
         if not scene.commodity_names.has(specialty):
             _fail("planet specialty is not a valid commodity on " + pid)
             return
@@ -2033,7 +2033,7 @@ func _initialize() -> void:
     var trade_route: Dictionary = scene.political_world.routes[0]
     var trade_origin := String(trade_route.a)
     var trade_destination := String(trade_route.b)
-    var trade_good := scene._planet_specialty(trade_origin)
+    var trade_good: String = String(scene._planet_specialty(trade_origin))
     var source_entry: Dictionary = scene.markets[trade_origin][trade_good]
     var target_entry: Dictionary = scene.markets[trade_destination][trade_good]
     source_entry["stock"] = 140.0
