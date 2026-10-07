@@ -2,8 +2,7 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.webp"
-const PRIVATEER_UI_ATLAS_TEXTURE: Texture2D = preload("res://assets/privateer_ui/privateer_ui_atlas.webp")
+const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.jpg"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -3255,9 +3254,12 @@ func _draw_career_slots_menu() -> void:
     draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _load_privateer_ui_art() -> void:
-    # Use Godot's imported texture resource directly. This creates an explicit
-    # dependency so Web export must package the generated art.
-    privateer_ui_atlas = PRIVATEER_UI_ATLAS_TEXTURE
+    privateer_ui_atlas = null
+    if not ResourceLoader.exists(PRIVATEER_UI_ATLAS_PATH):
+        return
+    var texture := load(PRIVATEER_UI_ATLAS_PATH)
+    if texture is Texture2D:
+        privateer_ui_atlas = texture
 
 func _privateer_art_ready() -> bool:
     return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
