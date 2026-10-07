@@ -2282,10 +2282,13 @@ func _initialize() -> void:
         return
 
     # Old saved contract records upgrade in place without changing their original payout.
-    var legacy_contract := {"id": 9911, "type": "delivery", "destination": slice9_illegal_capital, "difficulty": 2, "reward": 777}
+    var legacy_contract := {"id": 9911, "schema": 1, "type": "delivery", "destination": slice9_illegal_capital, "difficulty": 2, "reward": 777, "commodity": "Arms"}
     var upgraded_contract: Dictionary = scene._upgrade_contract_record(legacy_contract, slice9_origin)
     if int(upgraded_contract.get("schema", 0)) != scene.CONTRACT_SCHEMA_VERSION or int(upgraded_contract.reward) != 777:
         _fail("legacy contract upgrade changed identity/payout")
+        return
+    if String(upgraded_contract.get("commodity", "")) != "Small Arms":
+        _fail("legacy contract commodity did not migrate to economy-3 ID")
         return
 
     # Contract board still supplies all three contract classes against generated IDs.
@@ -2428,12 +2431,17 @@ func _initialize() -> void:
     var arrival_arms_before: int = int(scene.cargo.get("Small Arms", 0))
     var arrival_heat_before: int = scene._faction_heat(primary_faction)
     var credits_before_arrival: int = int(scene.research_credits)
+    scene.bank_balance = 1000
+    var arrival_interest_cycles_before: int = int(scene.bank_interest_cycles)
     scene._arrive_at_destination()
     if scene.current_planet != neighbor or scene.route_active or scene.playing:
         _fail("generated route did not arrive normally")
         return
     if scene.research_credits < credits_before_arrival + 6:
-        _fail("arrival did not bank flight bonus")
+        _fail("arrival did not pay flight bonus into carried cash")
+        return
+    if scene.bank_balance != 1030 or scene.bank_interest_cycles != arrival_interest_cycles_before + 1 or scene.bank_last_interest != 30:
+        _fail("completed flight did not post 3 percent bank interest exactly once")
         return
     if scene.police_scan_active:
         _fail("arrival did not terminate unfinished police scan")
