@@ -70,6 +70,14 @@ func _world_difference(a: Dictionary, b: Dictionary) -> String:
         var bl: Dictionary = bf[i].laws
         if bool(al.arms_legal) != bool(bl.arms_legal) or bool(al.narcotics_legal) != bool(bl.narcotics_legal):
             return "faction %d laws" % i
+        if int(af[i].get("relation", 0)) != int(bf[i].get("relation", 0)):
+            return "faction %d relation" % i
+        if int(af[i].get("heat", 0)) != int(bf[i].get("heat", 0)):
+            return "faction %d heat" % i
+        if int(af[i].get("offenses", 0)) != int(bf[i].get("offenses", 0)):
+            return "faction %d offenses" % i
+        if String(af[i].get("last_offense", "")) != String(bf[i].get("last_offense", "")):
+            return "faction %d last offense" % i
 
     var ar: Array = a.get("routes", [])
     var br: Array = b.get("routes", [])
@@ -127,6 +135,12 @@ func _initialize() -> void:
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
         "_planet_jurisdiction_label", "_ensure_commodity_schema", "_new_market_entry",
+        "_ensure_crime_schema", "_faction_relation", "_faction_heat",
+        "_faction_crime_state", "_is_criminal_with_faction",
+        "_police_hostile_eligible", "_heavy_enforcement_eligible",
+        "_adjust_faction_relation", "_adjust_faction_heat",
+        "_record_faction_crime", "_decay_all_faction_heat",
+        "_planet_faction_ids", "_faction_status_summary", "_planet_crime_summary",
         "_route_political_segment_at_progress", "_direct_route_spec",
         "_route_political_percentages", "_market_price", "_simulate_economy",
         "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
@@ -282,6 +296,12 @@ func _initialize() -> void:
         if not laws.has("arms_legal") or not laws.has("narcotics_legal"):
             _fail("faction law fields are incomplete")
             return
+        if not faction.has("relation") or not faction.has("heat") or not faction.has("offenses") or not faction.has("last_offense"):
+            _fail("fresh faction crime schema is incomplete")
+            return
+        if int(faction.relation) != 0 or int(faction.heat) != 0 or int(faction.offenses) != 0:
+            _fail("fresh faction crime state is not clean")
+            return
         law_profiles["%s|%s" % [str(laws.arms_legal), str(laws.narcotics_legal)]] = true
         var capital_context: Dictionary = scene._get_political_context_at(scene._system_planet_world_position(capital_id))
         if String(capital_context.state) != "CORE":
@@ -307,6 +327,81 @@ func _initialize() -> void:
             if scene._system_planet_world_position(capital_list[i]).distance_to(scene._system_planet_world_position(capital_list[j])) < 420.0:
                 _fail("faction capitals are too clustered")
                 return
+
+    # Slice 3: faction reputation and heat are independent, clamped, and thresholded.
+    var primary_faction: String = String(factions[0].id)
+    var secondary_faction: String = String(factions[1].id)
+    if scene._faction_relation(primary_faction) != 0 or scene._faction_heat(primary_faction) != 0:
+        _fail("fresh primary faction relation/heat is not zero")
+        return
+
+    scene._adjust_faction_heat(primary_faction, 10, false)
+    var crime_state: Dictionary = scene._faction_crime_state(primary_faction)
+    if String(crime_state.heat_label) != "WATCHED" or bool(crime_state.criminal):
+        _fail("heat 10 should be WATCHED but not criminal")
+        return
+
+    scene._adjust_faction_heat(primary_faction, 20, false)
+    crime_state = scene._faction_crime_state(primary_faction)
+    if int(crime_state.heat) != 30 or String(crime_state.heat_label) != "WANTED" or not bool(crime_state.criminal) or not scene._police_hostile_eligible(primary_faction):
+        _fail("heat 30 did not enter WANTED/police-hostile eligibility")
+        return
+    if scene._heavy_enforcement_eligible(primary_faction):
+        _fail("heat 30 incorrectly enabled heavy enforcement")
+        return
+
+    scene._adjust_faction_heat(primary_faction, 30, false)
+    crime_state = scene._faction_crime_state(primary_faction)
+    if int(crime_state.heat) != 60 or String(crime_state.heat_label) != "HUNTED" or not scene._heavy_enforcement_eligible(primary_faction):
+        _fail("heat 60 did not enable HUNTED/heavy enforcement")
+        return
+
+    scene._adjust_faction_heat(primary_faction, -1000, false)
+    scene._adjust_faction_relation(primary_faction, -50, false)
+    crime_state = scene._faction_crime_state(primary_faction)
+    if int(crime_state.relation) != -50 or not bool(crime_state.criminal) or scene._heavy_enforcement_eligible(primary_faction):
+        _fail("relation -50 did not independently create ordinary criminal status")
+        return
+    scene._adjust_faction_relation(primary_faction, -25, false)
+    if not scene._heavy_enforcement_eligible(primary_faction):
+        _fail("relation -75 did not enable heavy enforcement")
+        return
+
+    if scene._adjust_faction_relation(secondary_faction, 1000, false) != 100:
+        _fail("positive relation did not clamp at +100")
+        return
+    if scene._adjust_faction_relation(secondary_faction, -1000, false) != -100:
+        _fail("negative relation did not clamp at -100")
+        return
+    scene._adjust_faction_relation(secondary_faction, 100, false)
+    if scene._adjust_faction_heat(secondary_faction, 1000, false) != 100:
+        _fail("heat did not clamp at 100")
+        return
+    if scene._adjust_faction_heat(secondary_faction, -1000, false) != 0:
+        _fail("heat did not clamp at zero")
+        return
+    if scene._faction_relation(secondary_faction) != 0 or scene._faction_heat(secondary_faction) != 0:
+        _fail("secondary faction did not reset independently")
+        return
+
+    scene._adjust_faction_relation(primary_faction, 75, false)
+    var recorded: Dictionary = scene._record_faction_crime(primary_faction, 12, 35, "smoke_test", false)
+    if int(recorded.relation) != -12 or int(recorded.heat) != 35 or String(recorded.heat_label) != "WANTED":
+        _fail("generic faction crime event did not apply relation loss/heat")
+        return
+    var primary_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    if int(primary_record.offenses) != 1 or String(primary_record.last_offense) != "smoke_test":
+        _fail("generic faction crime event did not record offense metadata")
+        return
+    if scene._faction_relation(secondary_faction) != 0 or scene._faction_heat(secondary_faction) != 0:
+        _fail("crime against one faction leaked to another")
+        return
+    if not scene._decay_all_faction_heat(5, false) or scene._faction_heat(primary_faction) != 30 or scene._faction_relation(primary_faction) != -12:
+        _fail("heat decay did not reduce heat without changing relation")
+        return
+    if not scene._faction_status_summary(primary_faction).contains("WANTED"):
+        _fail("faction status summary does not expose criminal state")
+        return
 
     # The generated influence field must actually contain all four political states.
     var states_seen: Dictionary = {}
@@ -481,9 +576,55 @@ func _initialize() -> void:
     if int(scene.cargo.get("Arms", 0)) != 1 or int(scene.cargo.get("Narcotics", 0)) != 2:
         _fail("Arms/Narcotics cargo did not persist")
         return
+    if scene._faction_relation(primary_faction) != -12 or scene._faction_heat(primary_faction) != 30:
+        _fail("Slice 3 faction relation/heat did not persist")
+        return
+    var persisted_primary: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    if int(persisted_primary.get("offenses", 0)) != 1 or String(persisted_primary.get("last_offense", "")) != "smoke_test":
+        _fail("Slice 3 offense metadata did not persist")
+        return
     var reload_difference: String = _world_difference(world_before, scene.political_world)
     if not reload_difference.is_empty():
         _fail("political world save/reload changed " + reload_difference)
+        return
+
+    # Existing political-schema careers upgrade crime fields in place without rerolling.
+    var pre_crime_upgrade_seed: int = int(scene.world_seed)
+    var pre_crime_upgrade_first_planet: String = String(scene.political_world.planets[0].id)
+    var crime_upgrade_cfg: ConfigFile = ConfigFile.new()
+    if crime_upgrade_cfg.load(scene._active_world_path()) != OK:
+        _fail("could not load career for crime-schema migration fixture")
+        return
+    var old_crime_world: Dictionary = crime_upgrade_cfg.get_value("political", "world", {}).duplicate(true)
+    var old_factions: Array = old_crime_world.get("factions", [])
+    for fi in old_factions.size():
+        var old_faction: Dictionary = old_factions[fi]
+        old_faction.erase("heat")
+        old_faction.erase("offenses")
+        old_faction.erase("last_offense")
+        old_factions[fi] = old_faction
+    old_factions[0]["relation"] = -7
+    old_crime_world["factions"] = old_factions
+    crime_upgrade_cfg.set_value("political", "world", old_crime_world)
+    crime_upgrade_cfg.set_value("world", "crime_schema", 0)
+    if crime_upgrade_cfg.save(scene._active_world_path()) != OK:
+        _fail("could not write crime-schema migration fixture")
+        return
+    scene.political_world.clear()
+    scene.planet_names.clear()
+    scene.markets.clear()
+    scene.current_planet = ""
+    scene._load_privateer_state()
+    if scene.world_seed != pre_crime_upgrade_seed or String(scene.political_world.planets[0].id) != pre_crime_upgrade_first_planet:
+        _fail("crime-schema upgrade rerolled the political world")
+        return
+    var upgraded_faction: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    if int(upgraded_faction.get("relation", 0)) != -7 or int(upgraded_faction.get("heat", -1)) != 0 or int(upgraded_faction.get("offenses", -1)) != 0 or String(upgraded_faction.get("last_offense", "x")) != "":
+        _fail("crime-schema upgrade did not preserve relation/add clean criminal fields")
+        return
+    var crime_upgrade_saved: ConfigFile = ConfigFile.new()
+    if crime_upgrade_saved.load(scene._active_world_path()) != OK or int(crime_upgrade_saved.get_value("world", "crime_schema", 0)) != scene.CRIME_SCHEMA_VERSION:
+        _fail("crime-schema upgrade did not persist schema version")
         return
 
     # Career slots remain isolated under generated worlds.
@@ -549,6 +690,9 @@ func _initialize() -> void:
         return
     if int(migrated_cfg.get_value("world", "economy_schema", 0)) != scene.ECONOMY_SCHEMA_VERSION:
         _fail("legacy migration did not persist Slice 2 economy schema")
+        return
+    if int(migrated_cfg.get_value("world", "crime_schema", 0)) != scene.CRIME_SCHEMA_VERSION:
+        _fail("legacy migration did not persist Slice 3 crime schema")
         return
     scene.political_world.clear()
     scene.planet_names.clear()
