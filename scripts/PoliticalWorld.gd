@@ -48,18 +48,76 @@ const FACTION_NOUN := ["Union", "Compact", "Directorate", "League", "Republic", 
 static func generate(seed_value: int) -> Dictionary:
     var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
-    var planets := _generate_planets(rng)
-    var factions := _generate_factions(rng, planets)
+    var planets: Array = _generate_planets(rng)
+    var factions: Array = _generate_factions(rng, planets)
     var world := {
         "schema": WORLD_SCHEMA_VERSION,
         "seed": seed_value,
         "bounds": WORLD_BOUNDS,
         "planets": planets,
         "factions": factions,
+        "control_threshold": 0.08,
+        "contest_ratio": 0.50,
         "routes": []
     }
+    _calibrate_political_thresholds(world)
     world.routes = _build_route_network(world)
     return world
+
+static func _ranked_influence(world: Dictionary, pos: Vector2) -> Array:
+    var ranked: Array = []
+    for faction in world.get("factions", []):
+        ranked.append({
+            "id": String(faction.id),
+            "value": _influence_for_faction(world, faction, pos),
+            "capital_distance": pos.distance_to(planet_position(world, String(faction.capital_id))),
+            "radius": float(faction.radius)
+        })
+    ranked.sort_custom(func(a, b): return float(a.value) > float(b.value))
+    return ranked
+
+static func _calibrate_political_thresholds(world: Dictionary) -> void:
+    # Calibrate against this generated geography rather than relying on one
+    # fixed threshold. This preserves influence-driven borders while ensuring
+    # every career retains real uncontrolled gaps and contested frontiers.
+    var strongest_values: Array[float] = []
+    var samples: Array[Dictionary] = []
+    var bounds: Rect2 = Rect2(world.get("bounds", WORLD_BOUNDS))
+    for gy in 21:
+        for gx in 29:
+            var pos := bounds.position + Vector2(
+                bounds.size.x * float(gx) / 28.0,
+                bounds.size.y * float(gy) / 20.0
+            )
+            var ranked: Array = _ranked_influence(world, pos)
+            if ranked.is_empty():
+                continue
+            var strongest: float = float(ranked[0].value)
+            var second: float = float(ranked[1].value) if ranked.size() > 1 else 0.0
+            strongest_values.append(strongest)
+            samples.append({"strongest": strongest, "second": second})
+    strongest_values.sort()
+    if strongest_values.is_empty():
+        world.control_threshold = 0.08
+        world.contest_ratio = 0.50
+        return
+
+    # Roughly the lowest quarter of the map remains outside effective control.
+    var threshold_index: int = clampi(int(floor(float(strongest_values.size() - 1) * 0.24)), 0, strongest_values.size() - 1)
+    var threshold: float = clampf(strongest_values[threshold_index], 0.035, 0.24)
+    world.control_threshold = threshold
+
+    # Find the strongest actual overlap above the control threshold, then set
+    # the contested cutoff just below it. This guarantees a real frontier
+    # where powers meet without hand-painting territory.
+    var max_ratio: float = 0.0
+    for sample in samples:
+        var strongest: float = float(sample.strongest)
+        var second: float = float(sample.second)
+        if strongest < threshold or second <= 0.0:
+            continue
+        max_ratio = maxf(max_ratio, second / maxf(strongest, 0.0001))
+    world.contest_ratio = clampf(max_ratio * 0.90, 0.08, 0.58)
 
 static func _generate_planets(rng: RandomNumberGenerator) -> Array:
     var cells: Array = []
@@ -194,25 +252,19 @@ static func _influence_for_faction(world: Dictionary, faction: Dictionary, pos: 
     return float(faction.strength) * pow(maxf(0.0, 1.0 - normalized), 1.35)
 
 static func political_context_at(world: Dictionary, pos: Vector2) -> Dictionary:
-    var ranked: Array = []
-    for faction in world.get("factions", []):
-        ranked.append({
-            "id": String(faction.id),
-            "value": _influence_for_faction(world, faction, pos),
-            "capital_distance": pos.distance_to(planet_position(world, String(faction.capital_id))),
-            "radius": float(faction.radius)
-        })
-    ranked.sort_custom(func(a, b): return float(a.value) > float(b.value))
+    var ranked: Array = _ranked_influence(world, pos)
 
     var strongest: Dictionary = ranked[0] if not ranked.is_empty() else {"id": "", "value": 0.0, "capital_distance": INF, "radius": 1.0}
     var second: Dictionary = ranked[1] if ranked.size() > 1 else {"id": "", "value": 0.0}
-    var strongest_value := float(strongest.value)
-    var second_value := float(second.value)
+    var strongest_value: float = float(strongest.value)
+    var second_value: float = float(second.value)
+    var control_threshold: float = float(world.get("control_threshold", 0.08))
+    var contest_ratio: float = float(world.get("contest_ratio", 0.50))
     var state := STATE_UNCONTROLLED
     var controller := ""
 
-    if strongest_value >= 0.025:
-        var comparable := second_value >= 0.015 and second_value / maxf(strongest_value, 0.001) >= 0.55
+    if strongest_value >= control_threshold:
+        var comparable := second_value > 0.0 and second_value / maxf(strongest_value, 0.001) >= contest_ratio
         if comparable:
             state = STATE_CONTESTED
         else:
