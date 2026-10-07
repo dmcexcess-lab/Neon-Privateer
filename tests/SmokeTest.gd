@@ -743,7 +743,8 @@ func _initialize() -> void:
         "lane_min": scene.LEFT, "lane_max": scene.RIGHT,
         "owner_faction": ""
     }
-    scene.objects = [moving_square]
+    scene.objects.clear()
+    scene.objects.append(moving_square)
     scene._move_objects(0.01)
     if scene.objects.is_empty() or absf(float(scene.objects[0].x) - square_x) > 0.001:
         _fail("square container still has lateral movement")
@@ -761,7 +762,8 @@ func _initialize() -> void:
     moving_diamond.max_hp = 12.0
     moving_diamond.x = square_x
     moving_diamond.drift = -80.0
-    scene.objects = [moving_diamond]
+    scene.objects.clear()
+    scene.objects.append(moving_diamond)
     scene._move_objects(0.01)
     if scene.objects.is_empty() or absf(float(scene.objects[0].x) - square_x) > 0.001:
         _fail("diamond container still has lateral movement")
@@ -780,7 +782,8 @@ func _initialize() -> void:
     near_asteroid.max_hp = 3.0
     near_asteroid.x = square_x
     near_asteroid.drift = 0.0
-    scene.objects = [near_asteroid]
+    scene.objects.clear()
+    scene.objects.append(near_asteroid)
     scene._move_objects(0.01)
     if scene.score <= 0:
         _fail("asteroid no longer awards near-miss credits")
