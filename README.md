@@ -43,17 +43,24 @@ See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, r
 
 ## Economy
 
-Five commodities are currently simulated:
+Seven commodities are simulated:
 
 - Food
 - Ore
 - Medicine
 - Electronics
 - Fuel
+- Arms
+- Narcotics
 
-Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its production/consumption profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Prices are calculated from current stock scarcity, production/consumption pressure, base commodity value, and local production advantages.
+Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Industrial worlds are the strongest Arms producers; lush worlds are the strongest Narcotics producers. Prices continue to derive from stock scarcity, production/consumption pressure, base commodity value, and local production advantages.
 
-Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system. This makes prices stateful rather than fixed buy/sell tables.
+**Arms** and **Narcotics** are politically restricted commodities. Every superpower independently decides whether each is legal. CORE/CONTROLLED markets show that controlling faction's law, CONTESTED worlds show mixed/shared claimant law, and UNCONTROLLED worlds report them as unregulated. The selected planet on the system map shows the same law summary.
+
+Trading itself is not blocked yet. Police scans, confiscation, fines, criminal heat, and enforcement are later slices.
+
+Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system.
+
 
 ## Contracts
 
@@ -134,11 +141,11 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes the political schema/seed, all 32 generated planets, factions, capitals, influence parameters, faction law fields, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, all 32 generated planets, factions, capitals, influence parameters, faction law fields, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
 
 Generated political state is created once and never rerolled on reload.
 
-Older four-world careers migrate once to schema 2. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
+Older four-world careers migrate once to political schema 2. Existing five-commodity saves also upgrade in place by adding Arms/Narcotics cargo keys and market entries without rerolling the political world. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
 
 The active route snapshot remains separate and preserves exact in-flight state.
 
