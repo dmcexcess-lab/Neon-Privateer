@@ -602,11 +602,24 @@ func _dash_speed() -> float:
 func _damage_multiplier() -> float:
     return 1.0 + float(research_damage + run_damage) * 0.03
 
-func _near_miss_research_multiplier(is_dash: bool) -> float:
-    var mult := 1.0 + float(research_ship_speed + run_ship_speed) * 0.08
-    if is_dash:
-        mult += float(research_dash + run_dash) * 0.12
-    return mult
+func _ship_speed_score_multiplier() -> float:
+    return _ship_speed_multiplier() / 0.72
+
+func _dash_speed_score_multiplier() -> float:
+    return _dash_speed() / DASH_FORWARD_SPEED
+
+func _enemy_event_score(kind: int, event_kind: String) -> int:
+    var enemy_value := float(_kill_score(kind))
+    match event_kind:
+        "kill":
+            return int(round(enemy_value))
+        "near":
+            return int(round(enemy_value * 10.0 * _ship_speed_score_multiplier()))
+        "dash_kill":
+            return int(round(enemy_value * 10.0 * _dash_speed_score_multiplier()))
+        "dash_near":
+            return int(round(enemy_value * 100.0 * _dash_speed_score_multiplier()))
+    return 0
 
 func _level_duration() -> float:
     return minf(LEVEL_TIME_MAX, LEVEL_TIME_BASE + float(level - 1) * LEVEL_TIME_STEP)
@@ -1638,7 +1651,8 @@ func _move_shots(delta: float) -> void:
 
 func _award_hazard_kill(obj: Dictionary, dash_kill: bool = false) -> void:
     obj.hp = 0.0
-    var earned := int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
+    var event_kind := "dash_kill" if dash_kill else "kill"
+    var earned := _enemy_event_score(int(obj.kind), event_kind)
     score += earned
     _queue_kill_drop(obj)
     if dash_kill:
@@ -1992,7 +2006,7 @@ func _move_objects(delta: float) -> void:
             if obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
                 last_near_ids[obj.id] = true
                 if dx < near_dist:
-                    _register_near_miss()
+                    _register_near_miss(int(obj.kind))
         elif obj.type == "energy":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
                 energy += 1
@@ -2001,8 +2015,6 @@ func _move_objects(delta: float) -> void:
                     orb_score *= ENERGY_ORB_DASH_MULT
                 orb_score *= _lane_score_multiplier()
                 score += int(round(orb_score))
-                combo = mini(combo + 1, 8)
-                best_combo = maxi(best_combo, combo)
                 _burst(Vector2(obj.x, obj.y), 9, Color("6bffb0"))
                 _play_sfx(energy_sfx, 1.06 if dash_score_timer > 0.0 else 1.0, -3.0)
                 continue
@@ -2040,12 +2052,9 @@ func _move_objects(delta: float) -> void:
     _flush_pending_drops(next)
     objects = next
 
-func _register_near_miss() -> void:
-    combo = mini(combo + 1, 8)
-    best_combo = maxi(best_combo, combo)
+func _register_near_miss(kind: int) -> void:
     var dash_near := dash_score_timer > 0.0
-    var near_score := 100 + combo * 10 if dash_near else 10 + combo * 5
-    near_score = int(round(float(near_score) * _near_miss_research_multiplier(dash_near) * _lane_score_multiplier()))
+    var near_score := _enemy_event_score(kind, "dash_near" if dash_near else "near")
     score += near_score
     near_miss_text = ("DASH NEAR +%d" if dash_near else "NEAR +%d") % near_score
     near_miss_timer = 0.62
@@ -2378,12 +2387,11 @@ func _draw_hud() -> void:
     _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
     _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46), 19, Color("bdeef4"))
     _text("ENERGY %02d" % energy, Vector2(20, 88), 18, Color("6bffb0"))
-    _text("x%d" % combo, Vector2(310, 88), 24, Color("ffd166"))
 
     if lane_event_active:
         var left_hard := not hard_lane_right
-        _text("HARD +35%" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
-        _text("HARD +35%" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
+        _text("HARD" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
+        _text("HARD" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
     else:
         _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
 
@@ -2432,7 +2440,7 @@ func _draw_title() -> void:
     _text("DRIFTLINE", Vector2(54, 236), 47, Color("f0fbff"))
     _text("RESEARCH %07d" % research_credits, Vector2(82, 300), 21, Color("ffd166"))
     _text("START: %s" % _weapon_label(_valid_starting_weapon()), Vector2(88, 348), 16, Color("bdeef4"))
-    _text("SPEED + DASH ALSO BOOST NEAR-MISS SCORE", Vector2(31, 382), 14, Color("6bffb0"))
+    _text("SHIP SPEED BOOSTS NEAR • DASH SPEED BOOSTS DASH", Vector2(25, 382), 12, Color("6bffb0"))
     _text("L1: LAZY CIRCLES / 1 SHORT SPLIT", Vector2(54, 420), 15, Color("8ea9b8"))
     draw_rect(MAIN_START_RECT, Color("123544"), true)
     draw_rect(MAIN_START_RECT, Color("77f7ff"), false, 3.0)
@@ -2464,8 +2472,8 @@ func _draw_research() -> void:
     _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
     _text("PERMANENT • AUTO-SAVED", Vector2(82, 145), 15, Color("8ea9b8"))
-    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer, +8% near")
-    _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
+    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer + near score")
+    _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed + dash score")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
     _draw_research_button(RESEARCH_HITS_RECT, "hits", "HITS", "+1 starting hit")
     _draw_research_button(RESEARCH_SHIELD_RECT, "shield", "SHIELD", "+1 projectile block/run")
@@ -2558,8 +2566,8 @@ func _draw_shop() -> void:
 
     if shop_page == 0:
         _text("RUN UPGRADES", Vector2(122, 203), 15, Color("b56cff"))
-        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer / +8% near")
-        _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "+35px / +40 speed")
+        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer + near score")
+        _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "+35px / +40 speed + dash score")
         _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3% weapon damage")
         _draw_run_upgrade_button(SHOP_RUN_HITS_RECT, "hits", "MAX HITS", "+1 max hit + heal 1")
         _draw_run_upgrade_button(SHOP_RUN_SHIELD_RECT, "shield", "SHIELD", "+1 shield charge")
@@ -2593,7 +2601,6 @@ func _draw_results() -> void:
     _text("LEVEL  %02d" % level, Vector2(118, 350), 22, Color("bdeef4"))
     _text("BANKED %07d" % last_banked_score, Vector2(74, 392), 24, Color("ffd166"))
     _text("RESEARCH %07d" % research_credits, Vector2(76, 435), 20, Color("b56cff"))
-    _text("BEST COMBO x%d" % best_combo, Vector2(97, 474), 20, Color("ffd166"))
     _text("TAP FOR MAIN MENU", Vector2(74, 560), 22, Color("bdeef4"))
 
 func _text(s: String, pos: Vector2, size: int, color: Color) -> void:
