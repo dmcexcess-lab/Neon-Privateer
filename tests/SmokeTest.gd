@@ -254,9 +254,12 @@ func _initialize() -> void:
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
         "_market_law_multiplier", "_commodity_category", "_commodity_volatility", "_is_grey_commodity",
-        "_ensure_currency_schema", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
+        "_ensure_market_index_schema", "_ensure_currency_schema",
+        "_planet_specialty", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
+        "_market_index_price", "_market_index_buy_price", "_market_index_sell_price", "_buy_market_index", "_sell_market_index",
         "_deposit_all_cash", "_withdraw_all_bank", "_apply_bank_interest", "_buy_currency", "_sell_currency",
-        "_bank_goods_for_view", "_bank_visible_goods", "_currency_faction_ids",
+        "_record_simulated_trade", "_trade_specialty_along_route", "_simulate_route_trade", "_update_aggregate_market_indices",
+        "_frontier_pairs", "_simulate_empire_macro_tick", "_top_traded_commodities", "_currency_faction_ids",
         "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
         "_faction_map_status_line", "_faction_status_color", "_planet_political_status_lines",
         "_ensure_commodity_schema", "_new_market_entry",
@@ -503,6 +506,14 @@ func _initialize() -> void:
             return
         if not scene.markets.has(pid):
             _fail("missing market for generated planet " + pid)
+            return
+        var specialty := scene._planet_specialty(pid)
+        if not scene.commodity_names.has(specialty):
+            _fail("planet specialty is not a valid commodity on " + pid)
+            return
+        var specialty_pool: Array = scene.PoliticalWorld.SPECIALTY_BY_TYPE.get(ptype, [])
+        if not specialty_pool.has(specialty):
+            _fail("planet specialty does not match archetype on " + pid)
             return
         for commodity in scene.commodity_names:
             if not scene.markets[pid].has(commodity):
@@ -1993,29 +2004,68 @@ func _initialize() -> void:
         _fail("bank did not apply exact 3 percent flight-cycle interest")
         return
 
-    # Bank market pages expose 12 legal and 12 grey goods in phone-sized pages.
-    scene.bank_view = "green"
-    scene.bank_market_page = 0
-    if scene._bank_market_page_count() != 2 or scene._bank_visible_goods().size() != 6:
-        _fail("green market pagination is not 12 goods across two six-row pages")
+    # Bank investing exposes two system-wide commodity indices plus faction currencies.
+    scene._ensure_market_index_schema()
+    if scene._market_index_price("green") <= 0 or scene._market_index_price("grey") <= 0:
+        _fail("aggregate Green/Grey market indices are not initialized")
         return
-    for good in scene._bank_visible_goods():
-        if not scene.legal_commodity_names.has(good) or scene.grey_commodity_names.has(good):
-            _fail("green market exposed non-legal commodity")
-            return
-    scene.bank_view = "grey"
-    scene.bank_market_page = 1
-    if scene._bank_market_page_count() != 2 or scene._bank_visible_goods().size() != 6:
-        _fail("grey market pagination is not 12 goods across two six-row pages")
+    if scene._market_index_buy_price("green") - scene._market_index_sell_price("green") >= scene._market_index_buy_price("grey") - scene._market_index_sell_price("grey"):
+        _fail("Green index is not safer/tighter than volatile Grey index")
         return
-    for good in scene._bank_visible_goods():
-        if not scene.grey_commodity_names.has(good):
-            _fail("grey market exposed green commodity")
-            return
 
-    # Local day trading has live docked market ticks; no flight is required.
+    var index_cargo_before: int = int(scene._cargo_used())
+    scene.research_credits = 5000
+    var green_buy: int = int(scene._market_index_buy_price("green"))
+    if not scene._buy_market_index("green"):
+        _fail("could not buy Green aggregate index")
+        return
+    if int(scene.market_index_holdings.get("green", 0)) != 1 or scene.research_credits != 5000 - green_buy:
+        _fail("Green aggregate investment did not update cash/holdings")
+        return
+    if scene._cargo_used() != index_cargo_before:
+        _fail("aggregate market investment consumed cargo space")
+        return
+    if not scene._sell_market_index("green") or int(scene.market_index_holdings.get("green", 0)) != 0:
+        _fail("could not sell Green aggregate index")
+        return
+
+    # Real simulated trade moves a specialist commodity between actual route markets.
+    var trade_route: Dictionary = scene.political_world.routes[0]
+    var trade_origin := String(trade_route.a)
+    var trade_destination := String(trade_route.b)
+    var trade_good := scene._planet_specialty(trade_origin)
+    var source_entry: Dictionary = scene.markets[trade_origin][trade_good]
+    var target_entry: Dictionary = scene.markets[trade_destination][trade_good]
+    source_entry["stock"] = 140.0
+    target_entry["stock"] = 2.0
+    scene.markets[trade_origin][trade_good] = source_entry
+    scene.markets[trade_destination][trade_good] = target_entry
+    scene.trade_ledger["green_volume"] = 0.0
+    scene.trade_ledger["grey_volume"] = 0.0
+    scene.trade_ledger["shipments"] = 0
+    scene.trade_ledger["by_commodity"] = {}
+    var source_before_trade: float = float(scene.markets[trade_origin][trade_good].stock)
+    var destination_before_trade: float = float(scene.markets[trade_destination][trade_good].stock)
+    var simulated_trade_value: float = float(scene._trade_specialty_along_route(trade_origin, trade_destination, trade_route))
+    if simulated_trade_value <= 0.0:
+        _fail("specialist planet did not execute a real simulated shipment")
+        return
+    if float(scene.markets[trade_origin][trade_good].stock) >= source_before_trade or float(scene.markets[trade_destination][trade_good].stock) <= destination_before_trade:
+        _fail("simulated trade did not physically move commodity stock")
+        return
+    if int(scene.trade_ledger.get("shipments", 0)) <= 0 or float(scene.trade_ledger.get("by_commodity", {}).get(trade_good, 0.0)) <= 0.0:
+        _fail("real shipment did not enter aggregate trade ledger")
+        return
+
+    scene._update_aggregate_market_indices()
+    var expected_volume_key := "grey_volume" if scene._is_grey_commodity(trade_good) else "green_volume"
+    var expected_index := "grey" if scene._is_grey_commodity(trade_good) else "green"
+    if float(scene.market_indices[expected_index].volume) != float(scene.trade_ledger.get(expected_volume_key, 0.0)):
+        _fail("aggregate index volume is not the sum of underlying simulated trades")
+        return
+
+    # Docked banking continues advancing the whole economy without requiring a flight.
     scene.bank_view = "green"
-    scene.bank_market_page = 0
     scene.market_open = true
     scene.playing = false
     scene.run_paused = false
@@ -2024,7 +2074,7 @@ func _initialize() -> void:
     scene.rng.seed = 88123
     scene._process(0.10)
     if scene.economy_tick != local_tick_before + 1:
-        _fail("docked bank market did not advance local day-trading prices")
+        _fail("docked bank did not advance simulated trade/market prices")
         return
     scene.market_open = false
 
