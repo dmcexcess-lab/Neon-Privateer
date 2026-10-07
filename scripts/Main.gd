@@ -1465,6 +1465,19 @@ func _system_planet_hit_rect(planet: String) -> Rect2:
     var hit_size := clampf(SYSTEM_PLANET_HIT_SIZE * sqrt(system_map_zoom), 44.0, 70.0)
     return Rect2(center - Vector2.ONE * hit_size * 0.5, Vector2.ONE * hit_size)
 
+func _system_planet_at_screen(pos: Vector2) -> String:
+    var best_id := ""
+    var best_distance := INF
+    for planet in planet_names:
+        var hit_rect := _system_planet_hit_rect(planet)
+        if not hit_rect.has_point(pos):
+            continue
+        var distance := pos.distance_to(_system_planet_position(planet))
+        if distance < best_distance:
+            best_distance = distance
+            best_id = planet
+    return best_id
+
 func _system_route_pairs() -> Array:
     var pairs: Array = []
     for route in political_world.get("routes", []):
@@ -1585,10 +1598,10 @@ func _handle_travel_tap(pos: Vector2) -> void:
         return
 
     if SYSTEM_MAP_RECT.has_point(pos):
-        for planet in planet_names:
-            if _system_planet_hit_rect(planet).has_point(pos):
-                _set_travel_selection(planet)
-                return
+        var tapped_planet := _system_planet_at_screen(pos)
+        if not tapped_planet.is_empty():
+            _set_travel_selection(tapped_planet)
+            return
 
     if SYSTEM_FLY_RECT.has_point(pos):
         if planet_names.has(travel_selected_planet) and travel_selected_planet != current_planet:
@@ -2337,6 +2350,16 @@ func _load_run_snapshot() -> bool:
     route_active = bool(cfg.get_value("run", "route_active", false))
     route_origin = String(cfg.get_value("run", "route_origin", current_planet))
     destination_planet = String(cfg.get_value("run", "destination_planet", ""))
+    if ["Aster", "Cinder", "Vesper", "Helix"].has(route_origin):
+        route_origin = PoliticalWorld.find_planet_by_type(
+            political_world,
+            PoliticalWorld.legacy_type_for_name(route_origin)
+        )
+    if ["Aster", "Cinder", "Vesper", "Helix"].has(destination_planet):
+        destination_planet = PoliticalWorld.find_planet_by_type(
+            political_world,
+            PoliticalWorld.legacy_type_for_name(destination_planet)
+        )
     route_distance = int(cfg.get_value("run", "route_distance", 1))
     route_danger = int(cfg.get_value("run", "route_danger", 1))
     route_duration = float(cfg.get_value("run", "route_duration", 18.0))
