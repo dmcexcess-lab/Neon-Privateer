@@ -5562,29 +5562,58 @@ func _draw() -> void:
 
     for shot in shots:
         var sp := Vector2(shot.x, shot.y) + offset
-        var col := Color("ffd166") if not shot.homing else Color("ff8fa6")
-        draw_line(sp - Vector2(float(shot.vx), float(shot.vy)).normalized() * -10.0, sp, col, 4.0)
-        draw_circle(sp, 3.0 if not shot.homing else 5.0, Color("fff4c2"))
+        var dir := Vector2(float(shot.vx), float(shot.vy)).normalized()
+        var col := Color("ffd166") if not shot.homing else Color("ff6f9f")
+        _draw_soft_glow(sp, 6.0 if not shot.homing else 8.0, col, 0.95)
+        if bool(shot.homing):
+            var nose := sp + dir * 5.0
+            var tail := sp - dir * 8.0
+            var side := Vector2(-dir.y, dir.x) * 3.2
+            draw_colored_polygon(PackedVector2Array([nose, tail + side, tail - side]), Color("ff8fb7"))
+            draw_line(tail, tail - dir * 10.0, Color(1.0, 0.72, 0.38, 0.68), 2.0)
+        else:
+            draw_line(sp - dir * 13.0, sp + dir * 2.0, Color(col.r, col.g, col.b, 0.42), 6.0)
+            draw_line(sp - dir * 9.0, sp + dir * 2.0, Color("fff8d5"), 2.2)
+            draw_circle(sp, 2.2, Color("ffffff"))
 
     for shot in enemy_shots:
         var ep := Vector2(shot.x, shot.y) + offset
+        var dir2 := Vector2(float(shot.vx), float(shot.vy)).normalized()
         if bool(shot.get("homing", false)):
-            var dir := Vector2(float(shot.vx), float(shot.vy)).normalized()
-            draw_circle(ep, ENEMY_MISSILE_RADIUS + 4.0, Color(1.0, 0.35, 0.18, 0.14))
-            draw_circle(ep, ENEMY_MISSILE_RADIUS, Color("ff7b45"))
-            draw_line(ep - dir * 7.0, ep - dir * 16.0, Color("ffd2a6"), 3.0)
+            _draw_soft_glow(ep, ENEMY_MISSILE_RADIUS + 3.0, Color("ff6a3d"), 1.2)
+            var missile_side := Vector2(-dir2.y, dir2.x) * 4.0
+            draw_colored_polygon(PackedVector2Array([
+                ep + dir2 * 7.0,
+                ep - dir2 * 6.0 + missile_side,
+                ep - dir2 * 4.0,
+                ep - dir2 * 6.0 - missile_side
+            ]), Color("c84f39"))
+            draw_line(ep - dir2 * 5.0, ep - dir2 * 16.0, Color("ffd2a6"), 3.2)
+            draw_circle(ep + dir2 * 3.0, 2.0, Color("fff1d2"))
         else:
-            draw_circle(ep, ENEMY_SHOT_RADIUS + 3.0, Color(0.72, 0.35, 1.0, 0.16))
-            draw_circle(ep, ENEMY_SHOT_RADIUS, Color("d48cff"))
+            _draw_soft_glow(ep, ENEMY_SHOT_RADIUS + 2.0, Color("c36cff"), 0.95)
+            draw_line(ep - dir2 * 9.0, ep + dir2 * 2.0, Color(0.72, 0.35, 1.0, 0.36), 5.0)
+            draw_line(ep - dir2 * 6.0, ep + dir2 * 2.0, Color("ead7ff"), 2.0)
 
     if current_weapon == "laser" and playing:
         var laser_x := player_x + offset.x
-        draw_line(Vector2(laser_x, player_y - 20.0 + offset.y), Vector2(laser_x, 0.0), Color(0.65, 0.95, 1.0, 0.78), 2.0)
+        var laser_start := Vector2(laser_x, player_y - 25.0 + offset.y)
+        _draw_soft_glow(Vector2(laser_x, H * 0.38), 10.0, Color("77f7ff"), 0.35)
+        draw_line(laser_start, Vector2(laser_x, 0.0), Color(0.25, 0.80, 1.0, 0.22), 7.0)
+        draw_line(laser_start, Vector2(laser_x, 0.0), Color(0.65, 0.95, 1.0, 0.86), 2.4)
+        draw_line(laser_start, Vector2(laser_x, 0.0), Color("f2ffff"), 0.8)
 
     for p in particles:
-        var alpha: float = clampf(p.life / p.max, 0.0, 1.0)
+        var alpha: float = clampf(float(p.life) / maxf(0.001, float(p.max)), 0.0, 1.0)
         var pc: Color = p.color
-        draw_circle(Vector2(p.x, p.y) + offset, 3.0, Color(pc.r, pc.g, pc.b, alpha))
+        var pp := Vector2(float(p.x), float(p.y)) + offset
+        var size := float(p.get("size", 3.0))
+        if bool(p.get("trail", false)):
+            var pv := Vector2(float(p.vx), float(p.vy))
+            if pv.length() > 1.0:
+                draw_line(pp, pp - pv.normalized() * size * 2.8, Color(pc.r, pc.g, pc.b, alpha * 0.52), maxf(1.0, size * 0.65))
+        draw_circle(pp, size, Color(pc.r, pc.g, pc.b, alpha * 0.72))
+        draw_circle(pp, maxf(1.0, size * 0.42), Color(1.0, 0.95, 0.80, alpha))
 
     _draw_player(offset)
     _draw_hud()
@@ -5621,51 +5650,103 @@ func _draw() -> void:
 
 func _draw_background() -> void:
     var t := Time.get_ticks_msec() / 1000.0
+    var travel_intensity := clampf(_ship_speed_multiplier() - 0.8, 0.0, 0.8)
+    var dash_intensity := 1.0 if dash_timer > 0.0 else 0.0
 
-    draw_circle(Vector2(74, 170), 118.0, Color(0.10, 0.16, 0.34, 0.055))
-    draw_circle(Vector2(320, 520), 150.0, Color(0.24, 0.08, 0.30, 0.035))
+    # Layered nebula haze keeps the field dark enough for projectile readability.
+    _draw_soft_glow(Vector2(48.0 + sin(t * 0.10) * 26.0, 165.0), 112.0, Color("234a8f"), 0.52)
+    _draw_soft_glow(Vector2(338.0 + cos(t * 0.08) * 34.0, 515.0), 148.0, Color("6d225d"), 0.34)
+    _draw_soft_glow(Vector2(182.0, 360.0 + sin(t * 0.07) * 42.0), 118.0, Color("154d58"), 0.22)
 
-    for i in 44:
+    # Slow dust layer.
+    for i in 54:
         var layer := float(i % 4)
-        var speed_factor := 0.18 + layer * 0.08
-        var y := fmod(float(i) * 43.0 + world_scroll * speed_factor, H + 90.0) - 45.0
-        var x := 10.0 + float((i * 83 + 37) % 370)
-        var twinkle := 0.58 + sin(t * (0.7 + layer * 0.18) + float(i) * 0.9) * 0.18
-        var radius := 0.8 + layer * 0.38
-        var star_col := Color(0.68 + layer * 0.06, 0.78 + layer * 0.04, 1.0, 0.22 + twinkle * 0.22)
+        var speed_factor := 0.13 + layer * 0.075
+        var y := fmod(float(i) * 37.0 + world_scroll * speed_factor, H + 100.0) - 50.0
+        var x := 8.0 + float((i * 83 + 37) % 374)
+        var twinkle := 0.54 + sin(t * (0.62 + layer * 0.16) + float(i) * 0.91) * 0.19
+        var radius := 0.62 + layer * 0.34
+        var star_col := Color(0.66 + layer * 0.06, 0.76 + layer * 0.045, 1.0, 0.20 + twinkle * 0.25)
         draw_circle(Vector2(x, y), radius, star_col)
 
-    for i in 7:
-        var y2 := fmod(float(i) * 139.0 + world_scroll * 0.42, H + 120.0) - 60.0
-        var x2 := 28.0 + float((i * 127 + 91) % 330)
-        draw_circle(Vector2(x2, y2), 2.1, Color(0.88, 0.93, 1.0, 0.48))
+    # Bright foreground stars become short speed streaks; dash stretches them.
+    for i in 11:
+        var y2 := fmod(float(i) * 97.0 + world_scroll * (0.36 + float(i % 3) * 0.04), H + 130.0) - 65.0
+        var x2 := 18.0 + float((i * 127 + 91) % 350)
+        var streak := 2.0 + travel_intensity * 5.0 + dash_intensity * 14.0
+        draw_line(Vector2(x2, y2 - streak), Vector2(x2, y2 + streak), Color(0.86, 0.94, 1.0, 0.28 + dash_intensity * 0.24), 1.3)
+        draw_circle(Vector2(x2, y2 + streak), 1.6, Color(0.96, 0.99, 1.0, 0.72))
+
+    # Sparse route-grid markers imply navigation without recreating lane splits.
+    for i in 5:
+        var gy := fmod(float(i) * 190.0 + world_scroll * 0.19, H + 240.0) - 120.0
+        draw_line(Vector2(42.0, gy), Vector2(348.0, gy), Color(0.24, 0.68, 0.82, 0.045), 1.0)
 
 func _draw_player(offset: Vector2) -> void:
     var pos := Vector2(player_x, player_y) + offset
-    var c := Color("77f7ff") if invuln <= 0.0 or int(Time.get_ticks_msec() / 90) % 2 == 0 else Color(0.4, 0.4, 0.5, 0.5)
+    var visible := invuln <= 0.0 or int(Time.get_ticks_msec() / 85) % 2 == 0
+    var hull := Color("78dff3") if visible else Color(0.42, 0.48, 0.54, 0.45)
+    var edge := Color("d8fbff") if visible else Color(0.65, 0.68, 0.72, 0.42)
+    var engine_color := Color("64efff")
+
     if dash_timer > 0.0:
-        draw_line(pos + Vector2(0, 58.0), pos, Color(0.35, 0.95, 1.0, 0.42), 10.0)
-    draw_circle(pos, 22.0, Color(0.2, 0.9, 1.0, 0.10))
+        _draw_soft_glow(pos + Vector2(0.0, 18.0), 30.0, engine_color, 1.45)
+        for i in 3:
+            draw_line(pos + Vector2(-12.0 + i * 12.0, 18.0), pos + Vector2(-12.0 + i * 12.0, 76.0), Color(0.32, 0.92, 1.0, 0.22), 5.0)
+
+    _draw_soft_glow(pos, 24.0, Color("40d8ff"), 0.85)
+
+    # Twin engine nacelles and exhaust.
+    _draw_engine_flame(pos + Vector2(-8.0, 15.0), 25.0 if dash_timer <= 0.0 else 52.0, 3.0, engine_color)
+    _draw_engine_flame(pos + Vector2(8.0, 15.0), 25.0 if dash_timer <= 0.0 else 52.0, 3.0, engine_color)
+    draw_rect(Rect2(pos + Vector2(-11.0, 8.0), Vector2(6.0, 13.0)), Color("24445a"), true)
+    draw_rect(Rect2(pos + Vector2(5.0, 8.0), Vector2(6.0, 13.0)), Color("24445a"), true)
+
+    var outer := PackedVector2Array([
+        pos + Vector2(0.0, -27.0),
+        pos + Vector2(8.0, -10.0),
+        pos + Vector2(25.0, 8.0),
+        pos + Vector2(13.0, 10.0),
+        pos + Vector2(8.0, 20.0),
+        pos + Vector2(0.0, 15.0),
+        pos + Vector2(-8.0, 20.0),
+        pos + Vector2(-13.0, 10.0),
+        pos + Vector2(-25.0, 8.0),
+        pos + Vector2(-8.0, -10.0)
+    ])
+    _draw_hull_panel(outer, hull, edge)
+
+    # Dark wing insets / armor seams.
     draw_colored_polygon(PackedVector2Array([
-        pos + Vector2(0, -22),
-        pos + Vector2(8, -5),
-        pos + Vector2(18, 11),
-        pos + Vector2(7, 8),
-        pos + Vector2(0, 17),
-        pos + Vector2(-7, 8),
-        pos + Vector2(-18, 11),
-        pos + Vector2(-8, -5)
-    ]), c)
+        pos + Vector2(-20.0, 6.0), pos + Vector2(-8.0, -7.0),
+        pos + Vector2(-8.0, 10.0), pos + Vector2(-14.0, 13.0)
+    ]), Color("173141"))
     draw_colored_polygon(PackedVector2Array([
-        pos + Vector2(0, -13),
-        pos + Vector2(5, 2),
-        pos + Vector2(0, 8),
-        pos + Vector2(-5, 2)
-    ]), Color("173545"))
-    draw_line(pos + Vector2(-6, 14), pos + Vector2(-6, 33), Color(0.3, 0.85, 1.0, 0.34), 3.0)
-    draw_line(pos + Vector2(6, 14), pos + Vector2(6, 33), Color(0.3, 0.85, 1.0, 0.34), 3.0)
+        pos + Vector2(20.0, 6.0), pos + Vector2(8.0, -7.0),
+        pos + Vector2(8.0, 10.0), pos + Vector2(14.0, 13.0)
+    ]), Color("173141"))
+
+    # Cockpit canopy and running lights.
+    var canopy := PackedVector2Array([
+        pos + Vector2(0.0, -18.0),
+        pos + Vector2(5.5, -6.0),
+        pos + Vector2(3.5, 7.0),
+        pos + Vector2(0.0, 10.0),
+        pos + Vector2(-3.5, 7.0),
+        pos + Vector2(-5.5, -6.0)
+    ])
+    _draw_hull_panel(canopy, Color("12314b"), Color("9feaff"))
+    draw_line(pos + Vector2(0.0, -15.0), pos + Vector2(0.0, 6.0), Color(0.55, 0.93, 1.0, 0.48), 1.0)
+    draw_circle(pos + Vector2(-20.0, 7.0), 2.0, Color("6bffb0"))
+    draw_circle(pos + Vector2(20.0, 7.0), 2.0, Color("ff6f9f"))
+
+    if current_weapon != "none":
+        draw_rect(Rect2(pos + Vector2(-2.0, -30.0), Vector2(4.0, 9.0)), Color("eefcff"), true)
+
     if shield_charges > 0:
-        draw_arc(pos, 27.0, -PI, PI, 40, Color("77f7ff"), 3.0)
+        var shield_pulse := 0.62 + sin(Time.get_ticks_msec() * 0.010) * 0.16
+        draw_arc(pos, 31.0, 0.0, TAU, 56, Color(0.35, 0.94, 1.0, shield_pulse), 2.3, true)
+        draw_arc(pos, 34.0, -PI * 0.78, PI * 0.12, 24, Color(0.72, 1.0, 1.0, 0.24), 1.2, true)
 
 func _draw_object(obj: Dictionary, offset: Vector2) -> void:
     var p := Vector2(obj.x, obj.y) + offset
