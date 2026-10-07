@@ -6199,25 +6199,54 @@ func _draw_menu_art(region: Rect2, darken: float = 0.56) -> void:
         )
     else:
         draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"), true)
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(0.01, 0.02, 0.045, darken), true)
+
+    # Cinematic darkening + subtle animated station-display treatment.
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(0.006, 0.016, 0.040, darken), true)
+    draw_rect(Rect2(0.0, 0.0, W, 76.0), Color(0.01, 0.04, 0.07, 0.22), true)
+    draw_rect(Rect2(0.0, H - 120.0, W, 120.0), Color(0.005, 0.01, 0.03, 0.30), true)
+    var scan_offset := int(Time.get_ticks_msec() / 42) % 52
+    for y in range(scan_offset, int(H), 52):
+        draw_line(Vector2(0.0, float(y)), Vector2(W, float(y)), Color(0.35, 0.82, 0.95, 0.022), 1.0)
+    draw_line(Vector2(0.0, 1.0), Vector2(W, 1.0), Color(0.40, 0.90, 1.0, 0.20), 2.0)
+    draw_line(Vector2(0.0, H - 2.0), Vector2(W, H - 2.0), Color(0.55, 0.30, 0.95, 0.12), 2.0)
 
 func _draw_planet_art(planet: String, rect: Rect2, alpha: float = 1.0) -> void:
     if privateer_ui_atlas == null:
         return
     var region := _planet_art_region(planet)
     var center := rect.get_center()
-    var radius := minf(rect.size.x, rect.size.y) * 0.54
-    draw_circle(center, radius, Color(0.22, 0.85, 1.0, 0.07 * alpha))
+    var radius := minf(rect.size.x, rect.size.y) * 0.48
+    var planet_type := _planet_type(planet)
+    var aura := Color("55d8a1")
+    match planet_type:
+        "VOLCANIC":
+            aura = Color("ff744a")
+        "FROZEN":
+            aura = Color("8edfff")
+        "INDUSTRIAL":
+            aura = Color("e4b45c")
+        _:
+            aura = Color("55d8a1")
+
+    _draw_soft_glow(center, radius * 0.86, aura, 0.78 * alpha)
+    draw_arc(center, radius * 1.16, -2.6, 0.45, 34, Color(aura.r, aura.g, aura.b, 0.38 * alpha), 1.4, true)
+    draw_arc(center, radius * 1.30, 0.65, 2.75, 28, Color(0.65, 0.84, 1.0, 0.16 * alpha), 1.0, true)
     draw_texture_rect_region(
         privateer_ui_atlas,
         rect,
         region,
         Color(1.0, 1.0, 1.0, alpha)
     )
+    draw_arc(center, radius * 0.92, -2.75, -0.55, 22, Color(0.92, 0.98, 1.0, 0.24 * alpha), 1.3, true)
+    draw_arc(center, radius * 0.96, 0.35, 2.25, 22, Color(0.0, 0.0, 0.0, 0.26 * alpha), 2.0, true)
 
 func _draw_menu_panel(rect: Rect2, alpha: float = 0.82, border: Color = Color(0.30, 0.76, 0.90, 0.28)) -> void:
-    draw_rect(rect, Color(0.018, 0.035, 0.065, alpha), true)
-    draw_rect(rect, border, false, 1.5)
+    draw_rect(rect, Color(0.010, 0.026, 0.052, alpha), true)
+    draw_rect(Rect2(rect.position + Vector2(3.0, 3.0), rect.size - Vector2(6.0, 6.0)), Color(0.04, 0.10, 0.14, alpha * 0.26), true)
+    draw_rect(rect, border, false, 1.4)
+    var inner_border := Color(border.r, border.g, border.b, border.a * 0.34)
+    draw_rect(rect.grow(-4.0), inner_border, false, 1.0)
+    _draw_corner_brackets(rect.grow(-2.0), Color(border.r, border.g, border.b, minf(0.70, border.a + 0.20)), 12.0)
 
 func _text_center(s: String, y: float, size: int, color: Color, left_x: float = 0.0, right_x: float = W) -> void:
     draw_string(ThemeDB.fallback_font, Vector2(left_x, y), s, HORIZONTAL_ALIGNMENT_CENTER, right_x - left_x, size, color)
