@@ -5451,7 +5451,7 @@ func _draw_title() -> void:
     _text_center("NEON PRIVATEER", 62.0, 30, Color("77f7ff"), 24.0, 366.0)
     _draw_planet_art(current_planet, Rect2(126.0, 78.0, 138.0, 138.0), 1.0)
     _text_center(_planet_display_name(current_planet), 244.0, 25, Color("f0fbff"), 60.0, 330.0)
-    _text_center("%07d CREDITS" % research_credits, 276.0, 18, Color("ffd166"), 55.0, 335.0)
+    _text_center("CASH %07d   BANK %07d" % [research_credits, bank_balance], 276.0, 15, Color("ffd166"), 38.0, 352.0)
     _text_center("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], 304.0, 14, Color("bdeef4"), 48.0, 342.0)
     _text_center(_planet_crime_summary(current_planet), 324.0, 10, Color("8ea9b8"), 40.0, 350.0)
 
@@ -5767,7 +5767,7 @@ func _draw_research() -> void:
     _draw_menu_art(ART_BG_UPGRADES, 0.68)
     _draw_menu_panel(Rect2(22.0, 20.0, 346.0, 135.0), 0.76)
     _text_center("SHIP UPGRADES", 74.0, 31, Color("b56cff"), 26.0, 364.0)
-    _text_center("CREDITS %07d" % research_credits, 112.0, 18, Color("ffd166"), 26.0, 364.0)
+    _text_center("CASH %07d" % research_credits, 112.0, 18, Color("ffd166"), 26.0, 364.0)
     _text_center("PERMANENT SHIP MODS", 145.0, 15, Color("8ea9b8"), 26.0, 364.0)
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
@@ -5800,7 +5800,7 @@ func _draw_weapon_research() -> void:
     _draw_menu_art(ART_BG_UPGRADES, 0.70)
     _draw_menu_panel(Rect2(22.0, 20.0, 346.0, 128.0), 0.77)
     _text_center("STARTING WEAPONS", 76.0, 29, Color("b56cff"), 25.0, 365.0)
-    _text_center("CREDITS %07d" % research_credits, 112.0, 18, Color("ffd166"), 25.0, 365.0)
+    _text_center("CASH %07d" % research_credits, 112.0, 18, Color("ffd166"), 25.0, 365.0)
     _text_center("PERMANENT UNLOCK — 10x RUN PRICE", 140.0, 14, Color("8ea9b8"), 25.0, 365.0)
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
@@ -5825,7 +5825,7 @@ func _draw_pause_overlay() -> void:
     _text("RESUME", PAUSE_RESUME_RECT.position + Vector2(91, 46), 24, Color("f0fbff"))
     draw_rect(PAUSE_QUIT_RECT, Color("341521"), true)
     draw_rect(PAUSE_QUIT_RECT, Color("ff6687"), false, 3.0)
-    _text("QUIT + BANK SCORE", PAUSE_QUIT_RECT.position + Vector2(39, 46), 20, Color("ffd166"))
+    _text("ABORT + KEEP SCORE", PAUSE_QUIT_RECT.position + Vector2(42, 46), 19, Color("ffd166"))
     _text("Focus loss / phone sleep pauses automatically.", Vector2(42, 580), 14, Color("8ea9b8"))
 
 func _draw_shop_button(rect: Rect2, label: String, cost: int, enabled: bool, owned: bool = false) -> void:
@@ -5868,8 +5868,8 @@ func _draw_results() -> void:
     _text("EXTRACTION!" if won else "RUN ENDED", Vector2(70 if won else 91, 275), 34, Color("77f7ff") if won else Color("ff6687"))
     _text(result_reason, Vector2(94, 314), 17, Color("8ea9b8"))
     _text("LEVEL  %02d" % level, Vector2(118, 350), 22, Color("bdeef4"))
-    _text("BANKED %07d" % last_banked_score, Vector2(74, 392), 24, Color("ffd166"))
-    _text("RESEARCH %07d" % research_credits, Vector2(76, 435), 20, Color("b56cff"))
+    _text("RUN CASH %07d" % last_banked_score, Vector2(74, 392), 24, Color("ffd166"))
+    _text("CASH %07d  BANK %07d" % [research_credits, bank_balance], Vector2(48, 435), 17, Color("b56cff"))
     _text("BEST COMBO x%d" % best_combo, Vector2(97, 474), 20, Color("ffd166"))
     _text("TAP FOR MAIN MENU", Vector2(74, 560), 22, Color("bdeef4"))
 
