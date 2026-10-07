@@ -35,7 +35,7 @@ func _initialize() -> void:
         "_shop_weapon_cost", "_open_shop", "_buy_repair", "_buy_weapon",
         "_run_upgrade_level", "_run_upgrade_max", "_run_upgrade_cost", "_buy_run_upgrade",
         "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_lateral_control_speed", "_dash_distance",
-        "_dash_speed", "_damage_multiplier", "_near_miss_research_multiplier",
+        "_dash_speed", "_damage_multiplier", "_ship_speed_score_multiplier", "_dash_speed_score_multiplier", "_enemy_event_score",
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon",
         "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
@@ -346,40 +346,56 @@ func _initialize() -> void:
         _fail("ship-speed research did not accelerate level scroll/progress")
         return
 
-    # Ship speed and dash research both increase near-miss scoring.
+    # Enemy scoring is a strict per-enemy ladder at baseline speeds:
+    # asteroid = 1 kill / 10 near / 10 dash kill / 100 dash near.
     scene.lane_event_active = false
-    scene.combo = 1
-    scene.score = 0
     scene.research_ship_speed = 0
+    scene.run_ship_speed = 0
     scene.research_dash = 0
+    scene.run_dash = 0
+    if scene._enemy_event_score(0, "kill") != 1 or scene._enemy_event_score(0, "near") != 10 or scene._enemy_event_score(0, "dash_kill") != 10 or scene._enemy_event_score(0, "dash_near") != 100:
+        _fail("asteroid baseline scoring is not 1/10/10/100")
+        return
+    if scene._enemy_event_score(2, "kill") != 5 or scene._enemy_event_score(2, "near") != 50 or scene._enemy_event_score(2, "dash_kill") != 50 or scene._enemy_event_score(2, "dash_near") != 500:
+        _fail("harder enemy scoring does not scale from enemy kill value")
+        return
+
+    # Every qualifying enemy scores independently; there is no combo/time-chain bonus.
+    scene.score = 0
+    scene.combo = 8
     scene.dash_score_timer = 0.0
-    scene._register_near_miss()
-    var base_near: int = scene.score
+    scene._register_near_miss(0)
+    scene._register_near_miss(0)
+    if scene.score != 20:
+        _fail("two asteroid near misses should score exactly 10 each with no combo bonus")
+        return
     scene.score = 0
-    scene.combo = 1
+    scene.dash_score_timer = 0.5
+    scene._register_near_miss(0)
+    scene._register_near_miss(0)
+    if scene.score != 200:
+        _fail("two asteroid dash near misses should score exactly 100 each with no combo bonus")
+        return
+
+    # Ship Speed scales ordinary near misses from baseline ship speed.
     scene.research_ship_speed = 1
-    scene._register_near_miss()
-    var speed_near: int = scene.score
-    if speed_near <= base_near:
-        _fail("ship-speed research did not raise ordinary near-miss score")
+    if scene._ship_speed_score_multiplier() <= 1.0 or scene._enemy_event_score(0, "near") <= 10:
+        _fail("ship-speed upgrade did not raise ordinary near-miss score")
         return
-    scene.score = 0
-    scene.combo = 1
-    scene.dash_score_timer = 0.5
-    scene.research_dash = 0
-    scene._register_near_miss()
-    var base_dash_near: int = scene.score
-    scene.score = 0
-    scene.combo = 1
-    scene.dash_score_timer = 0.5
+    if scene._enemy_event_score(0, "dash_near") != 100:
+        _fail("ship speed should not change dash-near scoring")
+        return
+
+    # Dash Speed scales dash kills and dash near misses from baseline dash speed.
+    scene.research_ship_speed = 0
     scene.research_dash = 1
-    scene._register_near_miss()
-    if scene.score <= base_dash_near:
-        _fail("dash research did not raise dash near-miss score")
+    if scene._dash_speed_score_multiplier() <= 1.0 or scene._enemy_event_score(0, "dash_kill") <= 10 or scene._enemy_event_score(0, "dash_near") <= 100:
+        _fail("dash-speed upgrade did not raise dash-event scoring")
         return
-    if scene._near_miss_research_multiplier(false) <= 1.0 or scene._near_miss_research_multiplier(true) <= scene._near_miss_research_multiplier(false):
-        _fail("near-miss research multipliers do not reflect speed and dash research")
+    if scene._enemy_event_score(0, "near") != 10:
+        _fail("dash speed should not change ordinary near-miss scoring")
         return
+    scene.research_dash = 0
 
     # Starting a researched run applies permanent hits and shield charges.
     scene.research_hits = 1
@@ -786,7 +802,7 @@ func _initialize() -> void:
     scene.score = 0
     scene.combo = 1
     scene.dash_score_timer = 0.0
-    scene._register_near_miss()
+    scene._register_near_miss(0)
     var ordinary_near_score: int = scene.score
     if ordinary_near_score < 10 or ordinary_near_score >= 100:
         _fail("ordinary near miss should score in the tens")
@@ -794,7 +810,7 @@ func _initialize() -> void:
     scene.score = 0
     scene.combo = 1
     scene.dash_score_timer = 0.5
-    scene._register_near_miss()
+    scene._register_near_miss(0)
     var dash_near_score: int = scene.score
     if dash_near_score < 100 or dash_near_score >= 1000:
         _fail("dash near miss should score in the hundreds")
@@ -1003,8 +1019,8 @@ func _initialize() -> void:
         if obj.type == "hazard" and int(obj.id) == 990005:
             _fail("dash collision did not destroy the enemy")
             return
-    if scene.score != scene._kill_score(1):
-        _fail("dash kill did not award the enemy kill score")
+    if scene.score != 20:
+        _fail("baseline square dash kill should score 20")
         return
     if not scene.near_miss_text.begins_with("DASH KILL +"):
         _fail("dash collision did not register dash-kill feedback")
@@ -1063,6 +1079,25 @@ func _initialize() -> void:
     scene._move_objects(0.0)
     if scene.hp != 2:
         _fail("field repair did not restore exactly one hit")
+        return
+
+    # Per-enemy scoring remains independent when multiple hazards qualify in the same update.
+    scene.objects.clear()
+    scene.score = 0
+    scene.dash_score_timer = 0.0
+    scene.player_x = 195.0
+    scene.player_y = scene.PLAYER_Y
+    for enemy_id in [991001, 991002]:
+        scene.objects.append({
+            "id": enemy_id, "type": "hazard", "kind": 0,
+            "hp": 3.0, "max_hp": 3.0, "hard": false,
+            "x": scene.player_x, "y": scene.player_y + 20.0, "r": 18.0,
+            "speed": 0.0, "drift": 0.0, "shoot_clock": 999.0,
+            "lane_speed_mult": 1.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+        })
+    scene._move_objects(0.0)
+    if scene.score != 20:
+        _fail("multiple simultaneous asteroid near misses did not each score 10")
         return
 
     # Economy should be on the compact score scale.
