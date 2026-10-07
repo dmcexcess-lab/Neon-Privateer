@@ -4850,6 +4850,8 @@ func _obstacle_max_hp(kind: int) -> float:
             return 4.0
         4:
             return 20.0
+        5:
+            return 90.0
     return 3.0
 
 func _kill_score(kind: int) -> int:
@@ -4858,6 +4860,8 @@ func _kill_score(kind: int) -> int:
             return 4
         4:
             return 7
+        5:
+            return 15
     return 0
 
 
@@ -5052,6 +5056,26 @@ func _fire_enemy_missile(obj: Dictionary) -> void:
         "homing": true
     })
     _play_sfx(missile_sfx, rng.randf_range(0.96, 1.04), -4.0)
+
+func _fire_enemy_spread(obj: Dictionary) -> void:
+    var from_pos := Vector2(float(obj.x), float(obj.y) + float(obj.r))
+    var to_player := Vector2(player_x, player_y) - from_pos
+    if to_player.length() < 1.0:
+        to_player = Vector2.DOWN
+    var base_velocity := to_player.normalized() * ENEMY_SHOT_SPEED
+    for angle_offset in [-0.18, 0.0, 0.18]:
+        var velocity := base_velocity.rotated(angle_offset)
+        enemy_shots.append({
+            "type": "bolt",
+            "x": from_pos.x,
+            "y": from_pos.y,
+            "vx": velocity.x,
+            "vy": velocity.y,
+            "r": ENEMY_SHOT_RADIUS,
+            "damage": 1,
+            "homing": false
+        })
+    _play_sfx(enemy_shot_sfx, rng.randf_range(0.90, 1.02), -5.0)
 
 func _move_enemy_shots(delta: float) -> void:
     var next: Array[Dictionary] = []
@@ -5252,6 +5276,23 @@ func _move_objects(delta: float) -> void:
                         _fire_enemy_missile(obj)
                         var boss_rate := maxf(0.65, 1.55 - float(active_contract.get("difficulty", 1)) * 0.12) if bool(obj.get("boss", false)) else rng.randf_range(1.8, 2.5)
                         obj.shoot_clock = boss_rate
+
+            elif kind == 5:
+                # Octagon bounty flagship: stationary in forward space, slow
+                # lateral sweep, independent spread cannon + homing missile.
+                motion_y = 0.0
+                obj.boss_phase = float(obj.get("boss_phase", 0.0)) + delta
+                var center_x := W * 0.5
+                obj.x = center_x + sin(float(obj.boss_phase) * 0.85) * 92.0
+                obj.drift = 0.0
+                obj.shoot_clock = float(obj.get("shoot_clock", 0.5)) - delta
+                obj.aux_shoot_clock = float(obj.get("aux_shoot_clock", 1.0)) - delta
+                if float(obj.shoot_clock) <= 0.0:
+                    _fire_enemy_spread(obj)
+                    obj.shoot_clock = maxf(0.40, 1.10 - float(active_contract.get("difficulty", 1)) * 0.07)
+                if float(obj.aux_shoot_clock) <= 0.0:
+                    _fire_enemy_missile(obj)
+                    obj.aux_shoot_clock = maxf(0.95, 2.15 - float(active_contract.get("difficulty", 1)) * 0.12)
 
         obj.y += motion_y * delta
         obj.x += float(obj.drift) * delta
