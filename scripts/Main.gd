@@ -1490,11 +1490,15 @@ func _update_market_index(kind: String, goods: Array[String], volume: float) -> 
 
     var move := 0.0
     if kind == "green":
-        move = basket_change * 0.35 + volume_change * 0.025 + rng.randf_range(-0.0025, 0.0025)
+        # No independent index dice: the safe index moves only from the
+        # aggregate legal basket and the summed value of real Green shipments.
+        move = basket_change * 0.55 + volume_change * 0.020
         move = clampf(move, -0.012, 0.012)
     else:
+        # Grey volatility comes from its much more volatile underlying goods,
+        # thinner/swingier trade volume, and war demand—not a cosmetic RNG.
         var war_pressure := float(political_world.get("wars", []).size()) * 0.004
-        move = basket_change * 0.62 + volume_change * 0.065 + rng.randf_range(-0.025, 0.025) + war_pressure
+        move = basket_change * 0.90 + volume_change * 0.060 + war_pressure
         move = clampf(move, -0.085, 0.085)
 
     state["last_volume"] = last_volume
