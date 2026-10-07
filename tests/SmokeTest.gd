@@ -822,7 +822,12 @@ func _initialize() -> void:
     scene.pending_drops.clear()
     scene.score = 0
 
-    # Save/reload must reproduce the exact political world.
+    # Save/reload must reproduce the exact political world and current faction state.
+    var expected_primary_relation: int = scene._faction_relation(primary_faction)
+    var expected_primary_heat: int = scene._faction_heat(primary_faction)
+    var expected_primary_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
+    var expected_primary_offenses: int = int(expected_primary_record.get("offenses", 0))
+    var expected_primary_last_offense: String = String(expected_primary_record.get("last_offense", ""))
     var world_before: Dictionary = scene.political_world.duplicate(true)
     scene.cargo["Arms"] = 1
     scene.cargo["Narcotics"] = 2
@@ -844,12 +849,12 @@ func _initialize() -> void:
     if int(scene.cargo.get("Arms", 0)) != 1 or int(scene.cargo.get("Narcotics", 0)) != 2:
         _fail("Arms/Narcotics cargo did not persist")
         return
-    if scene._faction_relation(primary_faction) != -12 or scene._faction_heat(primary_faction) != 30:
-        _fail("Slice 3 faction relation/heat did not persist")
+    if scene._faction_relation(primary_faction) != expected_primary_relation or scene._faction_heat(primary_faction) != expected_primary_heat:
+        _fail("faction relation/heat did not persist")
         return
     var persisted_primary: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, primary_faction)
-    if int(persisted_primary.get("offenses", 0)) != 1 or String(persisted_primary.get("last_offense", "")) != "smoke_test":
-        _fail("Slice 3 offense metadata did not persist")
+    if int(persisted_primary.get("offenses", 0)) != expected_primary_offenses or String(persisted_primary.get("last_offense", "")) != expected_primary_last_offense:
+        _fail("faction offense metadata did not persist")
         return
     var reload_difference: String = _world_difference(world_before, scene.political_world)
     if not reload_difference.is_empty():
