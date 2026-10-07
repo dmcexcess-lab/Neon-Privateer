@@ -127,6 +127,10 @@ const KILL_REPAIR_DROP_CHANCE := 0.02
 const ASTEROID_ORE_DROP_CHANCE := 0.12
 const BASIC_CONTAINER_RELATION_LOSS := 4
 const REINFORCED_CONTAINER_RELATION_LOSS := 8
+const POLICE_SHIP_KILL_RELATION_LOSS := 12
+const POLICE_SHIP_KILL_HEAT_GAIN := 15
+const HEAVY_ENFORCEMENT_KILL_RELATION_LOSS := 20
+const HEAVY_ENFORCEMENT_KILL_HEAT_GAIN := 25
 const ENEMY_SHOT_SPEED := 255.0
 const ENEMY_SHOT_RADIUS := 5.0
 const ENEMY_MISSILE_SPEED := 190.0
@@ -193,6 +197,7 @@ var bounty_completed_this_route := false
 var encounter_active := false
 var encounter_mode := ""
 var encounter_faction_id := ""
+var encounter_hostile := false
 var encounter_timer := 0.0
 var encounter_clock := 999.0
 var encounter_banner_timer := 0.0
@@ -470,6 +475,7 @@ func _reset_career_state() -> void:
     encounter_active = false
     encounter_mode = ""
     encounter_faction_id = ""
+    encounter_hostile = false
     encounter_timer = 0.0
     encounter_clock = 999.0
     encounter_banner_timer = 0.0
@@ -1106,6 +1112,7 @@ func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
             "eligible": true,
             "mode": "pirate",
             "faction_id": "",
+            "hostile": true,
             "heavy": false,
             "state": state
         }
@@ -1114,12 +1121,14 @@ func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
         var faction_id := String(context.get("faction_id", ""))
         if faction_id.is_empty():
             faction_id = String(context.get("strongest_faction_id", ""))
-        if not faction_id.is_empty() and _police_hostile_eligible(faction_id):
+        if not faction_id.is_empty():
+            var hostile := _police_hostile_eligible(faction_id)
             return {
                 "eligible": true,
                 "mode": "police",
                 "faction_id": faction_id,
-                "heavy": _heavy_enforcement_eligible(faction_id),
+                "hostile": hostile,
+                "heavy": hostile and _heavy_enforcement_eligible(faction_id),
                 "state": state
             }
 
@@ -1127,9 +1136,11 @@ func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
         "eligible": false,
         "mode": "",
         "faction_id": "",
+        "hostile": false,
         "heavy": false,
         "state": state
     }
+
 
 func _current_encounter_eligibility() -> Dictionary:
     return _encounter_eligibility_for_context(_current_flight_political_context())
@@ -1166,6 +1177,7 @@ func _end_route_encounter(eligibility: Dictionary = {}) -> void:
     encounter_active = false
     encounter_mode = ""
     encounter_faction_id = ""
+    encounter_hostile = false
     encounter_timer = 0.0
     encounter_clock = _encounter_cooldown(eligibility) if bool(eligibility.get("eligible", false)) else 999.0
     _sync_legacy_pirate_state()
@@ -1176,12 +1188,14 @@ func _start_route_encounter(eligibility: Dictionary) -> bool:
     encounter_active = true
     encounter_mode = String(eligibility.get("mode", ""))
     encounter_faction_id = String(eligibility.get("faction_id", ""))
+    encounter_hostile = bool(eligibility.get("hostile", encounter_mode == "pirate"))
     encounter_timer = _encounter_duration(eligibility)
     encounter_banner_timer = 1.8
 
     if encounter_mode == "police":
         var faction := PoliticalWorld.faction_record(political_world, encounter_faction_id)
-        weapon_banner_text = "%s PATROL" % String(faction.get("name", "FACTION")).to_upper()
+        var suffix := "ENFORCEMENT" if encounter_hostile else "PATROL"
+        weapon_banner_text = "%s %s" % [String(faction.get("name", "FACTION")).to_upper(), suffix]
     else:
         weapon_banner_text = "PIRATE CONTACT"
     weapon_banner_timer = 1.8
@@ -1202,6 +1216,12 @@ func _update_route_encounter(delta: float) -> void:
         if not bool(eligibility.get("eligible", false)) or not same_mode or not same_faction:
             _end_route_encounter(eligibility)
             return
+        var was_hostile := encounter_hostile
+        encounter_hostile = bool(eligibility.get("hostile", encounter_mode == "pirate"))
+        if encounter_mode == "police" and encounter_hostile and not was_hostile:
+            var faction := PoliticalWorld.faction_record(political_world, encounter_faction_id)
+            weapon_banner_text = "%s ENFORCEMENT" % String(faction.get("name", "FACTION")).to_upper()
+            weapon_banner_timer = 1.8
         encounter_timer = maxf(0.0, encounter_timer - delta)
         if encounter_timer <= 0.0:
             _end_route_encounter(eligibility)
@@ -2599,6 +2619,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "encounter_active", encounter_active)
     cfg.set_value("run", "encounter_mode", encounter_mode)
     cfg.set_value("run", "encounter_faction_id", encounter_faction_id)
+    cfg.set_value("run", "encounter_hostile", encounter_hostile)
     cfg.set_value("run", "encounter_timer", encounter_timer)
     cfg.set_value("run", "encounter_clock", encounter_clock)
     cfg.set_value("run", "encounter_banner_timer", encounter_banner_timer)
@@ -2679,6 +2700,7 @@ func _load_run_snapshot() -> bool:
     encounter_active = bool(cfg.get_value("run", "encounter_active", legacy_pirate_active))
     encounter_mode = String(cfg.get_value("run", "encounter_mode", "pirate" if legacy_pirate_active else ""))
     encounter_faction_id = String(cfg.get_value("run", "encounter_faction_id", ""))
+    encounter_hostile = bool(cfg.get_value("run", "encounter_hostile", encounter_mode == "pirate" or (encounter_mode == "police" and _police_hostile_eligible(encounter_faction_id))))
     encounter_timer = float(cfg.get_value("run", "encounter_timer", cfg.get_value("run", "pirate_timer", 0.0)))
     encounter_clock = float(cfg.get_value("run", "encounter_clock", cfg.get_value("run", "pirate_clock", 999.0)))
     encounter_banner_timer = float(cfg.get_value("run", "encounter_banner_timer", 0.0))
@@ -2826,7 +2848,7 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
                     return 3
                 cap = mini(cap, 2)
             elif encounter_mode == "police":
-                var heavy := _heavy_enforcement_eligible(encounter_faction_id)
+                var heavy := encounter_hostile and _heavy_enforcement_eligible(encounter_faction_id)
                 if heavy and roll < (0.18 if hard_lane else 0.12):
                     return 4
                 if roll < (0.52 if hard_lane else 0.40):
@@ -3055,6 +3077,7 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
     var territory_state := String(_current_flight_political_context().get("state", "UNCONTROLLED")) if kind == 1 or kind == 2 else ""
     var encounter_role := encounter_mode if kind == 3 or kind == 4 else ""
     var ship_faction := encounter_faction_id if encounter_role == "police" else ""
+    var ship_hostile := encounter_role == "pirate" or (encounter_role == "police" and encounter_hostile) or bool(false)
     objects.append({
         "id": rng.randi(),
         "type": "hazard",
@@ -3076,8 +3099,47 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         "owner_faction": owner_faction,
         "territory_state": territory_state,
         "encounter_role": encounter_role,
-        "encounter_faction_id": ship_faction
+        "encounter_faction_id": ship_faction,
+        "hostile": ship_hostile
     })
+
+func _ship_is_hostile(obj: Dictionary) -> bool:
+    if bool(obj.get("boss", false)):
+        return true
+    var role := String(obj.get("encounter_role", ""))
+    if role == "pirate":
+        return true
+    if role == "police":
+        var faction_id := String(obj.get("encounter_faction_id", ""))
+        if not faction_id.is_empty() and _police_hostile_eligible(faction_id):
+            return true
+        return bool(obj.get("hostile", false))
+    # Legacy/non-route combat objects retain their historical hostile behavior.
+    return int(obj.get("kind", 0)) == 3 or int(obj.get("kind", 0)) == 4
+
+func _player_can_damage_hazard(obj: Dictionary) -> bool:
+    var kind := int(obj.get("kind", 0))
+    if kind != 3 and kind != 4:
+        return true
+    if bool(obj.get("boss", false)):
+        return true
+    if String(obj.get("encounter_role", "")) == "police":
+        return _ship_is_hostile(obj)
+    return true
+
+func _handle_enforcement_kill(obj: Dictionary) -> void:
+    if String(obj.get("encounter_role", "")) != "police":
+        return
+    var faction_id := String(obj.get("encounter_faction_id", ""))
+    if faction_id.is_empty():
+        return
+    var heavy := int(obj.get("kind", 3)) == 4
+    var relation_loss := HEAVY_ENFORCEMENT_KILL_RELATION_LOSS if heavy else POLICE_SHIP_KILL_RELATION_LOSS
+    var heat_gain := HEAVY_ENFORCEMENT_KILL_HEAT_GAIN if heavy else POLICE_SHIP_KILL_HEAT_GAIN
+    var offense := "heavy_enforcement_destroyed" if heavy else "police_ship_destroyed"
+    _record_faction_crime(faction_id, relation_loss, heat_gain, offense, false)
+    encounter_hostile = true
+    _save_privateer_state()
 
 func _weapon_interval() -> float:
     match current_weapon:
@@ -3207,6 +3269,8 @@ func _nearest_hazard_position(from_pos: Vector2) -> Vector2:
     for obj in objects:
         if obj.type != "hazard":
             continue
+        if not _player_can_damage_hazard(obj):
+            continue
         var p := Vector2(float(obj.x), float(obj.y))
         if p.y >= from_pos.y:
             continue
@@ -3254,6 +3318,8 @@ func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
         elif bool(obj.get("boss", false)):
             boss_defeated_pending = true
         else:
+            if kind == 3 or kind == 4:
+                _handle_enforcement_kill(obj)
             _queue_kill_drop(obj)
 
         _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
@@ -3265,6 +3331,8 @@ func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
 
 
 func _consume_shot_hit(obj: Dictionary) -> bool:
+    if not _player_can_damage_hazard(obj):
+        return false
     for i in range(shots.size() - 1, -1, -1):
         var shot: Dictionary = shots[i]
         var dx := absf(float(shot.x) - float(obj.x))
@@ -3275,6 +3343,7 @@ func _consume_shot_hit(obj: Dictionary) -> bool:
             return _apply_damage_to_hazard(obj, damage)
     return false
 
+
 func _apply_laser_damage(delta: float) -> void:
     if current_weapon != "laser" or not playing:
         return
@@ -3283,6 +3352,8 @@ func _apply_laser_damage(delta: float) -> void:
     for i in objects.size():
         var obj: Dictionary = objects[i]
         if obj.type != "hazard":
+            continue
+        if not _player_can_damage_hazard(obj):
             continue
         if float(obj.y) >= player_y:
             continue
@@ -3530,25 +3601,32 @@ func _move_objects(delta: float) -> void:
                 obj.drift = 0.0
 
             elif kind == 3:
-                var dodge_dir := _incoming_shot_dodge_direction(obj)
-                var trapezoid_target := clampf((player_x - float(obj.x)) * 0.14, -28.0, 28.0)
-                if dodge_dir != 0.0:
-                    trapezoid_target = dodge_dir * 72.0
-                obj.drift = lerpf(float(obj.drift), trapezoid_target, minf(1.0, delta * 2.4))
+                var hostile_ship := _ship_is_hostile(obj)
+                obj["hostile"] = hostile_ship
+                if hostile_ship:
+                    var dodge_dir := _incoming_shot_dodge_direction(obj)
+                    var trapezoid_target := clampf((player_x - float(obj.x)) * 0.14, -28.0, 28.0)
+                    if dodge_dir != 0.0:
+                        trapezoid_target = dodge_dir * 72.0
+                    obj.drift = lerpf(float(obj.drift), trapezoid_target, minf(1.0, delta * 2.4))
 
-                var preferred_y := player_y - 245.0
-                var y_error := preferred_y - float(obj.y)
-                if y_error > 55.0:
-                    motion_y = minf(72.0, float(obj.speed))
-                elif y_error < -45.0:
-                    motion_y = -58.0
+                    var preferred_y := player_y - 245.0
+                    var y_error := preferred_y - float(obj.y)
+                    if y_error > 55.0:
+                        motion_y = minf(72.0, float(obj.speed))
+                    elif y_error < -45.0:
+                        motion_y = -58.0
+                    else:
+                        motion_y = clampf(y_error * 0.30, -28.0, 28.0)
+
+                    obj.shoot_clock = float(obj.shoot_clock) - delta
+                    if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 45.0 and float(obj.y) < player_y - 75.0:
+                        _fire_enemy_shot(obj)
+                        obj.shoot_clock = rng.randf_range(1.45, 2.10)
                 else:
-                    motion_y = clampf(y_error * 0.30, -28.0, 28.0)
-
-                obj.shoot_clock = float(obj.shoot_clock) - delta
-                if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 45.0 and float(obj.y) < player_y - 75.0:
-                    _fire_enemy_shot(obj)
-                    obj.shoot_clock = rng.randf_range(1.45, 2.10)
+                    # Lawful patrol traffic passes through without tracking, dodging or firing.
+                    obj.drift = lerpf(float(obj.drift), 0.0, minf(1.0, delta * 1.8))
+                    motion_y = float(obj.speed)
 
             elif kind == 4:
                 obj.drift = 0.0
@@ -3557,16 +3635,19 @@ func _move_objects(delta: float) -> void:
                 else:
                     # Heavy enforcement platforms are fixed in world-space and scroll past with the route.
                     motion_y = float(obj.speed)
-                obj.shoot_clock = float(obj.shoot_clock) - delta
-                if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 55.0 and float(obj.y) < player_y - 85.0:
-                    _fire_enemy_missile(obj)
-                    var boss_rate := maxf(0.65, 1.55 - float(active_contract.get("difficulty", 1)) * 0.12) if bool(obj.get("boss", false)) else rng.randf_range(1.8, 2.5)
-                    obj.shoot_clock = boss_rate
+                var hostile_platform := _ship_is_hostile(obj)
+                obj["hostile"] = hostile_platform
+                if hostile_platform:
+                    obj.shoot_clock = float(obj.shoot_clock) - delta
+                    if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 55.0 and float(obj.y) < player_y - 85.0:
+                        _fire_enemy_missile(obj)
+                        var boss_rate := maxf(0.65, 1.55 - float(active_contract.get("difficulty", 1)) * 0.12) if bool(obj.get("boss", false)) else rng.randf_range(1.8, 2.5)
+                        obj.shoot_clock = boss_rate
 
         obj.y += motion_y * delta
         obj.x += float(obj.drift) * delta
 
-        if obj.type == "hazard" and int(obj.kind) == 3:
+        if obj.type == "hazard" and int(obj.kind) == 3 and _ship_is_hostile(obj):
             obj.y = minf(float(obj.y), player_y - float(obj.r) - 12.0)
 
         if obj.type != "extraction":
@@ -3582,7 +3663,8 @@ func _move_objects(delta: float) -> void:
             if _consume_shot_hit(obj):
                 continue
             var hit_dist: float = obj.r + 14.0
-            if absf(dy) < hit_dist and dx < hit_dist:
+            var collision_threat := collision_kind < 3 or _ship_is_hostile(obj)
+            if collision_threat and absf(dy) < hit_dist and dx < hit_dist:
                 if invuln <= 0.0:
                     _take_hit(1)
                     _burst(Vector2(player_x, player_y), 13, Color("ff426f"))
@@ -3786,7 +3868,7 @@ func _draw() -> void:
 
     if weapon_banner_timer > 0.0:
         draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" or weapon_banner_text.ends_with(" PATROL") else "WEAPON: "
+        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" or (weapon_banner_text.ends_with(" PATROL") or weapon_banner_text.ends_with(" ENFORCEMENT")) else "WEAPON: "
         _text(banner_prefix + weapon_banner_text, Vector2(82, 270), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
@@ -4038,6 +4120,8 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
     if (kind == 1 or kind == 2) and not String(obj.get("owner_faction", "")).is_empty():
         var owner_color := _faction_color(String(obj.owner_faction))
         draw_arc(p, float(obj.r) + 7.0, 0.0, TAU, 24, owner_color, 2.0, true)
+    if (kind == 3 or kind == 4) and String(obj.get("encounter_role", "")) == "police" and _ship_is_hostile(obj):
+        draw_arc(p, float(obj.r) + 10.0, 0.0, TAU, 24, Color("ff426f"), 2.0, true)
 
     if obj.has("hp") and float(obj.hp) < float(obj.max_hp):
         var bw := maxf(18.0, float(obj.r) * 1.8)
@@ -4063,7 +4147,7 @@ func _draw_hud() -> void:
     elif encounter_active and encounter_mode == "pirate":
         _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
     elif encounter_active and encounter_mode == "police":
-        _text("FACTION PATROL", Vector2(126, 146), 15, _faction_color(encounter_faction_id))
+        _text("ENFORCEMENT" if encounter_hostile else "FACTION PATROL", Vector2(126 if not encounter_hostile else 137, 146), 15, Color("ff8fa6") if encounter_hostile else _faction_color(encounter_faction_id))
     elif dash_score_timer > 0.0:
         _text("DASH BONUS", Vector2(143, 146), 16, Color("ffd166"))
     else:
