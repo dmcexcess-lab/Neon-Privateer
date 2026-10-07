@@ -688,6 +688,7 @@ func _career_slot_summary(slot: int) -> Dictionary:
         "exists": _career_slot_exists(slot),
         "planet": "",
         "credits": 0,
+        "bank": 0,
         "in_flight": false,
         "destination": ""
     }
@@ -696,6 +697,7 @@ func _career_slot_summary(slot: int) -> Dictionary:
     var meta := ConfigFile.new()
     if meta.load(_career_meta_path(slot)) == OK:
         result.credits = int(meta.get_value("meta", "credits", 0))
+        result.bank = int(meta.get_value("meta", "bank_balance", 0))
     var world_cfg := ConfigFile.new()
     var saved_world: Dictionary = {}
     if world_cfg.load(_career_world_path(slot)) == OK:
@@ -5337,7 +5339,7 @@ func _draw_profile_menu() -> void:
         if bool(summary.in_flight):
             location = "%s > %s" % [String(summary.planet), String(summary.destination)]
         _text_center("LAST: SLOT %d   %s" % [last_career_slot, location], 618.0, 14, Color("8ea9b8"), 42.0, 348.0)
-        _text_center("%d CR" % int(summary.credits), 644.0, 14, Color("ffd166"), 42.0, 348.0)
+        _text_center("CASH %d   BANK %d" % [int(summary.credits), int(summary.bank)], 644.0, 12, Color("ffd166"), 42.0, 348.0)
     else:
         _text_center("NO CAREER SAVES YET", 626.0, 14, Color("8ea9b8"), 42.0, 348.0)
 
@@ -5373,7 +5375,7 @@ func _draw_career_slots_menu() -> void:
         if bool(summary.in_flight):
             location = "IN FLIGHT > %s" % String(summary.destination)
         _text(location, rect.position + Vector2(14, 58), 15, Color("bdeef4"))
-        _text("%d CR" % int(summary.credits), rect.position + Vector2(14, 86), 14, Color("ffd166"))
+        _text("CASH %d  BANK %d" % [int(summary.credits), int(summary.bank)], rect.position + Vector2(14, 86), 12, Color("ffd166"))
 
         if career_new_mode:
             if selected_warning:
