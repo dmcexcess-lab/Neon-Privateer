@@ -11,7 +11,7 @@ func _reachable_planets(scene, start_id: String) -> Dictionary:
     var seen: Dictionary = {start_id: true}
     var queue: Array[String] = [start_id]
     while not queue.is_empty():
-        var current := queue.pop_front()
+        var current: String = String(queue.pop_front())
         for neighbor in scene.PoliticalWorld.neighbors(scene.political_world, current):
             if not seen.has(neighbor):
                 seen[neighbor] = true
@@ -19,7 +19,7 @@ func _reachable_planets(scene, start_id: String) -> Dictionary:
     return seen
 
 func _initialize() -> void:
-    var packed := load("res://main.tscn")
+    var packed: PackedScene = load("res://main.tscn")
     if packed == null:
         _fail("main scene did not load")
         return
@@ -72,7 +72,7 @@ func _initialize() -> void:
         if art_region.size != Vector2(195.0, 192.0):
             _fail("planet art region has wrong size for " + visual_key)
             return
-        var region_key := "%d,%d" % [int(art_region.position.x), int(art_region.position.y)]
+        var region_key: String = "%d,%d" % [int(art_region.position.x), int(art_region.position.y)]
         if art_regions.has(region_key):
             _fail("planet archetype art region is not unique for " + visual_key)
             return
@@ -95,13 +95,13 @@ func _initialize() -> void:
 
     var ids: Dictionary = {}
     var names: Dictionary = {}
-    var type_counts := {"LUSH": 0, "VOLCANIC": 0, "FROZEN": 0, "INDUSTRIAL": 0}
-    var bounds := Rect2(scene.political_world.bounds)
+    var type_counts: Dictionary = {"LUSH": 0, "VOLCANIC": 0, "FROZEN": 0, "INDUSTRIAL": 0}
+    var bounds: Rect2 = Rect2(scene.political_world.bounds)
     var planets: Array = scene.political_world.planets
     for planet in planets:
-        var pid := String(planet.id)
-        var pname := String(planet.name)
-        var ptype := String(planet.type)
+        var pid: String = String(planet.id)
+        var pname: String = String(planet.name)
+        var ptype: String = String(planet.type)
         if ids.has(pid):
             _fail("duplicate planet ID " + pid)
             return
@@ -128,10 +128,10 @@ func _initialize() -> void:
                 _fail("generated planets overlap too closely")
                 return
 
-    var lush := scene.PoliticalWorld.find_planet_by_type(scene.political_world, "LUSH")
-    var volcanic := scene.PoliticalWorld.find_planet_by_type(scene.political_world, "VOLCANIC")
-    var frozen := scene.PoliticalWorld.find_planet_by_type(scene.political_world, "FROZEN")
-    var industrial := scene.PoliticalWorld.find_planet_by_type(scene.political_world, "INDUSTRIAL")
+    var lush: String = String(scene.PoliticalWorld.find_planet_by_type(scene.political_world, "LUSH"))
+    var volcanic: String = String(scene.PoliticalWorld.find_planet_by_type(scene.political_world, "VOLCANIC"))
+    var frozen: String = String(scene.PoliticalWorld.find_planet_by_type(scene.political_world, "FROZEN"))
+    var industrial: String = String(scene.PoliticalWorld.find_planet_by_type(scene.political_world, "INDUSTRIAL"))
     for representative in [lush, volcanic, frozen, industrial]:
         if representative.is_empty():
             _fail("missing representative planet type")
@@ -148,7 +148,7 @@ func _initialize() -> void:
     var capitals: Dictionary = {}
     var law_profiles: Dictionary = {}
     for faction in factions:
-        var capital_id := String(faction.capital_id)
+        var capital_id: String = String(faction.capital_id)
         if not ids.has(capital_id) or capitals.has(capital_id):
             _fail("invalid or duplicate faction capital")
             return
@@ -158,7 +158,7 @@ func _initialize() -> void:
             _fail("faction law fields are incomplete")
             return
         law_profiles["%s|%s" % [str(laws.arms_legal), str(laws.narcotics_legal)]] = true
-        var capital_context := scene._get_political_context_at(scene._system_planet_world_position(capital_id))
+        var capital_context: Dictionary = scene._get_political_context_at(scene._system_planet_world_position(capital_id))
         if String(capital_context.state) != "CORE":
             _fail("faction capital is not CORE")
             return
@@ -176,11 +176,11 @@ func _initialize() -> void:
     var states_seen: Dictionary = {}
     for gy in 17:
         for gx in 23:
-            var sample := bounds.position + Vector2(
+            var sample: Vector2 = bounds.position + Vector2(
                 bounds.size.x * float(gx) / 22.0,
                 bounds.size.y * float(gy) / 16.0
             )
-            var context := scene._get_political_context_at(sample)
+            var context: Dictionary = scene._get_political_context_at(sample)
             states_seen[String(context.state)] = true
     for required_state in ["CORE", "CONTROLLED", "CONTESTED", "UNCONTROLLED"]:
         if not states_seen.has(required_state):
@@ -194,14 +194,14 @@ func _initialize() -> void:
         return
     var route_ids: Dictionary = {}
     var degree: Dictionary = {}
-    var min_route_danger := 99
-    var max_route_danger := -1
-    var saw_contested_segment := false
-    var saw_core_segment := false
+    var min_route_danger: int = 99
+    var max_route_danger: int = -1
+    var saw_contested_segment: bool = false
+    var saw_core_segment: bool = false
     for pid in scene.planet_names:
         degree[pid] = 0
     for route in routes:
-        var rid := String(route.id)
+        var rid: String = String(route.id)
         if route_ids.has(rid):
             _fail("duplicate route edge " + rid)
             return
@@ -211,12 +211,12 @@ func _initialize() -> void:
         if route.segments.is_empty():
             _fail("route has no political segments")
             return
-        var first_t := float(route.segments[0].start_t)
-        var last_t := float(route.segments[-1].end_t)
+        var first_t: float = float(route.segments[0].start_t)
+        var last_t: float = float(route.segments[-1].end_t)
         if first_t > 0.001 or last_t < 0.999:
             _fail("route political segments do not cover full lane")
             return
-        var derived := scene.PoliticalWorld._danger_from_segments(route.segments)
+        var derived: int = int(scene.PoliticalWorld._danger_from_segments(route.segments))
         if int(route.danger) != int(derived):
             _fail("stored route danger is not derived from segments")
             return
@@ -230,11 +230,11 @@ func _initialize() -> void:
     if not saw_contested_segment or not saw_core_segment or max_route_danger <= min_route_danger:
         _fail("route politics do not produce meaningful danger variation")
         return
-    var reachable := _reachable_planets(scene, scene.planet_names[0])
+    var reachable: Dictionary = _reachable_planets(scene, scene.planet_names[0])
     if reachable.size() != 32:
         _fail("route graph is not fully connected")
         return
-    var high_degree_count := 0
+    var high_degree_count: int = 0
     for pid in degree.keys():
         if int(degree[pid]) < 1:
             _fail("planet has no route " + String(pid))
@@ -248,7 +248,7 @@ func _initialize() -> void:
     # Initial map view fits all world centers and each hit target covers its node.
     scene._reset_system_map_view()
     for pid in scene.planet_names:
-        var screen_pos := scene._system_planet_position(pid)
+        var screen_pos: Vector2 = scene._system_planet_position(pid)
         if not scene.SYSTEM_MAP_RECT.grow(2.0).has_point(screen_pos):
             _fail("initial map view does not fit planet " + pid)
             return
@@ -273,7 +273,7 @@ func _initialize() -> void:
 
     # Contract target is favored for selection, tapping selects without launch, drag does not launch.
     scene.current_planet = scene.planet_names[0]
-    var contract_target := scene.planet_names[-1]
+    var contract_target: String = String(scene.planet_names[-1])
     scene.active_contract = {"type": "delivery", "destination": contract_target, "difficulty": 2, "reward": 500}
     if scene._default_travel_selection() != contract_target:
         _fail("map did not prioritize active contract destination")
@@ -282,11 +282,11 @@ func _initialize() -> void:
     if neighbor_list.is_empty():
         _fail("current world has no generated neighbor")
         return
-    var neighbor := neighbor_list[0]
+    var neighbor: String = String(neighbor_list[0])
     scene.travel_open = true
     scene.hub_open = false
     scene.travel_selected_planet = ""
-    var neighbor_screen := scene._system_planet_position(neighbor)
+    var neighbor_screen: Vector2 = scene._system_planet_position(neighbor)
     scene._handle_travel_tap(neighbor_screen)
     if scene.travel_selected_planet != neighbor or scene.playing:
         _fail("planet tap did not select without launching")
@@ -305,9 +305,9 @@ func _initialize() -> void:
     scene.active_contract = {}
 
     # Save/reload must reproduce the exact political world.
-    var signature_before := _world_signature(scene.political_world)
-    var seed_before := scene.world_seed
-    var location_before := scene.current_planet
+    var signature_before: String = _world_signature(scene.political_world)
+    var seed_before: int = int(scene.world_seed)
+    var location_before: String = String(scene.current_planet)
     scene._save_all_state()
     scene.political_world.clear()
     scene.planet_names.clear()
@@ -324,7 +324,7 @@ func _initialize() -> void:
     # Career slots remain isolated under generated worlds.
     scene.research_credits = 4321
     scene.cargo["Food"] = 2
-    var slot_one_planet := scene.current_planet
+    var slot_one_planet: String = String(scene.current_planet)
     scene._save_all_state()
     if not scene._create_new_career(2):
         _fail("could not create career slot 2")
@@ -345,7 +345,7 @@ func _initialize() -> void:
     if not scene._create_new_career(3):
         _fail("could not create career slot 3 for migration test")
         return
-    var legacy_cfg := ConfigFile.new()
+    var legacy_cfg: ConfigFile = ConfigFile.new()
     legacy_cfg.set_value("world", "planet", "Cinder")
     legacy_cfg.set_value("world", "markets", {})
     legacy_cfg.set_value("world", "cargo", {"Food": 1, "Ore": 0, "Medicine": 0, "Electronics": 0, "Fuel": 0})
@@ -365,9 +365,9 @@ func _initialize() -> void:
     if scene._planet_type(scene.current_planet) != "VOLCANIC":
         _fail("legacy Cinder location did not migrate to VOLCANIC world")
         return
-    var migrated_seed := scene.world_seed
-    var migrated_signature := _world_signature(scene.political_world)
-    var migrated_cfg := ConfigFile.new()
+    var migrated_seed: int = int(scene.world_seed)
+    var migrated_signature: String = _world_signature(scene.political_world)
+    var migrated_cfg: ConfigFile = ConfigFile.new()
     if migrated_cfg.load(scene._active_world_path()) != OK or int(migrated_cfg.get_value("political", "schema", 0)) != scene.POLITICAL_WORLD_SCHEMA:
         _fail("legacy migration did not persist new political schema")
         return
@@ -400,7 +400,7 @@ func _initialize() -> void:
     if food_buy_before <= food_mid_before or food_sell_before >= food_mid_before:
         _fail("market bid/ask spread is invalid")
         return
-    var credits_before_buy := scene.research_credits
+    var credits_before_buy: int = int(scene.research_credits)
     if not scene._buy_commodity("Food"):
         _fail("could not buy generated-world commodity")
         return
@@ -427,9 +427,9 @@ func _initialize() -> void:
     scene.active_contract.clear()
     scene.rng.seed = 4242
     scene._regenerate_contracts()
-    var saw_delivery := false
-    var saw_passenger := false
-    var saw_bounty := false
+    var saw_delivery: bool = false
+    var saw_passenger: bool = false
+    var saw_bounty: bool = false
     for contract in scene.contract_board:
         if not scene.planet_names.has(String(contract.destination)):
             _fail("contract destination is not generated planet ID")
@@ -478,7 +478,7 @@ func _initialize() -> void:
     scene.run_paused = false
     scene.playing = true
     scene.score = 6
-    var credits_before_arrival := scene.research_credits
+    var credits_before_arrival: int = int(scene.research_credits)
     scene._arrive_at_destination()
     if scene.current_planet != neighbor or scene.route_active or scene.playing:
         _fail("generated route did not arrive normally")
@@ -488,18 +488,18 @@ func _initialize() -> void:
         return
 
     # Delivery contract on a direct lane still reserves cargo and pays.
-    var delivery_origin := scene.current_planet
+    var delivery_origin: String = String(scene.current_planet)
     var delivery_neighbors: Array[String] = scene.PoliticalWorld.neighbors(scene.political_world, delivery_origin)
-    var delivery_dest := delivery_neighbors[0]
+    var delivery_dest: String = String(delivery_neighbors[0])
     scene.active_contract.clear()
     scene.contract_board.clear()
     scene.contract_board.append({"id": 9001, "type": "delivery", "destination": delivery_dest, "difficulty": 2, "reward": 500})
-    var cargo_used_before := scene._cargo_used()
+    var cargo_used_before: int = int(scene._cargo_used())
     if not scene._accept_contract(0) or scene._cargo_used() != cargo_used_before + 1:
         _fail("delivery did not reserve cargo")
         return
-    var delivery_reward := int(scene.active_contract.reward)
-    var credits_before_delivery := scene.research_credits
+    var delivery_reward: int = int(scene.active_contract.reward)
+    var credits_before_delivery: int = int(scene.research_credits)
     if not scene._start_route(delivery_dest):
         _fail("could not launch direct delivery route")
         return
