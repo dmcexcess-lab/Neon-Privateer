@@ -35,6 +35,8 @@ const CRIMINAL_HEAT_THRESHOLD := 30
 const HEAVY_HEAT_THRESHOLD := 60
 const CRIMINAL_RELATION_THRESHOLD := -50
 const HEAVY_RELATION_THRESHOLD := -75
+const FACTION_LEVEL_MIN := 1
+const FACTION_LEVEL_MAX := 5
 
 const FACTION_COLORS := [
     Color("5dd7ff"),
@@ -237,13 +239,15 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
         if used_faction_names.has(faction_name):
             faction_name += " %d" % (i + 1)
         used_faction_names[faction_name] = true
+        var faction_strength := rng.randf_range(0.98, 1.16)
         factions.append({
             "id": "f%02d" % i,
             "name": faction_name,
             "color": FACTION_COLORS[i % FACTION_COLORS.size()],
             "capital_id": capital_id,
             "radius": influence_radius,
-            "strength": rng.randf_range(0.98, 1.16),
+            "strength": faction_strength,
+            "level": level_from_strength(faction_strength),
             "relation": 0,
             "heat": 0,
             "offenses": 0,
@@ -281,6 +285,27 @@ static func faction_record(world: Dictionary, faction_id: String) -> Dictionary:
         if String(faction.get("id", "")) == faction_id:
             return faction
     return {}
+
+static func level_from_strength(strength: float) -> int:
+    var normalized := inverse_lerp(0.98, 1.16, clampf(strength, 0.98, 1.16))
+    return clampi(1 + int(round(normalized * 4.0)), FACTION_LEVEL_MIN, FACTION_LEVEL_MAX)
+
+static func ensure_enforcement_schema(world: Dictionary) -> bool:
+    var changed := false
+    var factions: Array = world.get("factions", [])
+    for i in factions.size():
+        var faction: Dictionary = factions[i]
+        if not faction.has("level"):
+            faction["level"] = level_from_strength(float(faction.get("strength", 1.0)))
+            changed = true
+        faction["level"] = clampi(int(faction.get("level", FACTION_LEVEL_MIN)), FACTION_LEVEL_MIN, FACTION_LEVEL_MAX)
+        factions[i] = faction
+    world["factions"] = factions
+    return changed
+
+static func faction_level(world: Dictionary, faction_id: String) -> int:
+    var faction := faction_record(world, faction_id)
+    return clampi(int(faction.get("level", level_from_strength(float(faction.get("strength", 1.0))))), FACTION_LEVEL_MIN, FACTION_LEVEL_MAX)
 
 static func ensure_crime_schema(world: Dictionary) -> bool:
     var changed := false
