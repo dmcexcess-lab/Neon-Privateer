@@ -205,58 +205,76 @@ Basic and reinforced containers award no kill credits and no near-miss credits.
 
 ## Slice 5 territory encounter director
 
-Hostile flight encounters now use the political segment the ship is physically crossing. Route danger no longer grants hostile-ship permission by itself.
+Flight encounters use the political segment the ship is physically crossing. Route danger no longer grants hostile-ship permission by itself.
 
-Authoritative eligibility:
+Authoritative encounter mode:
 
-- **UNCONTROLLED:** random pirate contacts are eligible.
-- **CONTESTED:** random pirate contacts are eligible.
-- **CORE / CONTROLLED, player clean with controlling faction:** no hostile faction patrol.
-- **CORE / CONTROLLED, ordinary criminal with controlling faction:** random faction patrol contact is eligible.
-- **CORE / CONTROLLED, heavy-enforcement criminal with controlling faction:** faction patrols are eligible and pentagon heavy enforcement may appear.
+- **UNCONTROLLED / CONTESTED:** random pirate contacts are eligible.
+- **CORE / CONTROLLED:** random faction patrol contacts are eligible for the controlling superpower.
 
-The Slice 3 thresholds remain authoritative:
+Slice 5 establishes **where** each contact type can occur. Slice 6 establishes whether a faction patrol is lawful/neutral or hostile.
 
-- ordinary police hostility at heat >= 30 or relation <= -50;
-- heavy enforcement at heat >= 60 or relation <= -75.
-
-Encounter state is generic:
+Encounter state is generic and persisted:
 
 - `encounter_active`
 - `encounter_mode` = `pirate` or `police`
-- `encounter_faction_id` for faction patrols
+- `encounter_faction_id`
+- `encounter_hostile`
 - `encounter_timer`
 - `encounter_clock`
 
-The director queries the current route segment every update through the existing route-political authority. An active contact ends when the ship enters a segment that no longer permits that mode/faction. Already-visible encounter ships are not deleted at the border; no additional hostile ships are spawned once authorization ends.
+The director queries the current route segment every update. Crossing into a segment that no longer permits the current mode/faction ends that contact window for new spawns; already-visible ships finish their passage instead of disappearing.
 
-### Shape roles under the director
+Pre-Slice-5 pirate-only route snapshots still migrate through the legacy `pirate_active / pirate_timer / pirate_clock` fields.
 
-- Trapezoid / kind 3 = hostile ship. It can be a pirate ship in pirate space or a faction patrol ship in hostile controlled space.
-- Pentagon / kind 4 = heavy faction enforcement platform. Random pirate encounters never spawn pentagons.
-- Bounty-boss pentagons remain an explicit contract encounter and are not random route traffic.
 
-Faction patrol ships/platforms carry their enforcing faction ID and render using that faction's color. Pirate ships use a distinct pirate treatment.
+## Slice 6 ships and enforcement
 
-### Randomness
+Trapezoids now represent actual ships rather than generic hostile geometry.
 
-Eligibility does not guarantee an encounter. Pirate and patrol contacts remain random windows while the ship stays in eligible space.
+### Pirate ships
 
-Uncontrolled pirate windows are somewhat more frequent than contested pirate windows. Faction patrol cadence increases with heat and is tighter in CORE than CONTROLLED space.
+Pirate trapezoids appear only during pirate contacts in CONTESTED/UNCONTROLLED space. They are always hostile, track/dodge the player, and fire normally.
 
-### Save compatibility
+Pirate encounters never spawn random pentagons.
 
-Active encounter mode/faction/timers are stored in the run snapshot.
+### Faction patrol ships
 
-Pre-Slice-5 snapshots containing only the old:
+Faction trapezoids may appear randomly in that faction's CORE/CONTROLLED space even when the player is clean.
 
-- `pirate_active`
-- `pirate_timer`
-- `pirate_clock`
+A lawful patrol:
 
-fields load as a modern `pirate` encounter. Legacy keys continue to be written as compatibility mirrors.
+- carries `encounter_role = police` and its faction ID;
+- is not hostile;
+- does not track, dodge around player fire, or shoot;
+- passes through as ordinary patrol traffic;
+- does not damage the player through ship collision;
+- is not acquired by seeker/laser targeting;
+- is not damaged by automatic player fire.
 
-Contraband scans, confiscation, fines, and scan-based escalation are not part of Slice 5.
+This non-targetable behavior is required because the player's weapons auto-fire; merely encountering lawful police must not force an unavoidable crime.
+
+The same live patrol becomes hostile immediately when that faction's Slice 3 criminal threshold becomes true. Hostile police use the same active combat behavior as other hostile ships and become valid player targets.
+
+### Heavy government enforcement
+
+Random pentagons are reserved for serious faction enforcement:
+
+- police contact only;
+- player must already meet the heavy-enforcement threshold;
+- heat >= 60 or relation <= -75.
+
+Bounty-boss pentagons remain the contract-specific exception and are independent of faction patrol traffic.
+
+### Enforcement consequences
+
+Destroying a government trapezoid records `police_ship_destroyed`, costs 12 faction relation, and adds 15 heat.
+
+Destroying a government pentagon records `heavy_enforcement_destroyed`, costs 20 faction relation, and adds 25 heat.
+
+Pirate kills have no superpower reputation consequence.
+
+Contraband scans, scan timers, cargo confiscation, and fines remain Slice 7.
 
 ## Route graph
 
