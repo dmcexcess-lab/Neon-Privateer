@@ -424,15 +424,32 @@ Route wealth does not grant encounter eligibility by itself. Territory state sti
 
 Existing political-schema-2 careers missing these route fields are upgraded in place by recomputing wealth from their already-saved factions and route graph. The migration does not reroll worlds or lanes.
 
-## Route travel time
+## Route travel time, jump range, and fuel
 
-Gameplay `distance` is the authoritative control for total flight duration. Political danger, route wealth, and contract difficulty do not increase the time required to traverse the same direct lane.
+Gameplay `distance` remains the physical route-length authority. Political danger, route wealth, and contract difficulty do not lengthen the same direct lane.
+
+Direct jump time is:
+
+- derived from lane distance;
+- multiplied by bounded route variance (0.93x–1.07x);
+- capped at **30 seconds baseline**;
+- then traversed faster in real time by the Ship Speed multiplier.
+
+The player's jump drive has a baseline maximum edge distance of **3**, upgradeable to **6**. `_jump_route_spec(origin, destination)` runs shortest-path planning while excluding edges longer than the current drive range. A destination can therefore be connected in the raw graph but unreachable by the current ship.
+
+Fuel is hull state rather than commodity cargo:
+
+- tank capacity: 12;
+- each direct jump consumes fuel equal to that edge's distance;
+- launch is blocked if the tank cannot cover the next jump;
+- docked refueling costs 20 carried credits per unit and can partially refuel when cash is limited;
+- ship destruction supplies the replacement hull with a full tank.
 
 ## Route planning
 
-`_route_spec(origin, destination)` can provide an aggregate shortest-path specification for contracts and planning.
+`_route_spec(origin, destination)` remains the raw graph specification used by world/economic systems.
 
-Actual flight launch requires a direct generated lane. Multi-hop contracts therefore remain possible without turning the sparse graph into a complete graph.
+Player travel, contract reachability, selected-route rendering, and contract route rendering use `_jump_route_spec(origin, destination)`, so they respect the current drive. Actual execution still launches one direct edge at a time; a multi-hop route therefore becomes several normal flights and landings.
 
 ## System map model
 
@@ -510,20 +527,26 @@ Every generated contract now records:
 - pirate-risk premium;
 - cargo/law premium;
 - political premium;
-- final reward.
+- final reward;
+- planned jump count and target distance;
+- persistent active-contract elapsed time;
+- special-delivery deadline where applicable;
+- passenger abandonment threshold where applicable;
+- bounty boss archetype where applicable.
 
 Legitimate jobs use the current world's primary faction as issuer when one exists. Underworld smuggling jobs deliberately have no legitimate faction issuer and grant no faction reputation.
 
 ### Destination selection
 
-The contract board is faction/economy aware:
+The contract board is faction/economy aware and drive-aware:
 
-- legal freight prefers commodities with destination demand / favorable market spread while avoiding cargo illegal at that destination;
+- only destinations reachable under the current max-jump drive are offered;
+- special deliveries require at least two jumps and prefer useful legal cargo;
 - smuggling searches the 12 grey goods for destinations where the specific item is explicitly ILLEGAL;
-- passenger work prefers cross-faction, contested, or uncontrolled destinations so passenger contracts cross political geography;
-- bounties prefer routes with the greatest CONTESTED + UNCONTROLLED coverage.
+- passengers require multi-jump destinations and prefer cross-faction, contested, or uncontrolled geography;
+- bounties prefer reachable routes with high CONTESTED + UNCONTROLLED coverage and meaningful target distance.
 
-This does not change route topology. Contracts still use the generated sparse network and normal shortest-path planning.
+This does not change route topology. Contracts still use the generated sparse network; drive range only filters which edges the player's route planner may traverse.
 
 ### Pirate exposure and payout
 
@@ -580,11 +603,34 @@ Smuggling grants no faction relation.
 
 Successful freight also adds one unit of its named commodity to the destination market stock so contract traffic feeds the persistent economy.
 
+### Multi-jump timing and bounty resolution
+
+**Special delivery** is the timed freight class. It requires a planned route of at least two jumps. Its persistent deadline is:
+
+`90 seconds + 45 seconds × planned hops`
+
+The timer continues through intermediate landings and ordinary active play; pausing stops it. Expiration clears the contract/reserved cargo.
+
+**Passengers** also require a multi-jump target but have no normal delivery deadline. Their elapsed contract time is persisted. After **900 seconds (15 minutes)** they abandon the trip and free the berth.
+
+**Bounties** use ordinary jump/fuel/travel rules all the way to the final target planet. At the final route threshold:
+
+- forward elapsed travel and world scroll freeze;
+- normal hazard/pickup/repair spawning stops;
+- dash, lateral control, player weapons, boss motion and boss weapons continue;
+- landing is deferred until the boss dies.
+
+Bounty archetypes:
+
+- **trapezoid patrol** — mobile/dodging ship with direct fire;
+- **pentagon platform** — stationary heavy missile target;
+- **octagon flagship** — highest HP, lateral sweep, spread cannon and independent homing missiles.
+
 ### Contract schema
 
-Contract schema version **2** upgrades older saved contracts in place and migrates retired commodity IDs such as `Arms` to the corresponding economy-3 ID such as `Small Arms`.
+Contract schema version **3** upgrades older saved contracts in place and retains economy-3 commodity migration such as `Arms` -> `Small Arms`.
 
-Legacy records keep their original ID, type, destination, difficulty, and reward while gaining safe defaults for origin, commodity, issuer, relation reward, pirate exposure, role, and payout-breakdown metadata. The political world and existing markets are not rerolled.
+Legacy records keep their original ID, type, destination, difficulty, and reward while gaining safe defaults for origin, commodity, issuer, relation reward, pirate exposure, role, payout-breakdown metadata, elapsed time, planned hops/distance, special-delivery/passenger timing, and bounty archetype. The political world and existing markets are not rerolled.
 
 ## Slice 10 balance + production closure
 
@@ -745,10 +791,10 @@ A destroyed ship is a total physical/progression loss for that hull. On death:
 - all ordinary cargo is lost;
 - any reserved delivery/passenger state is cleared;
 - all passengers are lost;
-- all ship upgrade levels reset to zero;
+- all ship upgrade levels reset to zero, including max jump range;
 - all starting-weapon unlocks are lost;
 - starting/current weapon resets to none;
-- replacement ship returns to baseline hull stats: two hits and zero shields;
+- replacement ship returns to baseline hull stats: base jump drive, full fuel tank, two hits and zero shields;
 - the player respawns docked at the last planet successfully landed on, which is the in-flight `route_origin`.
 
 The bank balance, Green/Grey index holdings, faction-currency holdings, faction relation/heat, empire macroeconomy/war state, generated markets, and the persistent galaxy survive. A manual route abort is not a ship destruction and therefore does not trigger this reset.
