@@ -5995,60 +5995,98 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_rect(Rect2(Vector2(p.x - bw * 0.5, p.y + obj.r + 7.0), Vector2(bw * ratio, 3.0)), Color("ffd166"), true)
 
 func _draw_hud() -> void:
-    _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
-    _text("BONUS %03d CR" % score, Vector2(118, 46), 18, Color("bdeef4"))
-    _text("%s > %s" % [_planet_display_name(route_origin), _planet_display_name(destination_planet)], Vector2(20, 88), 15, Color("6bffb0"))
-    _text("D%d R%d" % [route_distance, route_danger], Vector2(302, 88), 16, Color("ffd166"))
+    var hud_rect := Rect2(12.0, 12.0, 366.0, 184.0)
+    draw_rect(hud_rect, Color(0.012, 0.028, 0.052, 0.72), true)
+    draw_rect(Rect2(12.0, 12.0, 366.0, 4.0), Color(0.32, 0.88, 1.0, 0.34), true)
+    _draw_corner_brackets(hud_rect, Color(0.38, 0.82, 0.95, 0.34), 16.0)
 
-    _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
+    var remaining := int(maxf(0.0, _level_duration() - elapsed))
+    _text("%02d" % remaining, Vector2(22, 49), 28, Color("f0fbff"))
+    _text("SEC", Vector2(67, 46), 9, Color("718b9d"))
+    _text("BONUS %03d" % score, Vector2(116, 44), 16, Color("bdeef4"))
+    _text("%s > %s" % [_short_map_label(_planet_display_name(route_origin).to_upper(), 13), _short_map_label(_planet_display_name(destination_planet).to_upper(), 13)], Vector2(22, 76), 11, Color("6bffb0"))
+    _text("D%d  RISK %d" % [route_distance, route_danger], Vector2(289, 76), 10, Color("ffd166"))
+
+    var progress := clampf(elapsed / maxf(0.001, _level_duration()), 0.0, 1.0)
+    var progress_rect := Rect2(22.0, 88.0, 346.0, 7.0)
+    draw_rect(progress_rect, Color(0.12, 0.18, 0.24, 0.88), true)
+    draw_rect(Rect2(progress_rect.position, Vector2(progress_rect.size.x * progress, progress_rect.size.y)), Color("5adff2"), true)
+    draw_circle(Vector2(progress_rect.position.x + progress_rect.size.x * progress, progress_rect.position.y + 3.5), 4.0, Color("eaffff"))
+
+    _text("HULL", Vector2(22, 118), 9, Color("718b9d"))
+    for i in max_hp:
+        var segment := Rect2(22.0 + float(i) * 20.0, 126.0, 15.0, 7.0)
+        var c := Color("ff557c") if i < hp else Color(0.20, 0.22, 0.27, 0.78)
+        draw_rect(segment, c, true)
+        draw_rect(segment, Color(1.0, 0.72, 0.80, 0.35) if i < hp else Color(0.35, 0.38, 0.43, 0.38), false, 1.0)
+
+    _text("FUEL %d/%d" % [ship_fuel, FUEL_CAPACITY], Vector2(131, 118), 9, Color("718b9d"))
+    for i in FUEL_CAPACITY:
+        var fuel_x := 132.0 + float(i) * 8.4
+        draw_rect(Rect2(fuel_x, 125.0, 5.8, 8.0), Color("ffd166") if i < ship_fuel else Color(0.22, 0.20, 0.17, 0.72), true)
+
+    if shield_charges > 0:
+        _text("SHIELD %d" % shield_charges, Vector2(288, 130), 10, Color("77f7ff"))
+    else:
+        _text("NO SHIELD", Vector2(292, 130), 9, Color("657581"))
+
+    var status_text := _weapon_label(current_weapon)
+    var status_color := Color("ffd166")
+    if boss_active:
+        status_text = "BOUNTY %s" % String(active_contract.get("boss_archetype", "target")).to_upper()
+        status_color = Color("ff7b92")
+    elif police_scan_active:
+        status_text = "CARGO SCAN %.1fs" % police_scan_timer
+        status_color = Color("ffd166")
+    elif police_scan_result_timer > 0.0 and not police_scan_result_text.is_empty():
+        status_text = police_scan_result_text
+        status_color = Color("ff8fa6") if police_scan_result_text.begins_with("CONTRABAND") else Color("6bffb0")
+    elif encounter_active and encounter_mode == "pirate":
+        status_text = "PIRATE CONTACT"
+        status_color = Color("ff8fa6")
+    elif encounter_active and encounter_mode == "police":
+        status_text = "ENFORCEMENT" if encounter_hostile else "FACTION PATROL"
+        status_color = Color("ff8fa6") if encounter_hostile else _faction_color(encounter_faction_id)
+    elif dash_score_timer > 0.0:
+        status_text = "DASH BONUS"
+        status_color = Color("ffd166")
+    _text_center(status_text, 157.0, 13, status_color, 30.0, 360.0)
 
     if boss_active:
-        var boss_name := String(active_contract.get("boss_archetype", "target")).to_upper()
-        _text("BOUNTY %s" % boss_name, Vector2(112, 146), 15, Color("ff9a6b"))
-    elif police_scan_active:
-        _text("CARGO SCAN %.1fs" % police_scan_timer, Vector2(121, 146), 15, Color("ffd166"))
-    elif police_scan_result_timer > 0.0 and not police_scan_result_text.is_empty():
-        _text_center(police_scan_result_text, 146.0, 13, Color("ff8fa6") if police_scan_result_text.begins_with("CONTRABAND") else Color("6bffb0"), 52.0, 338.0)
-    elif encounter_active and encounter_mode == "pirate":
-        _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
-    elif encounter_active and encounter_mode == "police":
-        _text("ENFORCEMENT" if encounter_hostile else "FACTION PATROL", Vector2(126 if not encounter_hostile else 137, 146), 15, Color("ff8fa6") if encounter_hostile else _faction_color(encounter_faction_id))
-    elif dash_score_timer > 0.0:
-        _text("DASH BONUS", Vector2(143, 146), 16, Color("ffd166"))
+        var boss := _active_boss_object()
+        if not boss.is_empty():
+            var boss_ratio := clampf(float(boss.get("hp", 0.0)) / maxf(1.0, float(boss.get("max_hp", 1.0))), 0.0, 1.0)
+            var boss_bar := Rect2(60.0, 169.0, 270.0, 9.0)
+            draw_rect(boss_bar, Color("2a101d"), true)
+            draw_rect(Rect2(boss_bar.position, Vector2(boss_bar.size.x * boss_ratio, boss_bar.size.y)), Color("ff527f"), true)
+            draw_rect(boss_bar, Color(1.0, 0.58, 0.72, 0.56), false, 1.0)
     else:
-        _text(_weapon_label(current_weapon), Vector2(118, 146), 14, Color("ffd166"))
-
-    for i in max_hp:
-        var c := Color("ff4f78") if i < hp else Color(0.3,0.3,0.38,0.55)
-        draw_circle(Vector2(28 + i * 21, 146), 7.0, c)
-    if shield_charges > 0:
-        _text("SHIELD x%d" % shield_charges, Vector2(20, 199), 13, Color("77f7ff"))
-
-    var progress := clampf(elapsed / _level_duration(), 0.0, 1.0)
-    draw_rect(Rect2(Vector2(20, 169), Vector2(350, 6)), Color(0.2,0.25,0.3,0.7))
-    draw_rect(Rect2(Vector2(20, 169), Vector2(350 * progress, 6)), Color("77f7ff"))
+        _text_center("OPEN FIELD", 178.0, 9, Color("668b99"), 22.0, 368.0)
 
 func _draw_controls() -> void:
-    var move_fill := Color("102633")
-    var move_border := Color("5eb7d4")
-    var held_fill := Color("174759")
+    var move_fill := Color(0.035, 0.095, 0.125, 0.90)
+    var move_border := Color("4f9db8")
+    var held_fill := Color(0.045, 0.22, 0.28, 0.96)
     var held_border := Color("77f7ff")
 
     draw_rect(LEFT_CONTROL_RECT, held_fill if left_control_held else move_fill, true)
-    draw_rect(LEFT_CONTROL_RECT, held_border if left_control_held else move_border, false, 3.0)
-    _text("LEFT", LEFT_CONTROL_RECT.position + Vector2(26, 40), 19, Color("f0fbff"))
+    draw_rect(LEFT_CONTROL_RECT, held_border if left_control_held else move_border, false, 2.0)
+    _draw_corner_brackets(LEFT_CONTROL_RECT.grow(-4.0), Color(0.47, 0.93, 1.0, 0.32), 10.0)
+    _text_center("◀  LEFT", LEFT_CONTROL_RECT.position.y + 40.0, 17, Color("f0fbff"), LEFT_CONTROL_RECT.position.x, LEFT_CONTROL_RECT.end.x)
 
     var ready := dash_cooldown <= 0.0
-    var dash_fill := Color("123544") if ready else Color(0.12, 0.14, 0.18, 0.86)
-    var dash_border := Color("77f7ff") if ready else Color(0.35, 0.42, 0.46, 0.7)
+    var dash_fill := Color(0.06, 0.19, 0.22, 0.96) if ready else Color(0.08, 0.09, 0.12, 0.90)
+    var dash_border := Color("6bffb0") if ready else Color(0.30, 0.36, 0.40, 0.74)
     draw_rect(DASH_RECT, dash_fill, true)
-    draw_rect(DASH_RECT, dash_border, false, 3.0)
+    draw_rect(DASH_RECT, dash_border, false, 2.0)
+    _draw_corner_brackets(DASH_RECT.grow(-4.0), Color(dash_border.r, dash_border.g, dash_border.b, 0.40), 10.0)
     var dash_label := "DASH" if ready else "%.1f" % dash_cooldown
-    _text(dash_label, DASH_RECT.position + Vector2(26 if ready else 34, 40), 19, Color("f0fbff") if ready else Color("8ea9b8"))
+    _text_center(dash_label, DASH_RECT.position.y + 40.0, 18, Color("effff8") if ready else Color("8ea9b8"), DASH_RECT.position.x, DASH_RECT.end.x)
 
     draw_rect(RIGHT_CONTROL_RECT, held_fill if right_control_held else move_fill, true)
-    draw_rect(RIGHT_CONTROL_RECT, held_border if right_control_held else move_border, false, 3.0)
-    _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
+    draw_rect(RIGHT_CONTROL_RECT, held_border if right_control_held else move_border, false, 2.0)
+    _draw_corner_brackets(RIGHT_CONTROL_RECT.grow(-4.0), Color(0.47, 0.93, 1.0, 0.32), 10.0)
+    _text_center("RIGHT  ▶", RIGHT_CONTROL_RECT.position.y + 40.0, 17, Color("f0fbff"), RIGHT_CONTROL_RECT.position.x, RIGHT_CONTROL_RECT.end.x)
 
 func _draw_profile_menu() -> void:
     _draw_menu_art(ART_BG_HUB, 0.58)
