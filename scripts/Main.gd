@@ -82,7 +82,7 @@ const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
 const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
 const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
-const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 590.0, 342.0, 140.0)
+const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 582.0, 342.0, 156.0)
 const SYSTEM_MAP_BACK_RECT := Rect2(24.0, 756.0, 158.0, 54.0)
 const SYSTEM_FLY_RECT := Rect2(208.0, 756.0, 158.0, 54.0)
 const SYSTEM_RESET_RECT := Rect2(292.0, 114.0, 68.0, 34.0)
@@ -90,6 +90,8 @@ const SYSTEM_STAR_POS := Vector2(195.0, 350.0)
 const SYSTEM_PLANET_HIT_SIZE := 52.0
 const SYSTEM_MAP_MIN_ZOOM := 1.0
 const SYSTEM_MAP_MAX_ZOOM := 3.6
+const POLITICAL_MAP_GRID_X := 20
+const POLITICAL_MAP_GRID_Y := 15
 const CARGO_CAPACITY_BASE := 8
 const PASSENGER_CAPACITY_BASE := 2
 const DASH_COOLDOWN := 2.4
@@ -183,6 +185,7 @@ var political_world: Dictionary = {}
 var world_seed := 0
 var system_map_zoom := 1.0
 var system_map_pan := Vector2.ZERO
+var political_map_overlay_cells: Array = []
 var system_map_touches: Dictionary = {}
 var system_map_touch_moved := false
 var system_map_last_pinch_distance := 0.0
@@ -507,6 +510,7 @@ func _reset_career_state() -> void:
     last_trip_summary = "Docked"
     system_map_zoom = 1.0
     system_map_pan = Vector2.ZERO
+    political_map_overlay_cells.clear()
     system_map_touches.clear()
     markets.clear()
     cargo.clear()
@@ -650,6 +654,7 @@ func _sync_generated_planets() -> void:
         planet_names.append(String(planet.id))
     if current_planet.is_empty() or not planet_names.has(current_planet):
         current_planet = planet_names[0] if not planet_names.is_empty() else ""
+    _rebuild_political_map_overlay()
 
 func _planet_display_name(planet_id: String) -> String:
     if ["Aster", "Cinder", "Vesper", "Helix"].has(planet_id):
@@ -775,6 +780,54 @@ func _planet_crime_summary(planet_id: String) -> String:
         int(second.get("relation", 0)), int(second.get("heat", 0))
     ]
 
+func _short_map_label(value: String, max_chars: int = 12) -> String:
+    if value.length() <= max_chars:
+        return value
+    return value.substr(0, maxi(1, max_chars - 1)) + "…"
+
+func _faction_tag(faction_id: String) -> String:
+    var faction := PoliticalWorld.faction_record(political_world, faction_id)
+    var name := String(faction.get("name", faction_id))
+    var tag := ""
+    for part in name.split(" ", false):
+        var word := String(part)
+        if not word.is_empty():
+            tag += word.substr(0, 1).to_upper()
+    if tag.is_empty():
+        tag = faction_id.to_upper()
+    return tag.substr(0, mini(4, tag.length()))
+
+func _faction_map_status_line(faction_id: String) -> String:
+    var faction := PoliticalWorld.faction_record(political_world, faction_id)
+    var state := _faction_crime_state(faction_id)
+    return "%s  R%+d %s  H%d %s" % [
+        _short_map_label(String(faction.get("name", faction_id)).to_upper(), 12),
+        int(state.get("relation", 0)),
+        String(state.get("relation_label", "NEUTRAL")),
+        int(state.get("heat", 0)),
+        String(state.get("heat_label", "CLEAR"))
+    ]
+
+func _faction_status_color(faction_id: String) -> Color:
+    var state := _faction_crime_state(faction_id)
+    if bool(state.get("heavy_enforcement", false)):
+        return Color("ff6687")
+    if bool(state.get("police_hostile", false)):
+        return Color("ffb347")
+    return Color("8ea9b8")
+
+func _planet_political_status_lines(planet_id: String) -> Array[String]:
+    var faction_ids := _planet_faction_ids(planet_id)
+    var lines: Array[String] = []
+    if faction_ids.is_empty():
+        lines.append("NO FACTION RECORD")
+        return lines
+    for faction_id in faction_ids:
+        lines.append(_faction_map_status_line(faction_id))
+        if lines.size() >= 2:
+            break
+    return lines
+
 func _commodity_legality_at(position: Vector2, commodity: String) -> Dictionary:
     return PoliticalWorld.commodity_legality_at(political_world, position, commodity)
 
@@ -805,6 +858,18 @@ func _commodity_legality_short(planet_id: String, commodity: String) -> String:
             return "LEGAL"
 
 func _planet_law_summary(planet_id: String) -> String:
+    var faction_ids := _planet_faction_ids(planet_id)
+    if faction_ids.size() >= 2:
+        var pieces: Array[String] = []
+        for faction_id in faction_ids:
+            pieces.append("%s A:%s N:%s" % [
+                _faction_tag(faction_id),
+                "OK" if PoliticalWorld.faction_commodity_legal(political_world, faction_id, "Arms") else "NO",
+                "OK" if PoliticalWorld.faction_commodity_legal(political_world, faction_id, "Narcotics") else "NO"
+            ])
+            if pieces.size() >= 2:
+                break
+        return " • ".join(pieces)
     return "ARMS %s  NARC %s" % [
         _commodity_legality_short(planet_id, "Arms"),
         _commodity_legality_short(planet_id, "Narcotics")
@@ -1865,6 +1930,155 @@ func _handle_career_slots_tap(pos: Vector2) -> void:
 
 func _system_world_bounds() -> Rect2:
     return Rect2(political_world.get("bounds", PoliticalWorld.WORLD_BOUNDS))
+
+func _political_context_key(context: Dictionary) -> String:
+    var state := String(context.get("state", "UNCONTROLLED"))
+    if state == "CONTESTED":
+        var ids: Array[String] = [
+            String(context.get("strongest_faction_id", "")),
+            String(context.get("second_faction_id", ""))
+        ]
+        ids.sort()
+        return "%s|%s|%s" % [state, ids[0], ids[1]]
+    var faction_id := String(context.get("faction_id", context.get("strongest_faction_id", "")))
+    return "%s|%s" % [state, faction_id]
+
+func _rebuild_political_map_overlay() -> void:
+    political_map_overlay_cells.clear()
+    if political_world.is_empty():
+        return
+    var bounds := _system_world_bounds()
+    var cell_size := Vector2(
+        bounds.size.x / float(POLITICAL_MAP_GRID_X),
+        bounds.size.y / float(POLITICAL_MAP_GRID_Y)
+    )
+    for gy in range(POLITICAL_MAP_GRID_Y):
+        for gx in range(POLITICAL_MAP_GRID_X):
+            var cell_pos := bounds.position + Vector2(float(gx) * cell_size.x, float(gy) * cell_size.y)
+            var center := cell_pos + cell_size * 0.5
+            var context := _get_political_context_at(center)
+            political_map_overlay_cells.append({
+                "gx": gx,
+                "gy": gy,
+                "rect": Rect2(cell_pos, cell_size),
+                "center": center,
+                "state": String(context.get("state", "UNCONTROLLED")),
+                "faction_id": String(context.get("faction_id", "")),
+                "strongest_faction_id": String(context.get("strongest_faction_id", "")),
+                "second_faction_id": String(context.get("second_faction_id", "")),
+                "key": _political_context_key(context)
+            })
+
+func _political_overlay_fill_color(cell: Dictionary) -> Color:
+    var state := String(cell.get("state", "UNCONTROLLED"))
+    if state == "CORE":
+        var core := _faction_color(String(cell.get("faction_id", cell.get("strongest_faction_id", ""))))
+        return Color(core.r, core.g, core.b, 0.15)
+    if state == "CONTROLLED":
+        var controlled := _faction_color(String(cell.get("faction_id", cell.get("strongest_faction_id", ""))))
+        return Color(controlled.r, controlled.g, controlled.b, 0.085)
+    if state == "CONTESTED":
+        var first := _faction_color(String(cell.get("strongest_faction_id", "")))
+        var second := _faction_color(String(cell.get("second_faction_id", "")))
+        var mixed := first.lerp(second, 0.5).lerp(Color("ff6687"), 0.35)
+        return Color(mixed.r, mixed.g, mixed.b, 0.16)
+    return Color(0.025, 0.040, 0.070, 0.42)
+
+func _political_border_color(first: Dictionary, second: Dictionary) -> Color:
+    var first_state := String(first.get("state", "UNCONTROLLED"))
+    var second_state := String(second.get("state", "UNCONTROLLED"))
+    if first_state == "CONTESTED" or second_state == "CONTESTED":
+        return Color(1.0, 0.40, 0.56, 0.52)
+    if first_state == "UNCONTROLLED" or second_state == "UNCONTROLLED":
+        return Color(0.62, 0.70, 0.78, 0.34)
+    var faction_id := String(first.get("faction_id", first.get("strongest_faction_id", "")))
+    var fc := _faction_color(faction_id)
+    return Color(fc.r, fc.g, fc.b, 0.44)
+
+func _draw_clipped_political_border(a: Vector2, b: Vector2, color: Color) -> void:
+    if absf(a.x - b.x) < 0.01:
+        var x := a.x
+        if x < SYSTEM_MAP_RECT.position.x or x > SYSTEM_MAP_RECT.end.x:
+            return
+        var y0 := clampf(minf(a.y, b.y), SYSTEM_MAP_RECT.position.y, SYSTEM_MAP_RECT.end.y)
+        var y1 := clampf(maxf(a.y, b.y), SYSTEM_MAP_RECT.position.y, SYSTEM_MAP_RECT.end.y)
+        if y1 - y0 > 0.5:
+            draw_line(Vector2(x, y0), Vector2(x, y1), color, 1.15, true)
+        return
+    var y := a.y
+    if y < SYSTEM_MAP_RECT.position.y or y > SYSTEM_MAP_RECT.end.y:
+        return
+    var x0 := clampf(minf(a.x, b.x), SYSTEM_MAP_RECT.position.x, SYSTEM_MAP_RECT.end.x)
+    var x1 := clampf(maxf(a.x, b.x), SYSTEM_MAP_RECT.position.x, SYSTEM_MAP_RECT.end.x)
+    if x1 - x0 > 0.5:
+        draw_line(Vector2(x0, y), Vector2(x1, y), color, 1.15, true)
+
+func _draw_political_map_overlay() -> void:
+    if political_map_overlay_cells.size() != POLITICAL_MAP_GRID_X * POLITICAL_MAP_GRID_Y:
+        _rebuild_political_map_overlay()
+    for cell_variant in political_map_overlay_cells:
+        var cell: Dictionary = cell_variant
+        var world_rect: Rect2 = Rect2(cell.get("rect", Rect2()))
+        var screen_start := _map_world_to_screen(world_rect.position)
+        var screen_end := _map_world_to_screen(world_rect.end)
+        var screen_rect := Rect2(screen_start, screen_end - screen_start)
+        var clipped := screen_rect.intersection(SYSTEM_MAP_RECT)
+        if clipped.size.x <= 0.0 or clipped.size.y <= 0.0:
+            continue
+        draw_rect(clipped, _political_overlay_fill_color(cell), true)
+        if String(cell.get("state", "")) == "CONTESTED" and clipped.size.x > 5.0 and clipped.size.y > 5.0:
+            draw_line(clipped.position, clipped.end, Color(1.0, 0.42, 0.58, 0.11), 0.8, true)
+
+    for index in range(political_map_overlay_cells.size()):
+        var cell: Dictionary = political_map_overlay_cells[index]
+        var gx := int(cell.get("gx", 0))
+        var gy := int(cell.get("gy", 0))
+        var world_rect: Rect2 = Rect2(cell.get("rect", Rect2()))
+        if gx < POLITICAL_MAP_GRID_X - 1:
+            var right: Dictionary = political_map_overlay_cells[index + 1]
+            if String(cell.get("key", "")) != String(right.get("key", "")):
+                _draw_clipped_political_border(
+                    _map_world_to_screen(Vector2(world_rect.end.x, world_rect.position.y)),
+                    _map_world_to_screen(world_rect.end),
+                    _political_border_color(cell, right)
+                )
+        if gy < POLITICAL_MAP_GRID_Y - 1:
+            var below: Dictionary = political_map_overlay_cells[index + POLITICAL_MAP_GRID_X]
+            if String(cell.get("key", "")) != String(below.get("key", "")):
+                _draw_clipped_political_border(
+                    _map_world_to_screen(Vector2(world_rect.position.x, world_rect.end.y)),
+                    _map_world_to_screen(world_rect.end),
+                    _political_border_color(cell, below)
+                )
+
+func _political_map_legend_entries() -> Array:
+    var entries: Array = []
+    for faction in political_world.get("factions", []):
+        entries.append({
+            "id": String(faction.get("id", "")),
+            "name": String(faction.get("name", "UNKNOWN")),
+            "color": Color(faction.get("color", Color("77f7ff"))),
+            "capital_id": String(faction.get("capital_id", ""))
+        })
+    return entries
+
+func _draw_political_map_legend() -> void:
+    var entries: Array = _political_map_legend_entries()
+    var panel_height := 36.0 + float(entries.size()) * 14.0 + 20.0
+    var panel := Rect2(22.0, 114.0, 154.0, panel_height)
+    draw_rect(panel, Color(0.015, 0.035, 0.060, 0.88), true)
+    draw_rect(panel, Color(0.42, 0.82, 0.95, 0.28), false, 1.0)
+    _text("POLITICAL FIELD", Vector2(panel.position.x + 8.0, panel.position.y + 15.0), 8, Color("bdeef4"))
+    var y := panel.position.y + 30.0
+    for entry in entries:
+        var fc := Color(entry.get("color", Color("77f7ff")))
+        draw_rect(Rect2(panel.position.x + 8.0, y - 7.0, 8.0, 8.0), fc, true)
+        _text(_short_map_label(String(entry.get("name", "UNKNOWN")).to_upper(), 17), Vector2(panel.position.x + 22.0, y), 8, Color("f0fbff"))
+        y += 14.0
+    draw_rect(Rect2(panel.position.x + 8.0, y - 7.0, 8.0, 8.0), Color("ff6687"), true)
+    _text("CONTESTED", Vector2(panel.position.x + 22.0, y), 7, Color("ff8fa6"))
+    draw_rect(Rect2(panel.position.x + 82.0, y - 7.0, 8.0, 8.0), Color("65717e"), true)
+    _text("UNCONTROLLED", Vector2(panel.position.x + 96.0, y), 7, Color("aeb9c4"))
 
 func _system_map_fit_scale() -> float:
     var bounds := _system_world_bounds()
@@ -4592,18 +4806,9 @@ func _draw_travel_menu() -> void:
     draw_rect(SYSTEM_MAP_RECT, Color(0.004, 0.012, 0.030, 0.90), true)
     draw_rect(SYSTEM_MAP_RECT, Color(0.25, 0.78, 0.96, 0.30), false, 1.5)
 
-    # Faction influence fields. These are presentation of the authoritative radial model.
-    for faction in political_world.get("factions", []):
-        var capital_id := String(faction.capital_id)
-        var capital_world := _system_planet_world_position(capital_id)
-        var capital_screen := _map_world_to_screen(capital_world)
-        var radius_px := float(faction.radius) * _system_map_fit_scale() * system_map_zoom
-        var fc := Color(faction.color)
-        if capital_screen.distance_to(SYSTEM_MAP_RECT.get_center()) < radius_px + 360.0:
-            draw_circle(capital_screen, radius_px, Color(fc.r, fc.g, fc.b, 0.035))
-            draw_arc(capital_screen, radius_px, 0.0, TAU, 72, Color(fc.r, fc.g, fc.b, 0.16), 1.0, true)
-            draw_circle(capital_screen, radius_px * 0.27, Color(fc.r, fc.g, fc.b, 0.045))
-            draw_arc(capital_screen, radius_px * 0.27, 0.0, TAU, 48, Color(fc.r, fc.g, fc.b, 0.24), 1.0, true)
+    # Slice 8 political field: sampled from the exact authoritative context query.
+    # This intentionally uses a coarse field rather than pretending borders are perfect polygons.
+    _draw_political_map_overlay()
 
     # System primary at logical origin.
     var star := _map_world_to_screen(Vector2.ZERO)
@@ -4688,22 +4893,31 @@ func _draw_travel_menu() -> void:
             if is_capital:
                 _text_center("CAP", center.y + portrait_size * 0.82 + 12.0, 8, _faction_color(faction_id), center.x - 34.0, center.x + 34.0)
 
+    _draw_political_map_legend()
+
     draw_rect(SYSTEM_RESET_RECT, Color(0.04, 0.08, 0.12, 0.92), true)
     draw_rect(SYSTEM_RESET_RECT, Color("77f7ff"), false, 1.5)
     _text_center("CENTER", SYSTEM_RESET_RECT.position.y + 23.0, 10, Color("bdeef4"), SYSTEM_RESET_RECT.position.x, SYSTEM_RESET_RECT.end.x)
 
-    # Route planning card.
+    # Route planning + political inspection card.
     _draw_menu_panel(SYSTEM_ROUTE_INFO_RECT, 0.91, Color(0.35, 0.85, 1.0, 0.34))
     var selected := travel_selected_planet if planet_names.has(travel_selected_planet) else current_planet
-    _draw_planet_art(selected, Rect2(36.0, 607.0, 76.0, 74.0), 1.0)
-    _text(_planet_display_name(selected).to_upper(), Vector2(126.0, 620.0), 18, Color("f0fbff"))
+    _draw_planet_art(selected, Rect2(36.0, 593.0, 76.0, 74.0), 1.0)
+    _text(_planet_display_name(selected).to_upper(), Vector2(126.0, 607.0), 17, Color("f0fbff"))
+    _text(_planet_jurisdiction_label(selected), Vector2(126.0, 628.0), 8, Color("bdeef4"))
+    var selected_factions := _planet_faction_ids(selected)
+    var status_lines := _planet_political_status_lines(selected)
 
     var next_hop := ""
     if selected == current_planet:
-        _text("DOCKED HERE", Vector2(126.0, 646.0), 13, Color("ffd166"))
-        _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 670.0), 10, Color("8ea9b8"))
-        _text(_planet_law_summary(selected), Vector2(126.0, 695.0), 9, Color("bdeef4"))
-        _text(_planet_crime_summary(selected), Vector2(126.0, 714.0), 8, Color("8ea9b8"))
+        _text("DOCKED HERE", Vector2(126.0, 648.0), 12, Color("ffd166"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 674.0), 8, Color("bdeef4"))
+        for status_index in range(status_lines.size()):
+            if status_index >= 2:
+                break
+            var status_color := _faction_status_color(selected_factions[status_index]) if status_index < selected_factions.size() else Color("8ea9b8")
+            _text(String(status_lines[status_index]), Vector2(126.0, 695.0 + float(status_index) * 13.0), 7, status_color)
+        _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 727.0), 8, Color("8ea9b8"))
     else:
         var selected_spec := _route_spec(current_planet, selected)
         next_hop = _next_hop_toward(selected)
@@ -4711,13 +4925,17 @@ func _draw_travel_menu() -> void:
         var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
         var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
         var pct := _route_political_percentages(current_planet, selected)
-        _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 10, _system_route_color(int(selected_spec.danger)))
-        _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 667.0), 10, Color("8ea9b8"))
-        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 687.0), 10, Color("ffd166"))
-        _text(_planet_law_summary(selected), Vector2(126.0, 702.0), 8, Color("bdeef4"))
-        _text(_planet_crime_summary(selected), Vector2(126.0, 719.0), 8, Color("8ea9b8"))
+        _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 646.0), 9, _system_route_color(int(selected_spec.danger)))
+        _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 662.0), 9, Color("8ea9b8"))
+        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 678.0), 9, Color("ffd166"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 697.0), 7, Color("bdeef4"))
+        for status_index in range(status_lines.size()):
+            if status_index >= 2:
+                break
+            var status_color := _faction_status_color(selected_factions[status_index]) if status_index < selected_factions.size() else Color("8ea9b8")
+            _text(String(status_lines[status_index]), Vector2(126.0, 712.0 + float(status_index) * 13.0), 7, status_color)
         if _contract_target_matches(selected):
-            _text("CONTRACT", Vector2(302.0, 719.0), 8, Color("6bffb0"))
+            _text("CONTRACT", Vector2(306.0, 628.0), 7, Color("6bffb0"))
 
     draw_rect(SYSTEM_MAP_BACK_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)

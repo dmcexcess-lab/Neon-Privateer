@@ -37,7 +37,7 @@ The 32 worlds are connected by a sparse generated trade-lane network rather than
 
 Every lane is sampled through the authoritative political influence model and compressed into political segments. Route political danger is derived from those segments rather than assigned by a fixed route table. A short contested section therefore remains meaningful even on an otherwise safer route.
 
-The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/reset, direct planet selection, route planning, capitals, faction influence, and segment-colored trade lanes. Selecting a distant world plans a multi-hop route; pressing **FLY** launches the next real lane on that path.
+The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/reset, direct planet selection, route planning, capitals, an authoritative political field, visible political borders, faction/state legend, and segment-colored trade lanes. CORE/CONTROLLED areas are faction-colored, CONTESTED bands are distinctly hatched/tinted, and UNCONTROLLED space remains visibly dark/open. Selecting a world opens jurisdiction, applicable law, and per-faction relation/heat inspection; selecting a distant world plans a multi-hop route, while pressing **FLY** launches the next real lane on that path.
 
 See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, route generation/segmentation, danger derivation, persistence, and migration contract.
 
@@ -57,7 +57,7 @@ Every generated planet maintains persistent stock for every commodity plus local
 
 **Arms** and **Narcotics** are politically restricted commodities. Every superpower independently decides whether each is legal. CORE/CONTROLLED markets show that controlling faction's law, CONTESTED worlds show mixed/shared claimant law, and UNCONTROLLED worlds report them as unregulated. The selected planet on the system map shows the same law summary.
 
-Trading itself is not blocked yet. Police scans, confiscation, fines, criminal heat, and enforcement are later slices.
+Trading itself remains mechanically available even where a commodity is illegal. The enforcement layer now supplies the risk: lawful patrols can scan cargo, confiscate faction-illegal Arms/Narcotics, fine the player, add heat/relation penalties, and escalate into combat.
 
 Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system.
 
@@ -79,7 +79,7 @@ Future enforcement systems now have authoritative eligibility queries:
 
 The hub, market, and system-map destination card expose current faction reputation/heat. Contested regions maintain separate state for both claimant factions. Uncontrolled space has no faction record.
 
-Slice 3 does **not** yet cause police or defense platforms to spawn or attack. It provides the persistent state and APIs those later slices will use.
+Slice 3 established the persistent criminal-state authority. Later encounter/enforcement slices now consume those same fields for patrol hostility, heavy enforcement, scans, and political-map inspection.
 
 
 ## Contracts
@@ -144,7 +144,7 @@ Pirate contacts are random only in CONTESTED/UNCONTROLLED route segments and are
 Faction patrols are random only in that superpower's CORE/CONTROLLED route segments. Police presence itself does **not** mean the player is under attack:
 
 - clean player → lawful patrol traffic;
-- heat 30+ or relation -50 or worse → patrol becomes hostile;
+- heat 30+ or HOSTILE relation (-60 or worse) → patrol becomes hostile;
 - heat 60+ or relation -75 or worse → hostile patrol may also include pentagon heavy enforcement.
 
 Lawful police do not track, fire, collide as damaging threats, or get hit/acquired by the player's automatic weapons. This prevents the auto-fire system from turning ordinary police traffic into an unavoidable crime.
@@ -236,7 +236,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, faction-level and route-wealth migration, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version

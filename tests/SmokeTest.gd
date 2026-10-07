@@ -142,7 +142,9 @@ func _initialize() -> void:
         "_get_political_context_at", "_political_laws_at",
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
-        "_planet_jurisdiction_label", "_ensure_commodity_schema", "_new_market_entry",
+        "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
+        "_faction_map_status_line", "_faction_status_color", "_planet_political_status_lines",
+        "_ensure_commodity_schema", "_new_market_entry",
         "_ensure_crime_schema", "_ensure_enforcement_schema", "_ensure_route_wealth_schema", "_faction_level", "_faction_relation", "_faction_heat",
         "_faction_crime_state", "_is_criminal_with_faction",
         "_police_hostile_eligible", "_heavy_enforcement_eligible",
@@ -181,6 +183,9 @@ func _initialize() -> void:
         "_system_planet_hit_rect", "_system_planet_at_screen", "_system_route_pairs",
         "_default_travel_selection", "_set_travel_selection",
         "_reset_system_map_view", "_pan_system_map", "_zoom_system_map",
+        "_political_context_key", "_rebuild_political_map_overlay",
+        "_political_overlay_fill_color", "_political_border_color",
+        "_political_map_legend_entries",
         "_map_world_to_screen", "_map_screen_to_world",
         "_system_map_touch_begin", "_system_map_touch_drag", "_system_map_touch_end",
         "_next_hop_toward"
@@ -220,6 +225,64 @@ func _initialize() -> void:
     if int(scene.political_world.get("schema", 0)) != scene.POLITICAL_WORLD_SCHEMA:
         _fail("political world schema is not current")
         return
+
+    # Slice 8: the map overlay is cached from the authoritative political query.
+    var expected_overlay_cells: int = scene.POLITICAL_MAP_GRID_X * scene.POLITICAL_MAP_GRID_Y
+    if scene.political_map_overlay_cells.size() != expected_overlay_cells:
+        _fail("political map overlay cache has wrong cell count")
+        return
+    var overlay_states: Dictionary = {}
+    var overlay_transitions := 0
+    for cell_index in range(scene.political_map_overlay_cells.size()):
+        var cell: Dictionary = scene.political_map_overlay_cells[cell_index]
+        var center_context: Dictionary = scene._get_political_context_at(Vector2(cell.center))
+        if String(cell.state) != String(center_context.state) or String(cell.key) != scene._political_context_key(center_context):
+            _fail("political map cell diverged from authoritative context")
+            return
+        if scene._political_overlay_fill_color(cell).a <= 0.0:
+            _fail("political map cell is not visibly styled")
+            return
+        overlay_states[String(cell.state)] = true
+        var gx := int(cell.gx)
+        var gy := int(cell.gy)
+        if gx < scene.POLITICAL_MAP_GRID_X - 1:
+            var right_cell: Dictionary = scene.political_map_overlay_cells[cell_index + 1]
+            if String(cell.key) != String(right_cell.key):
+                overlay_transitions += 1
+        if gy < scene.POLITICAL_MAP_GRID_Y - 1:
+            var below_cell: Dictionary = scene.political_map_overlay_cells[cell_index + scene.POLITICAL_MAP_GRID_X]
+            if String(cell.key) != String(below_cell.key):
+                overlay_transitions += 1
+    for required_state in ["CORE", "CONTESTED", "UNCONTROLLED"]:
+        if not overlay_states.has(required_state):
+            _fail("political map overlay omitted " + required_state)
+            return
+    if overlay_transitions <= 0:
+        _fail("political map overlay has no visible political boundaries")
+        return
+
+    var legend_entries: Array = scene._political_map_legend_entries()
+    var fresh_factions: Array = scene.political_world.get("factions", [])
+    if legend_entries.size() != fresh_factions.size() or legend_entries.size() < 2 or legend_entries.size() > 4:
+        _fail("political map faction legend does not match generated powers")
+        return
+    for entry in legend_entries:
+        if String(entry.get("id", "")).is_empty() or String(entry.get("name", "")).is_empty() or Color(entry.get("color", Color.TRANSPARENT)).a <= 0.0:
+            _fail("political map legend entry is incomplete")
+            return
+        var capital_id := String(entry.get("capital_id", ""))
+        var status_lines: Array[String] = scene._planet_political_status_lines(capital_id)
+        if status_lines.is_empty():
+            _fail("capital political inspection has no faction status")
+            return
+        var faction_state: Dictionary = scene._faction_crime_state(String(entry.id))
+        if not String(status_lines[0]).contains(String(faction_state.relation_label)) or not String(status_lines[0]).contains(String(faction_state.heat_label)):
+            _fail("political inspection omitted relation/heat status labels")
+            return
+        var law_summary: String = scene._planet_law_summary(capital_id)
+        if not law_summary.contains("ARMS") or not law_summary.contains("NARC"):
+            _fail("capital political inspection omitted applicable laws")
+            return
 
     if scene.commodity_names.size() != 7 or not scene.commodity_names.has("Arms") or not scene.commodity_names.has("Narcotics"):
         _fail("Slice 2 commodity catalog is incomplete")

@@ -455,17 +455,41 @@ Initial view fits the complete system. Hit targets are screen-space and remain u
 
 ## Map political visualization
 
-The map consumes authoritative world data:
+Slice 8 makes the political geography directly readable without introducing a second map authority.
 
-- faction influence halos
-- capital markers
-- all generated routes
-- route segments colored by political state/faction
-- current world
-- selected destination
-- active contract destination
+The map consumes the same `political_context_at()` result used by gameplay. A cached low-resolution field samples the generated system bounds and renders:
+
+- faction-colored **CORE** and **CONTROLLED** areas;
+- distinctly tinted/hatched **CONTESTED** bands;
+- dark/open **UNCONTROLLED** space;
+- visible boundaries wherever the authoritative state/controller changes;
+- capital markers;
+- all generated routes;
+- route segments colored independently by political state/faction;
+- current world, selected destination, and active contract destination.
+
+The coarse field is intentional. It communicates control/borders on a phone-sized map without pretending the radial influence model creates perfect polygonal borders.
+
+The map also includes a faction/state legend. Selecting a planet exposes its jurisdiction, applicable Arms/Narcotics law, and the relevant faction relation/heat status. Contested worlds expose both claimant factions independently rather than collapsing them into one reputation record.
+
+Selected/contract routes render above the political field so path readability wins over decorative shading.
 
 No separate hand-painted political map is authoritative.
+
+## Slice 8 political map polish
+
+Slice 8 is presentation/inspection only. It does not alter influence math, territory ownership, route segmentation, encounter eligibility, laws, relation/heat, or route simulation.
+
+Acceptance rules:
+
+- political field cells must match the authoritative context query at their sampled positions;
+- visible field transitions must come from changes in authoritative state/controller;
+- route lines remain segment-colored rather than receiving one aggregate danger color;
+- the faction legend is generated from the persistent faction records/colors;
+- planet inspection names the controlling or contesting factions and surfaces applicable laws plus relation/heat status;
+- tap/click still selects first and never launches directly;
+- pan/zoom, current/selected/contract markers, 32 generated planets, and explicit **FLY** remain intact.
+
 
 ## Persistence
 
