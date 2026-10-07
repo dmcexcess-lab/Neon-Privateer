@@ -447,7 +447,7 @@ func _initialize() -> void:
             _fail("capital political inspection omitted applicable laws")
             return
 
-    if scene.commodity_names.size() != 7 or not scene.commodity_names.has("Arms") or not scene.commodity_names.has("Narcotics"):
+    if scene.commodity_names.size() != 7 or not scene.commodity_names.has("Small Arms") or not scene.commodity_names.has("Stims"):
         _fail("Slice 2 commodity catalog is incomplete")
         return
     for commodity in scene.commodity_names:
@@ -509,16 +509,16 @@ func _initialize() -> void:
         _fail("generated planet type did not map to distinct archetype art")
         return
 
-    if scene._market_profile(industrial, "Arms").x <= scene._market_profile(lush, "Arms").x:
+    if scene._market_profile(industrial, "Small Arms").x <= scene._market_profile(lush, "Small Arms").x:
         _fail("INDUSTRIAL worlds should produce more Arms than LUSH worlds")
         return
-    if scene._market_profile(lush, "Narcotics").x <= scene._market_profile(industrial, "Narcotics").x:
+    if scene._market_profile(lush, "Stims").x <= scene._market_profile(industrial, "Stims").x:
         _fail("LUSH worlds should produce more Narcotics than INDUSTRIAL worlds")
         return
-    if scene._commodity_base_price("Arms") <= scene._commodity_base_price("Electronics"):
+    if scene._commodity_base_price("Small Arms") <= scene._commodity_base_price("Copper"):
         _fail("Arms base value is not integrated into commodity pricing")
         return
-    if scene._commodity_base_price("Narcotics") <= scene._commodity_base_price("Arms"):
+    if scene._commodity_base_price("Stims") <= scene._commodity_base_price("Small Arms"):
         _fail("Narcotics base value is not above Arms")
         return
 
@@ -559,14 +559,14 @@ func _initialize() -> void:
         if String(capital_context.state) != "CORE":
             _fail("faction capital is not CORE")
             return
-        var arms_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Arms")
-        var narc_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Narcotics")
+        var arms_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Small Arms")
+        var narc_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Stims")
         var expected_arms: String = "LEGAL" if bool(laws.arms_legal) else "ILLEGAL"
         var expected_narc: String = "LEGAL" if bool(laws.narcotics_legal) else "ILLEGAL"
         if String(arms_legality.status) != expected_arms or String(narc_legality.status) != expected_narc:
             _fail("capital commodity legality does not match faction law")
             return
-        var food_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Food")
+        var food_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Grain")
         if String(food_legality.status) != "LEGAL" or bool(food_legality.regulated):
             _fail("ordinary commodities should not use contraband law")
             return
@@ -681,12 +681,12 @@ func _initialize() -> void:
             _fail("generated political field lacks state " + required_state)
             return
 
-    var free_arms: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Arms")
-    var free_narc: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Narcotics")
+    var free_arms: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Small Arms")
+    var free_narc: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Stims")
     if String(free_arms.status) != "UNREGULATED" or String(free_narc.status) != "UNREGULATED":
         _fail("uncontrolled space should report restricted commodities as unregulated")
         return
-    var contested_arms: Dictionary = scene._commodity_legality_at(contested_sample, "Arms")
+    var contested_arms: Dictionary = scene._commodity_legality_at(contested_sample, "Small Arms")
     if not ["LEGAL", "ILLEGAL", "MIXED"].has(String(contested_arms.status)):
         _fail("contested-space Arms legality returned invalid state")
         return
@@ -1123,7 +1123,7 @@ func _initialize() -> void:
     # Clear scan causes no faction consequence.
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
-    scene.cargo["Food"] = 2
+    scene.cargo["Grain"] = 2
     var clear_rel_before: int = scene._faction_relation(scan_faction)
     var clear_heat_before: int = scene._faction_heat(scan_faction)
     if not scene._begin_police_scan(scan_faction, 0.01):
@@ -1142,9 +1142,9 @@ func _initialize() -> void:
     var scan_laws: Dictionary = scan_record.laws
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
-    scene.cargo["Food"] = 1
-    scene.cargo["Arms"] = 2
-    scene.cargo["Narcotics"] = 2
+    scene.cargo["Grain"] = 1
+    scene.cargo["Small Arms"] = 2
+    scene.cargo["Stims"] = 2
     scene.research_credits = 5000
     scene.encounter_hostile = false
     var expected_illegal_units := 0
@@ -1163,19 +1163,19 @@ func _initialize() -> void:
     if scan_result.is_empty() or expected_illegal_units <= 0:
         _fail("contraband scan did not detect faction-illegal cargo")
         return
-    if int(scene.cargo.Food) != 1:
+    if int(scene.cargo.get("Grain", 0)) != 1:
         _fail("contraband scan confiscated unrestricted Food")
         return
-    if bool(scan_laws.arms_legal) and int(scene.cargo.Arms) != 2:
+    if bool(scan_laws.arms_legal) and int(scene.cargo.get("Small Arms", 0)) != 2:
         _fail("scan confiscated Arms that are legal to scanning faction")
         return
-    if not bool(scan_laws.arms_legal) and int(scene.cargo.Arms) != 0:
+    if not bool(scan_laws.arms_legal) and int(scene.cargo.get("Small Arms", 0)) != 0:
         _fail("scan failed to confiscate illegal Arms")
         return
-    if bool(scan_laws.narcotics_legal) and int(scene.cargo.Narcotics) != 2:
+    if bool(scan_laws.narcotics_legal) and int(scene.cargo.get("Stims", 0)) != 2:
         _fail("scan confiscated Narcotics that are legal to scanning faction")
         return
-    if not bool(scan_laws.narcotics_legal) and int(scene.cargo.Narcotics) != 0:
+    if not bool(scan_laws.narcotics_legal) and int(scene.cargo.get("Stims", 0)) != 0:
         _fail("scan failed to confiscate illegal Narcotics")
         return
     if scene.research_credits >= credits_before_scan:
@@ -1425,7 +1425,7 @@ func _initialize() -> void:
     if not scene._queue_asteroid_ore_drop(asteroid_fixture, 0.0):
         _fail("forced asteroid salvage roll did not drop Ore")
         return
-    if scene.pending_drops.size() != 1 or String(scene.pending_drops[0].type) != "cargo" or String(scene.pending_drops[0].commodity) != "Ore" or int(scene.pending_drops[0].quantity) != 1:
+    if scene.pending_drops.size() != 1 or String(scene.pending_drops[0].type) != "cargo" or String(scene.pending_drops[0].commodity) != "Iron" or int(scene.pending_drops[0].quantity) != 1:
         _fail("asteroid salvage payload is not one unit of Ore")
         return
     scene.pending_drops.clear()
@@ -1460,7 +1460,7 @@ func _initialize() -> void:
     if scene.pending_drops.size() != 2 or diamond_units < 4 or diamond_units > 6 or diamond_units <= square_units:
         _fail("reinforced container loot is not larger than basic-container loot")
         return
-    var premium_goods := ["Electronics", "Arms", "Medicine", "Narcotics", "Fuel", "Ore"]
+    var premium_goods := ["Copper", "Small Arms", "First Aid", "Stims", "Titanium", "Iron"]
     for loot in scene.pending_drops:
         if not premium_goods.has(String(loot.commodity)):
             _fail("reinforced container used non-premium loot table")
@@ -1569,14 +1569,14 @@ func _initialize() -> void:
     # Cargo pickups obey hold capacity.
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
-    var cargo_pickup: Dictionary = scene._make_cargo_pickup("Electronics", 3, scene.player_x, scene.player_y, false)
-    if scene._collect_cargo_pickup(cargo_pickup) != 3 or int(scene.cargo.Electronics) != 3 or int(cargo_pickup.quantity) != 0:
+    var cargo_pickup: Dictionary = scene._make_cargo_pickup("Copper", 3, scene.player_x, scene.player_y, false)
+    if scene._collect_cargo_pickup(cargo_pickup) != 3 or int(scene.cargo.get("Copper", 0)) != 3 or int(cargo_pickup.quantity) != 0:
         _fail("cargo pickup did not load available commodity units")
         return
     for commodity in scene.commodity_names:
         scene.cargo[commodity] = 0
-    scene.cargo["Food"] = scene._cargo_capacity()
-    var full_pickup: Dictionary = scene._make_cargo_pickup("Ore", 2, scene.player_x, scene.player_y, false)
+    scene.cargo["Grain"] = scene._cargo_capacity()
+    var full_pickup: Dictionary = scene._make_cargo_pickup("Iron", 2, scene.player_x, scene.player_y, false)
     if scene._collect_cargo_pickup(full_pickup) != 0 or int(full_pickup.quantity) != 2:
         _fail("full hold consumed cargo pickup")
         return
@@ -1733,8 +1733,8 @@ func _initialize() -> void:
     var expected_primary_offenses: int = int(expected_primary_record.get("offenses", 0))
     var expected_primary_last_offense: String = String(expected_primary_record.get("last_offense", ""))
     var world_before: Dictionary = scene.political_world.duplicate(true)
-    scene.cargo["Arms"] = 1
-    scene.cargo["Narcotics"] = 2
+    scene.cargo["Small Arms"] = 1
+    scene.cargo["Stims"] = 2
     var signature_before: String = _world_signature(scene.political_world)
     if signature_before.is_empty():
         _fail("political world signature unexpectedly empty")
@@ -1750,7 +1750,7 @@ func _initialize() -> void:
     if scene.world_seed != seed_before or scene.current_planet != location_before:
         _fail("political world save/reload changed seed or location")
         return
-    if int(scene.cargo.get("Arms", 0)) != 1 or int(scene.cargo.get("Narcotics", 0)) != 2:
+    if int(scene.cargo.get("Small Arms", 0)) != 1 or int(scene.cargo.get("Stims", 0)) != 2:
         _fail("Arms/Narcotics cargo did not persist")
         return
     if scene._faction_relation(primary_faction) != expected_primary_relation or scene._faction_heat(primary_faction) != expected_primary_heat:
@@ -1841,13 +1841,13 @@ func _initialize() -> void:
 
     # Career slots remain isolated under generated worlds.
     scene.research_credits = 4321
-    scene.cargo["Food"] = 2
+    scene.cargo["Grain"] = 2
     var slot_one_planet: String = String(scene.current_planet)
     scene._save_all_state()
     if not scene._create_new_career(2):
         _fail("could not create career slot 2")
         return
-    if scene.research_credits != 1200 or int(scene.cargo.get("Food", 0)) != 0:
+    if scene.research_credits != 1200 or int(scene.cargo.get("Grain", 0)) != 0:
         _fail("new career inherited credits/cargo")
         return
     scene.research_credits = 2222
@@ -1855,7 +1855,7 @@ func _initialize() -> void:
     if not scene._load_career(1):
         _fail("could not reload career slot 1")
         return
-    if scene.research_credits != 4321 or scene.current_planet != slot_one_planet or int(scene.cargo.get("Food", 0)) != 2:
+    if scene.research_credits != 4321 or scene.current_planet != slot_one_planet or int(scene.cargo.get("Grain", 0)) != 2:
         _fail("career slot 1 did not restore isolated generated state")
         return
 
@@ -1866,7 +1866,7 @@ func _initialize() -> void:
     var legacy_cfg: ConfigFile = ConfigFile.new()
     legacy_cfg.set_value("world", "planet", "Cinder")
     legacy_cfg.set_value("world", "markets", {})
-    legacy_cfg.set_value("world", "cargo", {"Food": 1, "Ore": 0, "Medicine": 0, "Electronics": 0, "Fuel": 0})
+    legacy_cfg.set_value("world", "cargo", {"Food": 1, "Ore": 0, "Medicine": 0, "Electronics": 0, "Fuel": 0, "Arms": 0, "Narcotics": 0})
     legacy_cfg.set_value("world", "contracts", [])
     legacy_cfg.set_value("world", "active_contract", {})
     legacy_cfg.set_value("world", "passengers", 0)
@@ -1883,11 +1883,11 @@ func _initialize() -> void:
     if scene._planet_type(scene.current_planet) != "VOLCANIC":
         _fail("legacy Cinder location did not migrate to VOLCANIC world")
         return
-    if int(scene.cargo.get("Arms", -1)) != 0 or int(scene.cargo.get("Narcotics", -1)) != 0:
+    if int(scene.cargo.get("Small Arms", -1)) != 0 or int(scene.cargo.get("Stims", -1)) != 0:
         _fail("legacy five-commodity cargo did not gain zeroed restricted commodities")
         return
     for migrated_planet in scene.planet_names:
-        if not scene.markets[migrated_planet].has("Arms") or not scene.markets[migrated_planet].has("Narcotics"):
+        if not scene.markets[migrated_planet].has("Small Arms") or not scene.markets[migrated_planet].has("Stims"):
             _fail("legacy market migration did not add restricted commodities")
             return
     var migrated_seed: int = int(scene.world_seed)
@@ -1936,49 +1936,49 @@ func _initialize() -> void:
 
     # Market prices remain stock-sensitive on generated planets.
     scene.research_credits = 5000
-    scene.cargo["Food"] = 0
-    var food_data: Dictionary = scene.markets[lush]["Food"]
+    scene.cargo["Grain"] = 0
+    var food_data: Dictionary = scene.markets[lush]["Grain"]
     food_data.stock = 70.0
-    scene.markets[lush]["Food"] = food_data
-    var food_mid_before: int = scene._market_price(lush, "Food")
-    var food_buy_before: int = scene._market_buy_price(lush, "Food")
-    var food_sell_before: int = scene._market_sell_price(lush, "Food")
+    scene.markets[lush]["Grain"] = food_data
+    var food_mid_before: int = scene._market_price(lush, "Grain")
+    var food_buy_before: int = scene._market_buy_price(lush, "Grain")
+    var food_sell_before: int = scene._market_sell_price(lush, "Grain")
     if food_buy_before <= food_mid_before or food_sell_before >= food_mid_before:
         _fail("market bid/ask spread is invalid")
         return
     var credits_before_buy: int = int(scene.research_credits)
-    if not scene._buy_commodity("Food"):
+    if not scene._buy_commodity("Grain"):
         _fail("could not buy generated-world commodity")
         return
-    if scene.research_credits != credits_before_buy - food_buy_before or int(scene.cargo.Food) != 1:
+    if scene.research_credits != credits_before_buy - food_buy_before or int(scene.cargo.get("Grain", 0)) != 1:
         _fail("commodity buy did not update credits/cargo")
         return
-    if not scene._sell_commodity("Food") or int(scene.cargo.Food) != 0:
+    if not scene._sell_commodity("Grain") or int(scene.cargo.get("Grain", 0)) != 0:
         _fail("commodity sell failed")
         return
 
     scene.current_planet = industrial
     scene.research_credits = 10000
-    scene.cargo["Arms"] = 0
-    var arms_data: Dictionary = scene.markets[industrial]["Arms"]
+    scene.cargo["Small Arms"] = 0
+    var arms_data: Dictionary = scene.markets[industrial]["Small Arms"]
     arms_data.stock = maxf(5.0, float(arms_data.stock))
-    scene.markets[industrial]["Arms"] = arms_data
-    if not scene._buy_commodity("Arms") or int(scene.cargo.Arms) != 1:
+    scene.markets[industrial]["Small Arms"] = arms_data
+    if not scene._buy_commodity("Small Arms") or int(scene.cargo.get("Small Arms", 0)) != 1:
         _fail("could not trade Arms commodity")
         return
-    if not scene._sell_commodity("Arms") or int(scene.cargo.Arms) != 0:
+    if not scene._sell_commodity("Small Arms") or int(scene.cargo.get("Small Arms", 0)) != 0:
         _fail("could not sell Arms commodity")
         return
     scene.current_planet = lush
 
-    var ore: Dictionary = scene.markets[volcanic]["Ore"]
+    var ore: Dictionary = scene.markets[volcanic]["Iron"]
     ore.stock = 40.0
     ore.production = 10.0
     ore.consumption = 2.0
-    scene.markets[volcanic]["Ore"] = ore
+    scene.markets[volcanic]["Iron"] = ore
     scene.rng.seed = 12345
     scene._simulate_economy(2)
-    if float(scene.markets[volcanic]["Ore"].stock) <= 40.0:
+    if float(scene.markets[volcanic]["Iron"].stock) <= 40.0:
         _fail("generated-world economy did not simulate production")
         return
 
@@ -2002,10 +2002,10 @@ func _initialize() -> void:
 
     var slice9_illegal_capital := String(illegal_record.capital_id)
     var slice9_origin := String(legal_record.capital_id)
-    if scene._market_law_multiplier(slice9_illegal_capital, "Arms") <= scene._market_law_multiplier(slice9_origin, "Arms"):
+    if scene._market_law_multiplier(slice9_illegal_capital, "Small Arms") <= scene._market_law_multiplier(slice9_origin, "Small Arms"):
         _fail("illegal Arms market did not receive a law/risk premium")
         return
-    if absf(scene._market_law_multiplier(slice9_origin, "Food") - 1.0) > 0.0001:
+    if absf(scene._market_law_multiplier(slice9_origin, "Grain") - 1.0) > 0.0001:
         _fail("ordinary commodity received political law premium")
         return
 
@@ -2022,7 +2022,7 @@ func _initialize() -> void:
         return
 
     var smuggling_reward: Dictionary = scene._contract_reward_breakdown("delivery", slice9_origin, smuggling_destination, smuggling_commodity, true)
-    var legal_reward: Dictionary = scene._contract_reward_breakdown("delivery", slice9_origin, smuggling_destination, "Food", false)
+    var legal_reward: Dictionary = scene._contract_reward_breakdown("delivery", slice9_origin, smuggling_destination, "Grain", false)
     if int(smuggling_reward.cargo_premium) <= int(legal_reward.cargo_premium) or int(smuggling_reward.reward) <= int(smuggling_reward.base_reward):
         _fail("smuggling cargo did not receive an illegal-cargo premium")
         return
@@ -2271,7 +2271,7 @@ func _initialize() -> void:
     scene.score = 6
     scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
     scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
-    scene.cargo["Arms"] = 1
+    scene.cargo["Small Arms"] = 1
     scene.encounter_active = true
     scene.encounter_mode = "police"
     scene.encounter_faction_id = primary_faction
@@ -2281,7 +2281,7 @@ func _initialize() -> void:
     scene.police_scan_faction_id = primary_faction
     scene.police_scan_duration = 5.0
     scene.police_scan_timer = 4.0
-    var arrival_arms_before: int = int(scene.cargo.Arms)
+    var arrival_arms_before: int = int(scene.cargo.get("Small Arms", 0))
     var arrival_heat_before: int = scene._faction_heat(primary_faction)
     var credits_before_arrival: int = int(scene.research_credits)
     scene._arrive_at_destination()
@@ -2294,7 +2294,7 @@ func _initialize() -> void:
     if scene.police_scan_active:
         _fail("arrival did not terminate unfinished police scan")
         return
-    if int(scene.cargo.Arms) != arrival_arms_before or scene._faction_heat(primary_faction) != arrival_heat_before:
+    if int(scene.cargo.get("Small Arms", 0)) != arrival_arms_before or scene._faction_heat(primary_faction) != arrival_heat_before:
         _fail("unfinished arrival scan still applied contraband consequences")
         return
 
