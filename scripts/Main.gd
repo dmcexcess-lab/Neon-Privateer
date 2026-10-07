@@ -2,6 +2,8 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
+const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
+const POLITICAL_WORLD_SCHEMA := 2
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -80,8 +82,11 @@ const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
 const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 590.0, 342.0, 140.0)
 const SYSTEM_MAP_BACK_RECT := Rect2(24.0, 756.0, 158.0, 54.0)
 const SYSTEM_FLY_RECT := Rect2(208.0, 756.0, 158.0, 54.0)
+const SYSTEM_RESET_RECT := Rect2(292.0, 114.0, 68.0, 34.0)
 const SYSTEM_STAR_POS := Vector2(195.0, 350.0)
-const SYSTEM_PLANET_HIT_SIZE := 82.0
+const SYSTEM_PLANET_HIT_SIZE := 52.0
+const SYSTEM_MAP_MIN_ZOOM := 1.0
+const SYSTEM_MAP_MAX_ZOOM := 3.6
 const CARGO_CAPACITY_BASE := 8
 const PASSENGER_CAPACITY_BASE := 2
 const DASH_COOLDOWN := 2.4
@@ -160,7 +165,17 @@ var market_open := false
 var contracts_open := false
 var travel_open := false
 var travel_selected_planet := ""
-var current_planet := "Aster"
+var political_world: Dictionary = {}
+var world_seed := 0
+var system_map_zoom := 1.0
+var system_map_pan := Vector2.ZERO
+var system_map_touches: Dictionary = {}
+var system_map_touch_moved := false
+var system_map_last_pinch_distance := 0.0
+var system_map_mouse_dragging := false
+var system_map_mouse_moved := false
+var system_map_mouse_last := Vector2.ZERO
+var current_planet := ""
 var destination_planet := ""
 var route_origin := ""
 var route_distance := 1
@@ -174,8 +189,8 @@ var pirate_attack_active := false
 var pirate_attack_timer := 0.0
 var pirate_attack_clock := 999.0
 var pirate_banner_timer := 0.0
-var last_trip_summary := "Docked at Aster"
-var planet_names: Array[String] = ["Aster", "Cinder", "Vesper", "Helix"]
+var last_trip_summary := "Docked"
+var planet_names: Array[String] = []
 var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel"]
 var markets: Dictionary = {}
 var cargo: Dictionary = {}
@@ -1087,6 +1102,43 @@ func _process(delta: float) -> void:
     queue_redraw()
 
 func _input(event: InputEvent) -> void:
+    if travel_open:
+        if event is InputEventScreenTouch:
+            if event.pressed:
+                _system_map_touch_begin(event.index, event.position)
+            else:
+                _system_map_touch_end(event.index, event.position)
+            return
+        if event is InputEventScreenDrag:
+            _system_map_touch_drag(event.index, event.position, event.relative)
+            return
+        if event is InputEventMouseButton:
+            if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed and SYSTEM_MAP_RECT.has_point(event.position):
+                _zoom_system_map(1.16, event.position)
+                return
+            if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed and SYSTEM_MAP_RECT.has_point(event.position):
+                _zoom_system_map(1.0 / 1.16, event.position)
+                return
+            if event.button_index == MOUSE_BUTTON_LEFT:
+                if event.pressed:
+                    if SYSTEM_MAP_RECT.has_point(event.position):
+                        system_map_mouse_dragging = true
+                        system_map_mouse_moved = false
+                        system_map_mouse_last = event.position
+                    else:
+                        _handle_travel_tap(event.position)
+                else:
+                    if system_map_mouse_dragging and not system_map_mouse_moved:
+                        _handle_travel_tap(event.position)
+                    system_map_mouse_dragging = false
+                return
+        if event is InputEventMouseMotion and system_map_mouse_dragging:
+            if event.relative.length() > 0.75:
+                system_map_mouse_moved = true
+            _pan_system_map(event.relative)
+            system_map_mouse_last = event.position
+            return
+
     if event is InputEventScreenTouch:
         if event.pressed:
             _handle_tap(event.position, event.index)
@@ -1095,7 +1147,6 @@ func _input(event: InputEvent) -> void:
         return
 
     if event is InputEventScreenDrag:
-        # Steering is button-based now; dragging never changes the ship target.
         return
 
     if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
