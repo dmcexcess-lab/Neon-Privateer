@@ -28,7 +28,7 @@ func _initialize() -> void:
         "_make_energy_orb", "_make_repair_pickup", "_kill_drop_kind", "_queue_kill_drop",
         "_flush_pending_drops", "_spawn_repair", "_spawn_pickup", "_register_near_miss",
         "_begin_lane_event", "_end_lane_event", "_neutralize_lane_objects", "_station_at_player",
-        "_station_barrier_rects", "_check_station_collision", "_split_rules_active", "_hard_lane_score_multiplier", "_lane_score_multiplier",
+        "_station_barrier_rects", "_check_station_collision", "_split_visible", "_split_rules_active", "_point_inside_split", "_hard_lane_score_multiplier", "_lane_score_multiplier",
         "_activate_split_generation", "_spawn_split_generation", "_spawn_neutral_generation",
         "_incoming_shot_dodge_direction",
         "_dash_score_multiplier", "_level_duration", "_split_count_for_level",
@@ -361,32 +361,31 @@ func _initialize() -> void:
         _fail("harder enemy scoring does not scale from enemy kill value")
         return
 
-    # Hard-lane +35% exists only while physical split pixels are on screen.
+    # Hard-lane +35% is spatial: only score events physically inside the structure get it.
     scene.level = 4
     scene._begin_lane_event()
-    if scene._split_rules_active():
-        _fail("offscreen split structure activated hard-lane rules too early")
+    if scene._split_visible() or scene._split_rules_active():
+        _fail("offscreen split structure activated before reaching the top boundary")
         return
-    if scene._enemy_event_score(0, "dash_near", true) != 100:
+    if scene._enemy_event_score(0, "dash_near", true, 0.0) != 100:
         _fail("offscreen split applied hard-lane score bonus")
         return
     scene.station_top = 120.0
     scene.hard_lane_right = true
-    scene.player_x = (scene.RIGHT_LANE_MIN + scene.RIGHT_LANE_MAX) * 0.5
-    if not scene._split_rules_active():
-        _fail("visible split pixels did not activate hard-lane rules")
+    if not scene._split_visible():
+        _fail("onscreen split structure was not considered visible")
         return
-    if scene._station_at_player():
-        _fail("hard-lane lifecycle test unexpectedly overlaps player Y")
+    if scene._split_rules_active():
+        _fail("split generation remained active after trailing edge left top boundary")
         return
-    if absf(scene._lane_score_multiplier() - 1.35) > 0.001:
-        _fail("hard-lane score bonus still depends on station/player Y overlap")
+    if scene._enemy_event_score(0, "dash_near", true, 150.0) != 135:
+        _fail("hard-lane score inside structure did not receive 35 percent")
         return
-    if scene._enemy_event_score(0, "dash_near", true) != 135:
-        _fail("active hard lane did not add 35 percent to enemy-event score")
+    if scene._enemy_event_score(0, "dash_near", true, 100.0) != 100:
+        _fail("hard-lane score above structure incorrectly received bonus")
         return
-    if scene._enemy_event_score(0, "dash_near", false) != 100:
-        _fail("easy lane incorrectly received hard-lane bonus")
+    if scene._enemy_event_score(0, "dash_near", false, 150.0) != 100:
+        _fail("easy-lane score inside structure incorrectly received hard bonus")
         return
     scene._end_lane_event()
     scene.level = 1
@@ -505,34 +504,35 @@ func _initialize() -> void:
     scene.lane_events_started = 0
     scene.next_lane_event_at = scene._first_split_time()
 
-    # Split rules are owned by the physical structure lifecycle, not player position.
+    # The top edge is the generation boundary. The structure may remain visible
+    # after its trailing edge clears y=0, but split spawning must stop immediately.
     scene.objects.clear()
     scene.level = 4
     scene._begin_lane_event()
     scene.pickup_clock = 999.0
     scene.repair_clock = 999.0
     scene.fire_clock = 999.0
-    if scene._split_rules_active():
-        _fail("split rules started while the structure was still fully offscreen")
+    if scene._split_visible() or scene._split_rules_active():
+        _fail("split became visible/active while fully above the screen")
         return
 
-    # Before the first split pixel appears, generation stays neutral/full-width.
+    # Before the leading edge reaches the top, generation is neutral.
     scene.neutral_spawn_clock = 0.0
     scene.easy_spawn_clock = 0.0
     scene.hard_spawn_clock = 0.0
     scene._process(0.0)
     if scene.objects.size() != 1 or bool(scene.objects[0].hard) or float(scene.objects[0].lane_min) != scene.LEFT or float(scene.objects[0].lane_max) != scene.RIGHT:
-        _fail("approaching offscreen split used split-lane generation early")
+        _fail("offscreen split used split generation before reaching top boundary")
         return
 
-    # Once split pixels enter the screen, split generation and red tint begin together.
+    # First pixel through y=0: red becomes visible and split generation begins.
     scene.objects.clear()
     scene.station_top = -scene.station_height + 1.0
-    scene.neutral_spawn_clock = 0.0
+    scene.neutral_spawn_clock = 999.0
     scene.easy_spawn_clock = 0.0
     scene.hard_spawn_clock = 0.0
-    if not scene._split_rules_active():
-        _fail("first visible split pixel did not activate split rules")
+    if not scene._split_visible() or not scene._split_rules_active():
+        _fail("first split pixel at top did not activate visible split generation")
         return
     scene._process(0.0)
     var saw_hard := false
@@ -545,44 +545,57 @@ func _initialize() -> void:
         else:
             saw_easy = true
     if not saw_hard or not saw_easy:
-        _fail("visible split did not use separate easy/hard generation")
+        _fail("top-boundary split generation did not create separate easy/hard lanes")
         return
 
-    # Red is clipped to the hard lane's X bounds and only the visible structure Y bounds.
+    # Red is clipped to the structure's visible Y span and the actual hard-lane X bounds.
     scene.hard_lane_right = true
     var entering_right_rect: Rect2 = scene._hard_lane_background_rect()
     if absf(entering_right_rect.position.x - scene.RIGHT_LANE_MIN) > 0.01 or absf(entering_right_rect.size.x - (scene.RIGHT_LANE_MAX - scene.RIGHT_LANE_MIN)) > 0.01 or entering_right_rect.position.y != 0.0 or entering_right_rect.size.y <= 0.0 or entering_right_rect.size.y > 2.0:
-        _fail("entering hard-right red tint is not clipped to split pixels")
+        _fail("entering hard-right red tint is not clipped to the structure")
         return
 
-    scene.station_top = 120.0
+    # The instant the trailing edge passes y=0, spawning behind the structure is neutral.
+    scene.objects.clear()
+    scene.station_top = 1.0
+    scene.neutral_spawn_clock = 0.0
+    scene.easy_spawn_clock = 0.0
+    scene.hard_spawn_clock = 0.0
+    if not scene._split_visible() or scene._split_rules_active():
+        _fail("top boundary did not end split generation at trailing edge")
+        return
+    scene._process(0.0)
+    if not scene.lane_event_active or not scene._split_visible():
+        _fail("structure should remain onscreen after top-boundary generation ends")
+        return
+    if scene.objects.size() != 1 or bool(scene.objects[0].hard) or float(scene.objects[0].lane_min) != scene.LEFT or float(scene.objects[0].lane_max) != scene.RIGHT:
+        _fail("generation behind split structure did not return immediately to neutral")
+        return
+
+    # Red continues only over the remaining visible physical structure.
+    scene.hard_lane_right = true
     var hard_right_rect: Rect2 = scene._hard_lane_background_rect()
-    var expected_visible_height: float = minf(scene.station_height, scene.H - 120.0)
-    if absf(hard_right_rect.position.x - scene.RIGHT_LANE_MIN) > 0.01 or absf(hard_right_rect.size.x - (scene.RIGHT_LANE_MAX - scene.RIGHT_LANE_MIN)) > 0.01 or absf(hard_right_rect.position.y - 120.0) > 0.01 or absf(hard_right_rect.size.y - expected_visible_height) > 0.01:
-        _fail("hard-right red tint exceeds split structure bounds")
+    var expected_visible_height: float = minf(scene.station_height, scene.H - 1.0)
+    if absf(hard_right_rect.position.x - scene.RIGHT_LANE_MIN) > 0.01 or absf(hard_right_rect.size.x - (scene.RIGHT_LANE_MAX - scene.RIGHT_LANE_MIN)) > 0.01 or absf(hard_right_rect.position.y - 1.0) > 0.01 or absf(hard_right_rect.size.y - expected_visible_height) > 0.01:
+        _fail("hard-right red tint does not follow remaining structure bounds")
         return
     scene.hard_lane_right = false
     var hard_left_rect: Rect2 = scene._hard_lane_background_rect()
-    if absf(hard_left_rect.position.x - scene.LEFT_LANE_MIN) > 0.01 or absf(hard_left_rect.size.x - (scene.LEFT_LANE_MAX - scene.LEFT_LANE_MIN)) > 0.01 or absf(hard_left_rect.position.y - 120.0) > 0.01 or absf(hard_left_rect.size.y - expected_visible_height) > 0.01:
-        _fail("hard-left red tint exceeds split structure bounds")
+    if absf(hard_left_rect.position.x - scene.LEFT_LANE_MIN) > 0.01 or absf(hard_left_rect.size.x - (scene.LEFT_LANE_MAX - scene.LEFT_LANE_MIN)) > 0.01 or absf(hard_left_rect.position.y - 1.0) > 0.01 or absf(hard_left_rect.size.y - expected_visible_height) > 0.01:
+        _fail("hard-left red tint does not follow remaining structure bounds")
         return
     scene.hard_lane_right = true
 
-    # When the final split pixel leaves, split generation and bonus state end with it.
-    scene.objects.clear()
-    scene.station_top = scene.H + 1.0
-    scene.neutral_spawn_clock = 999.0
-    scene.easy_spawn_clock = 0.0
-    scene.hard_spawn_clock = 0.0
-    scene._process(0.0)
-    if scene.lane_event_active or scene._split_rules_active():
-        _fail("split lifecycle continued after the structure left the screen")
+    # Score bonus follows the physical structure, not the generation state.
+    if scene._enemy_event_score(0, "near", true, 20.0) != 14:
+        _fail("hard-lane score inside visible structure lost 35 percent after top cleared")
         return
-    if not scene.objects.is_empty():
-        _fail("split-specific spawning continued after the structure ended")
+    if scene._enemy_event_score(0, "near", true, 0.0) != 10:
+        _fail("score behind the structure retained hard-lane bonus")
         return
 
     # Split difficulty must end with the physical station: survivors become neutral/full-width.
+    scene._end_lane_event()
     scene._begin_lane_event()
     scene.station_top = 120.0
     scene.hard_lane_right = true
