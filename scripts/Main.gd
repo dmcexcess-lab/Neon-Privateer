@@ -5761,35 +5761,64 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 
     if obj.type == "cargo":
         var cargo_r := float(obj.r)
-        draw_circle(p, cargo_r + 6.0, Color(1.0, 0.75, 0.25, 0.13))
-        draw_rect(Rect2(p - Vector2(cargo_r, cargo_r * 0.72), Vector2(cargo_r * 2.0, cargo_r * 1.44)), Color("9b6a2f"), true)
-        draw_rect(Rect2(p - Vector2(cargo_r - 3.0, cargo_r * 0.72 - 3.0), Vector2((cargo_r - 3.0) * 2.0, cargo_r * 1.44 - 6.0)), Color("2f261c"), true)
-        draw_line(p + Vector2(-cargo_r, 0), p + Vector2(cargo_r, 0), Color("ffd166"), 2.0)
-        _text(String(obj.get("commodity", "Iron")).substr(0, 1).to_upper(), p + Vector2(-4, 5), 12, Color("fff4c2"))
+        var commodity := String(obj.get("commodity", "Iron"))
+        var cargo_color := _commodity_visual_color(commodity)
+        _draw_soft_glow(p, cargo_r + 3.0, cargo_color, 0.72)
+        var front := Rect2(p - Vector2(cargo_r, cargo_r * 0.64), Vector2(cargo_r * 2.0, cargo_r * 1.28))
+        draw_rect(front, Color("19252d"), true)
+        draw_rect(front, cargo_color, false, 2.0)
+        draw_colored_polygon(PackedVector2Array([
+            p + Vector2(-cargo_r, -cargo_r * 0.64),
+            p + Vector2(-cargo_r + 6.0, -cargo_r * 0.88),
+            p + Vector2(cargo_r + 6.0, -cargo_r * 0.88),
+            p + Vector2(cargo_r, -cargo_r * 0.64)
+        ]), Color(cargo_color.r * 0.48, cargo_color.g * 0.48, cargo_color.b * 0.48))
+        for stripe in [-0.46, 0.46]:
+            draw_line(p + Vector2(stripe * cargo_r, -cargo_r * 0.58), p + Vector2(stripe * cargo_r, cargo_r * 0.58), Color(cargo_color.r, cargo_color.g, cargo_color.b, 0.66), 2.0)
+        draw_rect(Rect2(p - Vector2(7.0, 7.0), Vector2(14.0, 14.0)), Color("0c1318"), true)
+        _text(commodity.substr(0, 1).to_upper(), p + Vector2(-4, 5), 12, Color("f7ffff"))
         var qty := int(obj.get("quantity", 1))
         if qty > 1:
-            _text("x%d" % qty, p + Vector2(10, 16), 9, Color("ffd166"))
+            _text("x%d" % qty, p + Vector2(9, 16), 9, cargo_color)
         return
 
     if obj.type == "weapon":
-        draw_circle(p, obj.r + 8.0, Color(0.66, 0.45, 1.0, 0.18))
-        draw_circle(p, obj.r, Color("a882ff"))
+        var wr := float(obj.r)
+        _draw_soft_glow(p, wr + 4.0, Color("b56cff"), 1.05)
+        var spin := Time.get_ticks_msec() * 0.0018
+        var hex := PackedVector2Array()
+        for i in 6:
+            var wa := spin + TAU * float(i) / 6.0
+            hex.append(p + Vector2(cos(wa), sin(wa)) * (wr + 4.0))
+        _draw_hull_panel(hex, Color("261744"), Color("c59cff"))
+        draw_circle(p, wr * 0.60, Color("6d42a8"))
         _text(_weapon_icon(String(obj.weapon)), p + Vector2(-5, 6), 16, Color("ffffff"))
         return
 
     if obj.type == "repair":
-        draw_circle(p, obj.r + 7.0, Color(0.85, 1.0, 0.95, 0.14))
-        draw_circle(p, obj.r, Color("d9fff2"))
-        draw_rect(Rect2(p - Vector2(3.0, 9.0), Vector2(6.0, 18.0)), Color("187f68"), true)
-        draw_rect(Rect2(p - Vector2(9.0, 3.0), Vector2(18.0, 6.0)), Color("187f68"), true)
+        var rr := float(obj.r)
+        _draw_soft_glow(p, rr + 4.0, Color("72ffd1"), 0.95)
+        var pod := PackedVector2Array([
+            p + Vector2(0.0, -rr),
+            p + Vector2(rr * 0.82, -rr * 0.42),
+            p + Vector2(rr * 0.82, rr * 0.42),
+            p + Vector2(0.0, rr),
+            p + Vector2(-rr * 0.82, rr * 0.42),
+            p + Vector2(-rr * 0.82, -rr * 0.42)
+        ])
+        _draw_hull_panel(pod, Color("d8fff4"), Color("72ffd1"))
+        draw_rect(Rect2(p - Vector2(3.0, 9.0), Vector2(6.0, 18.0)), Color("13745f"), true)
+        draw_rect(Rect2(p - Vector2(9.0, 3.0), Vector2(18.0, 6.0)), Color("13745f"), true)
         return
 
     if obj.type == "energy":
-        var glow_alpha := 0.22 if obj.hard else 0.15
-        draw_circle(p, obj.r + 9.0, Color(0.18, 1.0, 0.52, glow_alpha * 0.45))
-        draw_circle(p, obj.r + 5.0, Color(0.20, 1.0, 0.60, glow_alpha))
-        draw_circle(p, obj.r, Color("55e98a"))
-        draw_circle(p - Vector2(3.0, 3.0), obj.r * 0.34, Color("dffff0"))
+        var er := float(obj.r)
+        var pulse := 0.86 + sin(Time.get_ticks_msec() * 0.012 + float(obj.id % 37)) * 0.12
+        _draw_soft_glow(p, er + 5.0, Color("55e98a"), 1.1 * pulse)
+        draw_arc(p, er + 7.0, 0.0, TAU, 22, Color(0.42, 1.0, 0.66, 0.44), 1.4, true)
+        draw_arc(p, er + 3.0, -PI * 0.25, PI * 1.25, 18, Color(0.82, 1.0, 0.90, 0.62), 1.2, true)
+        draw_circle(p, er * 0.74, Color("42d77e"))
+        draw_circle(p - Vector2(2.5, 3.0), er * 0.28, Color("ecfff3"))
         return
 
     var kind := int(obj.kind)
