@@ -142,7 +142,7 @@ func _initialize() -> void:
         "_get_political_context_at", "_political_laws_at",
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
-        "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
+        "_market_law_multiplier", "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
         "_faction_map_status_line", "_faction_status_color", "_planet_political_status_lines",
         "_ensure_commodity_schema", "_new_market_entry",
         "_ensure_crime_schema", "_ensure_enforcement_schema", "_ensure_route_wealth_schema", "_faction_level", "_faction_relation", "_faction_heat",
@@ -157,15 +157,21 @@ func _initialize() -> void:
         "_basic_container_commodity", "_reinforced_container_commodity",
         "_queue_container_loot", "_handle_container_break", "_collect_cargo_pickup",
         "_route_political_segment_at_progress", "_direct_route_spec",
-        "_route_political_percentages", "_market_price", "_simulate_economy",
-        "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
-        "_accept_contract", "_route_level_for", "_route_duration_for", "_start_route",
+        "_route_political_percentages_for_spec", "_route_political_percentages", "_route_pirate_exposure",
+        "_market_price", "_simulate_economy", "_buy_commodity", "_sell_commodity", "_route_spec",
+        "_planet_primary_faction", "_contract_issuer_name", "_contract_destination_profiles",
+        "_best_legal_delivery_profile", "_best_smuggling_profile", "_best_passenger_profile",
+        "_best_bounty_profiles", "_contract_reward_breakdown", "_contract_role",
+        "_contract_relation_reward", "_make_contract", "_upgrade_contract_record",
+        "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract",
+        "_route_level_for", "_route_duration_for", "_start_route",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
         "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
         "_try_start_route_encounter", "_encounter_duration", "_sync_legacy_pirate_state",
         "_start_route_encounter", "_end_route_encounter", "_update_route_encounter",
         "_police_scan_chance", "_police_scan_duration_for_faction",
-        "_illegal_cargo_for_faction", "_begin_police_scan", "_maybe_begin_police_scan",
+        "_illegal_cargo_for_faction", "_active_delivery_contraband_for_faction",
+        "_begin_police_scan", "_maybe_begin_police_scan",
         "_cancel_police_scan", "_complete_police_scan", "_update_police_scan",
         "_ship_is_hostile", "_player_can_damage_hazard", "_handle_enforcement_kill",
         "_update_pirate_attack", "_begin_bounty_boss", "_handle_route_end",
@@ -1672,6 +1678,9 @@ func _initialize() -> void:
     if int(migrated_cfg.get_value("world", "enforcement_schema", 0)) != scene.ENFORCEMENT_SCHEMA_VERSION:
         _fail("legacy migration did not persist Slice 7 enforcement schema")
         return
+    if int(migrated_cfg.get_value("world", "contract_schema", 0)) != scene.CONTRACT_SCHEMA_VERSION:
+        _fail("legacy migration did not persist Slice 9 contract schema")
+        return
 
     scene.political_world.clear()
     scene.planet_names.clear()
@@ -1742,14 +1751,176 @@ func _initialize() -> void:
         _fail("generated-world economy did not simulate production")
         return
 
-    # Contract board still supplies all three contract classes against generated IDs.
-    scene.current_planet = lush
+    # Slice 9: economy and politics now shape contract destinations, premiums, and consequences.
+    var slice9_factions: Array = scene.political_world.get("factions", [])
+    if slice9_factions.size() < 2:
+        _fail("Slice 9 requires at least two generated factions")
+        return
+    var slice9_illegal_faction := String(slice9_factions[0].id)
+    var slice9_legal_faction := String(slice9_factions[1].id)
+    var illegal_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, slice9_illegal_faction).duplicate(true)
+    var legal_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, slice9_legal_faction).duplicate(true)
+    var illegal_laws: Dictionary = illegal_record.get("laws", {}).duplicate(true)
+    var legal_laws: Dictionary = legal_record.get("laws", {}).duplicate(true)
+    illegal_laws["arms_legal"] = false
+    legal_laws["arms_legal"] = true
+    illegal_record["laws"] = illegal_laws
+    legal_record["laws"] = legal_laws
+    scene.PoliticalWorld._replace_faction(scene.political_world, slice9_illegal_faction, illegal_record)
+    scene.PoliticalWorld._replace_faction(scene.political_world, slice9_legal_faction, legal_record)
+
+    var slice9_illegal_capital := String(illegal_record.capital_id)
+    var slice9_origin := String(legal_record.capital_id)
+    if scene._market_law_multiplier(slice9_illegal_capital, "Arms") <= scene._market_law_multiplier(slice9_origin, "Arms"):
+        _fail("illegal Arms market did not receive a law/risk premium")
+        return
+    if absf(scene._market_law_multiplier(slice9_origin, "Food") - 1.0) > 0.0001:
+        _fail("ordinary commodity received political law premium")
+        return
+
+    scene.current_planet = slice9_origin
+    var slice9_profiles: Array = scene._contract_destination_profiles(slice9_origin)
+    var smuggling_profile: Dictionary = scene._best_smuggling_profile(slice9_origin, slice9_profiles)
+    if smuggling_profile.is_empty():
+        _fail("faction laws did not produce a smuggling opportunity")
+        return
+    var smuggling_commodity := String(smuggling_profile.get("commodity", ""))
+    var smuggling_destination := String(smuggling_profile.get("destination", ""))
+    if String(scene._planet_commodity_legality(smuggling_destination, smuggling_commodity).status) != "ILLEGAL":
+        _fail("smuggling opportunity does not target illegal cargo at destination")
+        return
+
+    var smuggling_reward: Dictionary = scene._contract_reward_breakdown("delivery", slice9_origin, smuggling_destination, smuggling_commodity, true)
+    var legal_reward: Dictionary = scene._contract_reward_breakdown("delivery", slice9_origin, smuggling_destination, "Food", false)
+    if int(smuggling_reward.cargo_premium) <= int(legal_reward.cargo_premium) or int(smuggling_reward.reward) <= int(smuggling_reward.base_reward):
+        _fail("smuggling cargo did not receive an illegal-cargo premium")
+        return
+
     scene.active_contract.clear()
     scene.rng.seed = 4242
     scene._regenerate_contracts()
     var saw_delivery: bool = false
     var saw_passenger: bool = false
     var saw_bounty: bool = false
+    var saw_smuggling: bool = false
+    var saw_pirate_risk_premium: bool = false
+    var legal_delivery_fixture: Dictionary = {}
+    var smuggling_fixture: Dictionary = {}
+    for contract in scene.contract_board:
+        if int(contract.get("schema", 0)) != scene.CONTRACT_SCHEMA_VERSION:
+            _fail("generated contract missing Slice 9 schema")
+            return
+        if not scene.planet_names.has(String(contract.destination)):
+            _fail("contract destination is not generated planet ID")
+            return
+        if not contract.has("issuer_name") or not contract.has("pirate_exposure") or not contract.has("risk_premium") or not contract.has("relation_reward"):
+            _fail("generated contract missing political/economic metadata")
+            return
+        var exposure := float(contract.get("pirate_exposure", 0.0))
+        if exposure > 0.001 and int(contract.get("risk_premium", 0)) > 0:
+            saw_pirate_risk_premium = true
+        match String(contract.type):
+            "delivery":
+                saw_delivery = true
+                if bool(contract.get("smuggling", false)):
+                    saw_smuggling = true
+                    smuggling_fixture = contract.duplicate(true)
+                    if not String(contract.get("issuer_faction", "")).is_empty() or int(contract.get("relation_reward", -1)) != 0:
+                        _fail("underworld smuggling contract incorrectly grants faction reputation")
+                        return
+                    if String(scene._planet_commodity_legality(String(contract.destination), String(contract.commodity)).status) != "ILLEGAL":
+                        _fail("generated smuggling contract is not illegal at destination")
+                        return
+                elif legal_delivery_fixture.is_empty():
+                    legal_delivery_fixture = contract.duplicate(true)
+                    if String(scene._planet_commodity_legality(String(contract.destination), String(contract.commodity)).status) == "ILLEGAL":
+                        _fail("legal freight contract selected illegal destination cargo")
+                        return
+            "passenger":
+                saw_passenger = true
+                if int(contract.get("relation_reward", 0)) <= 0:
+                    _fail("legitimate passenger contract has no faction reputation value")
+                    return
+            "bounty":
+                saw_bounty = true
+                if int(contract.get("relation_reward", 0)) <= 0:
+                    _fail("legitimate bounty has no faction reputation value")
+                    return
+    if not saw_delivery or not saw_passenger or not saw_bounty or not saw_smuggling:
+        _fail("Slice 9 contract board lost legal/smuggling/passenger/bounty classes")
+        return
+    if not saw_pirate_risk_premium:
+        _fail("contract board produced no pirate-region risk premium")
+        return
+
+    # Contract cargo participates in the same contraband scanner as player-owned cargo.
+    if smuggling_fixture.is_empty():
+        _fail("missing smuggling fixture for scan integration")
+        return
+    var scan_destination := String(smuggling_fixture.destination)
+    var scan_commodity := String(smuggling_fixture.commodity)
+    var scan_faction := scene._planet_primary_faction(scan_destination)
+    if scan_faction.is_empty() or scene.PoliticalWorld.faction_commodity_legal(scene.political_world, scan_faction, scan_commodity):
+        _fail("smuggling fixture has no enforcing destination faction")
+        return
+    scene.active_contract = smuggling_fixture.duplicate(true)
+    scene.cargo[scan_commodity] = 0
+    scene.encounter_active = true
+    scene.encounter_mode = "police"
+    scene.encounter_faction_id = scan_faction
+    scene.encounter_hostile = false
+    scene.police_scan_attempted = false
+    if not scene._begin_police_scan(scan_faction, 1.0):
+        _fail("could not start scan for smuggling contract")
+        return
+    var smuggling_scan: Dictionary = scene._complete_police_scan()
+    if bool(smuggling_scan.get("clear", true)) or not bool(smuggling_scan.get("contract_confiscated", false)) or int(smuggling_scan.get("units", 0)) < 1:
+        _fail("police scan did not confiscate illegal contract cargo")
+        return
+    if not scene.active_contract.is_empty():
+        _fail("confiscated smuggling contract remained active")
+        return
+    scene._end_route_encounter()
+    scene._adjust_faction_heat(scan_faction, -scene._faction_heat(scan_faction), false)
+    scene._adjust_faction_relation(scan_faction, -scene._faction_relation(scan_faction), false)
+
+    # Completing a legitimate faction freight job moves commodity stock and improves issuer relation.
+    if legal_delivery_fixture.is_empty():
+        _fail("missing legal freight fixture for completion integration")
+        return
+    var legal_dest := String(legal_delivery_fixture.destination)
+    var legal_commodity := String(legal_delivery_fixture.commodity)
+    var legal_issuer := String(legal_delivery_fixture.get("issuer_faction", ""))
+    var stock_before_contract := float(scene.markets[legal_dest][legal_commodity].stock)
+    var relation_before_contract := scene._faction_relation(legal_issuer) if not legal_issuer.is_empty() else 0
+    scene.current_planet = legal_dest
+    scene.active_contract = legal_delivery_fixture.duplicate(true)
+    var completed_reward := scene._complete_contract_if_ready()
+    if completed_reward != int(legal_delivery_fixture.reward):
+        _fail("legitimate freight completion lost its reward")
+        return
+    if float(scene.markets[legal_dest][legal_commodity].stock) <= stock_before_contract:
+        _fail("completed freight did not feed delivered cargo into destination economy")
+        return
+    if not legal_issuer.is_empty() and scene._faction_relation(legal_issuer) <= relation_before_contract:
+        _fail("completed legitimate faction contract did not improve issuer relation")
+        return
+
+    # Old saved contract records upgrade in place without changing their original payout.
+    var legacy_contract := {"id": 9911, "type": "delivery", "destination": slice9_illegal_capital, "difficulty": 2, "reward": 777}
+    var upgraded_contract: Dictionary = scene._upgrade_contract_record(legacy_contract, slice9_origin)
+    if int(upgraded_contract.get("schema", 0)) != scene.CONTRACT_SCHEMA_VERSION or int(upgraded_contract.reward) != 777:
+        _fail("legacy contract upgrade changed identity/payout")
+        return
+
+    # Contract board still supplies all three contract classes against generated IDs.
+    scene.current_planet = lush
+    scene.active_contract.clear()
+    scene.rng.seed = 4242
+    scene._regenerate_contracts()
+    saw_delivery = false
+    saw_passenger = false
+    saw_bounty = false
     for contract in scene.contract_board:
         if not scene.planet_names.has(String(contract.destination)):
             _fail("contract destination is not generated planet ID")
@@ -1760,6 +1931,11 @@ func _initialize() -> void:
             "bounty": saw_bounty = true
     if not saw_delivery or not saw_passenger or not saw_bounty:
         _fail("contract board lost required job classes")
+        return
+    scene._save_all_state()
+    var slice9_saved := ConfigFile.new()
+    if slice9_saved.load(scene._active_world_path()) != OK or int(slice9_saved.get_value("world", "contract_schema", 0)) != scene.CONTRACT_SCHEMA_VERSION:
+        _fail("Slice 9 contract schema did not persist")
         return
 
     # Route length alone controls travel time; danger/contract pressure do not extend the lane.
