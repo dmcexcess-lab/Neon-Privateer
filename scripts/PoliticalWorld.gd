@@ -148,7 +148,7 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             "name": FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()] + " " + FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()],
             "color": FACTION_COLORS[i % FACTION_COLORS.size()],
             "capital_id": capital_ids[i],
-            "radius": rng.randf_range(470.0, 585.0),
+            "radius": rng.randf_range(640.0, 760.0),
             "strength": rng.randf_range(0.98, 1.16),
             "relation": 0,
             "laws": {
