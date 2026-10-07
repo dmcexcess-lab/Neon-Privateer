@@ -6,6 +6,7 @@ const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
 const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 2
 const CRIME_SCHEMA_VERSION := 1
+const ENFORCEMENT_SCHEMA_VERSION := 1
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -131,6 +132,10 @@ const POLICE_SHIP_KILL_RELATION_LOSS := 12
 const POLICE_SHIP_KILL_HEAT_GAIN := 15
 const HEAVY_ENFORCEMENT_KILL_RELATION_LOSS := 20
 const HEAVY_ENFORCEMENT_KILL_HEAT_GAIN := 25
+const POLICE_SCAN_RELATION_BASE_LOSS := 6
+const POLICE_SCAN_HEAT_BASE_GAIN := 30
+const POLICE_SCAN_FINE_BASE := 50
+const POLICE_SCAN_FINE_VALUE_FACTOR := 0.25
 const ENEMY_SHOT_SPEED := 255.0
 const ENEMY_SHOT_RADIUS := 5.0
 const ENEMY_MISSILE_SPEED := 190.0
@@ -201,6 +206,13 @@ var encounter_hostile := false
 var encounter_timer := 0.0
 var encounter_clock := 999.0
 var encounter_banner_timer := 0.0
+var police_scan_active := false
+var police_scan_faction_id := ""
+var police_scan_timer := 0.0
+var police_scan_duration := 0.0
+var police_scan_attempted := false
+var police_scan_result_timer := 0.0
+var police_scan_result_text := ""
 # Legacy mirrors kept for pre-Slice-5 run snapshots/tests.
 var pirate_attack_active := false
 var pirate_attack_timer := 0.0
@@ -479,6 +491,13 @@ func _reset_career_state() -> void:
     encounter_timer = 0.0
     encounter_clock = 999.0
     encounter_banner_timer = 0.0
+    police_scan_active = false
+    police_scan_faction_id = ""
+    police_scan_timer = 0.0
+    police_scan_duration = 0.0
+    police_scan_attempted = false
+    police_scan_result_timer = 0.0
+    police_scan_result_text = ""
     pirate_attack_active = false
     pirate_attack_timer = 0.0
     pirate_attack_clock = 999.0
@@ -658,6 +677,12 @@ func _political_laws_at(position: Vector2) -> Dictionary:
 func _ensure_crime_schema() -> bool:
     return PoliticalWorld.ensure_crime_schema(political_world)
 
+func _ensure_enforcement_schema() -> bool:
+    return PoliticalWorld.ensure_enforcement_schema(political_world)
+
+func _faction_level(faction_id: String) -> int:
+    return PoliticalWorld.faction_level(political_world, faction_id)
+
 func _faction_relation(faction_id: String) -> int:
     return PoliticalWorld.faction_relation(political_world, faction_id)
 
@@ -724,7 +749,8 @@ func _faction_status_summary(faction_id: String) -> String:
     if faction_id.is_empty():
         return "NO FACTION"
     var state := _faction_crime_state(faction_id)
-    return "REP %+d %s  HEAT %d %s" % [
+    return "L%d  REP %+d %s  H%d %s" % [
+        _faction_level(faction_id),
         int(state.get("relation", 0)),
         String(state.get("relation_label", "NEUTRAL")),
         int(state.get("heat", 0)),
@@ -865,6 +891,7 @@ func _init_privateer_world() -> void:
     if current_planet.is_empty() and not planet_names.is_empty():
         current_planet = planet_names[0]
     _ensure_crime_schema()
+    _ensure_enforcement_schema()
     _ensure_commodity_schema()
     if contract_board.is_empty():
         _regenerate_contracts()
@@ -1094,9 +1121,17 @@ func _start_route(destination: String) -> bool:
     encounter_active = false
     encounter_mode = ""
     encounter_faction_id = ""
+    encounter_hostile = false
     encounter_timer = 0.0
-    encounter_clock = rng.randf_range(5.0, 8.5)
+    encounter_clock = rng.randf_range(8.0, 13.0)
     encounter_banner_timer = 0.0
+    police_scan_active = false
+    police_scan_faction_id = ""
+    police_scan_timer = 0.0
+    police_scan_duration = 0.0
+    police_scan_attempted = false
+    police_scan_result_timer = 0.0
+    police_scan_result_text = ""
     pirate_attack_active = false
     pirate_attack_timer = 0.0
     pirate_attack_clock = encounter_clock
@@ -1145,20 +1180,132 @@ func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
 func _current_encounter_eligibility() -> Dictionary:
     return _encounter_eligibility_for_context(_current_flight_political_context())
 
-func _encounter_cooldown(eligibility: Dictionary) -> float:
-    var state := String(eligibility.get("state", "UNCONTROLLED"))
+func _encounter_roll_chance(eligibility: Dictionary) -> float:
     var mode := String(eligibility.get("mode", ""))
     if mode == "pirate":
-        if state == "UNCONTROLLED":
-            return rng.randf_range(6.5, 10.5)
-        return rng.randf_range(8.0, 13.0)
+        return 0.34 if String(eligibility.get("state", "UNCONTROLLED")) == "UNCONTROLLED" else 0.25
     if mode == "police":
         var faction_id := String(eligibility.get("faction_id", ""))
-        var heat := _faction_heat(faction_id)
-        var pressure := clampf(float(heat) / 100.0, 0.0, 1.0)
-        var base := rng.randf_range(7.5, 12.5) if state == "CORE" else rng.randf_range(9.0, 14.0)
-        return maxf(4.5, base - pressure * 3.0)
+        # Police occurrence is faction-level + RNG only. Route/contract difficulty and heat are excluded.
+        return clampf(0.14 + float(_faction_level(faction_id)) * 0.05, 0.0, 0.95)
+    return 0.0
+
+func _encounter_opportunity_interval(eligibility: Dictionary) -> float:
+    var mode := String(eligibility.get("mode", ""))
+    if mode == "police":
+        return rng.randf_range(10.0, 15.0)
+    if mode == "pirate":
+        return rng.randf_range(8.5, 13.5)
     return 999.0
+
+func _encounter_cooldown(eligibility: Dictionary) -> float:
+    return _encounter_opportunity_interval(eligibility)
+
+func _try_start_route_encounter(eligibility: Dictionary, roll: float = -1.0) -> bool:
+    if not bool(eligibility.get("eligible", false)):
+        return false
+    var use_roll := rng.randf() if roll < 0.0 else roll
+    if use_roll < _encounter_roll_chance(eligibility):
+        return _start_route_encounter(eligibility)
+    encounter_clock = _encounter_opportunity_interval(eligibility)
+    _sync_legacy_pirate_state()
+    return false
+
+func _police_scan_chance(faction_id: String) -> float:
+    return clampf(0.14 + float(_faction_level(faction_id)) * 0.05, 0.0, 0.95)
+
+func _police_scan_duration_for_faction(faction_id: String) -> float:
+    return clampf(6.2 - float(_faction_level(faction_id)) * 0.4, 4.2, 5.8)
+
+func _illegal_cargo_for_faction(faction_id: String) -> Dictionary:
+    var illegal: Dictionary = {}
+    for commodity in PoliticalWorld.RESTRICTED_COMMODITIES:
+        var quantity := int(cargo.get(commodity, 0))
+        if quantity > 0 and not PoliticalWorld.faction_commodity_legal(political_world, faction_id, commodity):
+            illegal[commodity] = quantity
+    return illegal
+
+func _begin_police_scan(faction_id: String, duration_override: float = -1.0) -> bool:
+    if faction_id.is_empty() or encounter_mode != "police" or encounter_hostile:
+        return false
+    police_scan_active = true
+    police_scan_attempted = true
+    police_scan_faction_id = faction_id
+    police_scan_duration = duration_override if duration_override > 0.0 else _police_scan_duration_for_faction(faction_id)
+    police_scan_timer = police_scan_duration
+    police_scan_result_timer = 0.0
+    police_scan_result_text = ""
+    encounter_timer = maxf(encounter_timer, police_scan_duration + 1.0)
+    weapon_banner_text = "CARGO SCAN"
+    weapon_banner_timer = 1.2
+    return true
+
+func _maybe_begin_police_scan(roll: float = -1.0) -> bool:
+    if encounter_mode != "police" or encounter_hostile or police_scan_attempted or encounter_faction_id.is_empty():
+        return false
+    police_scan_attempted = true
+    var use_roll := rng.randf() if roll < 0.0 else roll
+    if use_roll < _police_scan_chance(encounter_faction_id):
+        return _begin_police_scan(encounter_faction_id)
+    return false
+
+func _cancel_police_scan(reason: String = "") -> void:
+    if police_scan_active and not reason.is_empty():
+        police_scan_result_text = reason
+        police_scan_result_timer = 1.2
+    police_scan_active = false
+    police_scan_faction_id = ""
+    police_scan_timer = 0.0
+    police_scan_duration = 0.0
+
+func _complete_police_scan() -> Dictionary:
+    if not police_scan_active or police_scan_faction_id.is_empty():
+        return {}
+    var faction_id := police_scan_faction_id
+    var illegal := _illegal_cargo_for_faction(faction_id)
+    police_scan_active = false
+    police_scan_timer = 0.0
+
+    if illegal.is_empty():
+        police_scan_result_text = "SCAN CLEAR"
+        police_scan_result_timer = 2.0
+        police_scan_faction_id = ""
+        return {"clear": true, "units": 0, "fine": 0}
+
+    var total_units := 0
+    var total_value := 0
+    for commodity in illegal.keys():
+        var quantity := int(illegal[commodity])
+        total_units += quantity
+        total_value += quantity * _commodity_base_price(String(commodity))
+        cargo[commodity] = maxi(0, int(cargo.get(commodity, 0)) - quantity)
+
+    var fine := POLICE_SCAN_FINE_BASE + int(round(float(total_value) * POLICE_SCAN_FINE_VALUE_FACTOR))
+    var paid := mini(research_credits, fine)
+    research_credits -= paid
+    var relation_loss := mini(20, POLICE_SCAN_RELATION_BASE_LOSS + total_units * 2)
+    var heat_gain := mini(50, POLICE_SCAN_HEAT_BASE_GAIN + maxi(0, total_units - 1) * 3)
+    _record_faction_crime(faction_id, relation_loss, heat_gain, "contraband_scan", false)
+    encounter_hostile = _police_hostile_eligible(faction_id)
+    police_scan_result_text = "CONTRABAND %d  FINE %d" % [total_units, paid]
+    police_scan_result_timer = 2.5
+    police_scan_faction_id = ""
+    weapon_banner_text = "CONTRABAND FOUND"
+    weapon_banner_timer = 1.8
+    _save_privateer_state()
+    return {"clear": false, "units": total_units, "fine": paid}
+
+func _update_police_scan(delta: float) -> void:
+    police_scan_result_timer = maxf(0.0, police_scan_result_timer - delta)
+    if not police_scan_active:
+        return
+    if not encounter_active or encounter_mode != "police" or encounter_hostile or encounter_faction_id != police_scan_faction_id:
+        _cancel_police_scan()
+        return
+    police_scan_timer = maxf(0.0, police_scan_timer - delta)
+    if police_scan_timer <= 0.0:
+        _complete_police_scan()
+
 
 func _encounter_duration(eligibility: Dictionary) -> float:
     var mode := String(eligibility.get("mode", ""))
@@ -1174,6 +1321,8 @@ func _sync_legacy_pirate_state() -> void:
     pirate_banner_timer = encounter_banner_timer if pirate_attack_active else 0.0
 
 func _end_route_encounter(eligibility: Dictionary = {}) -> void:
+    _cancel_police_scan()
+    police_scan_attempted = false
     encounter_active = false
     encounter_mode = ""
     encounter_faction_id = ""
@@ -1199,7 +1348,10 @@ func _start_route_encounter(eligibility: Dictionary) -> bool:
     else:
         weapon_banner_text = "PIRATE CONTACT"
     weapon_banner_timer = 1.8
+    police_scan_attempted = false
     _sync_legacy_pirate_state()
+    if encounter_mode == "police" and not encounter_hostile:
+        _maybe_begin_police_scan()
     return true
 
 func _update_route_encounter(delta: float) -> void:
@@ -1219,9 +1371,11 @@ func _update_route_encounter(delta: float) -> void:
         var was_hostile := encounter_hostile
         encounter_hostile = bool(eligibility.get("hostile", encounter_mode == "pirate"))
         if encounter_mode == "police" and encounter_hostile and not was_hostile:
+            _cancel_police_scan()
             var faction := PoliticalWorld.faction_record(political_world, encounter_faction_id)
             weapon_banner_text = "%s ENFORCEMENT" % String(faction.get("name", "FACTION")).to_upper()
             weapon_banner_timer = 1.8
+        _update_police_scan(delta)
         encounter_timer = maxf(0.0, encounter_timer - delta)
         if encounter_timer <= 0.0:
             _end_route_encounter(eligibility)
@@ -1238,7 +1392,7 @@ func _update_route_encounter(delta: float) -> void:
         encounter_clock = _encounter_cooldown(eligibility)
     encounter_clock -= delta
     if encounter_clock <= 0.0:
-        _start_route_encounter(eligibility)
+        _try_start_route_encounter(eligibility)
     else:
         _sync_legacy_pirate_state()
 
@@ -1302,6 +1456,7 @@ func _complete_contract_if_ready() -> int:
     return reward
 
 func _arrive_at_destination() -> void:
+    _cancel_police_scan("SCAN ENDED — ARRIVAL")
     playing = false
     route_active = false
     boss_active = false
@@ -1332,6 +1487,7 @@ func _arrive_at_destination() -> void:
     queue_redraw()
 
 func _fail_route(reason: String) -> void:
+    _cancel_police_scan()
     playing = false
     route_active = false
     boss_active = false
@@ -1364,6 +1520,7 @@ func _save_privateer_state() -> void:
     cfg.set_value("political", "world", political_world)
     cfg.set_value("world", "economy_schema", ECONOMY_SCHEMA_VERSION)
     cfg.set_value("world", "crime_schema", CRIME_SCHEMA_VERSION)
+    cfg.set_value("world", "enforcement_schema", ENFORCEMENT_SCHEMA_VERSION)
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
@@ -1420,6 +1577,7 @@ func _load_privateer_state() -> void:
         migrated_world = true
 
     var crime_schema_changed: bool = _ensure_crime_schema()
+    var enforcement_schema_changed: bool = _ensure_enforcement_schema()
     cargo = cfg.get_value("world", "cargo", cargo)
     var commodity_schema_changed: bool = _ensure_commodity_schema()
     contract_board.clear()
@@ -1449,7 +1607,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or crime_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or enforcement_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -2075,6 +2233,13 @@ func _start_game() -> void:
     weapon_banner_text = ""
     loot_banner_timer = 0.0
     loot_banner_text = ""
+    police_scan_active = false
+    police_scan_faction_id = ""
+    police_scan_timer = 0.0
+    police_scan_duration = 0.0
+    police_scan_attempted = false
+    police_scan_result_timer = 0.0
+    police_scan_result_text = ""
     dash_cooldown = 0.0
     dash_timer = 0.0
     dash_score_timer = 0.0
@@ -2623,6 +2788,13 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "encounter_timer", encounter_timer)
     cfg.set_value("run", "encounter_clock", encounter_clock)
     cfg.set_value("run", "encounter_banner_timer", encounter_banner_timer)
+    cfg.set_value("run", "police_scan_active", police_scan_active)
+    cfg.set_value("run", "police_scan_faction_id", police_scan_faction_id)
+    cfg.set_value("run", "police_scan_timer", police_scan_timer)
+    cfg.set_value("run", "police_scan_duration", police_scan_duration)
+    cfg.set_value("run", "police_scan_attempted", police_scan_attempted)
+    cfg.set_value("run", "police_scan_result_timer", police_scan_result_timer)
+    cfg.set_value("run", "police_scan_result_text", police_scan_result_text)
     # Legacy keys remain for pre-Slice-5 compatibility.
     cfg.set_value("run", "pirate_active", encounter_active and encounter_mode == "pirate")
     cfg.set_value("run", "pirate_timer", encounter_timer if encounter_mode == "pirate" else 0.0)
@@ -2704,6 +2876,15 @@ func _load_run_snapshot() -> bool:
     encounter_timer = float(cfg.get_value("run", "encounter_timer", cfg.get_value("run", "pirate_timer", 0.0)))
     encounter_clock = float(cfg.get_value("run", "encounter_clock", cfg.get_value("run", "pirate_clock", 999.0)))
     encounter_banner_timer = float(cfg.get_value("run", "encounter_banner_timer", 0.0))
+    police_scan_active = bool(cfg.get_value("run", "police_scan_active", false))
+    police_scan_faction_id = String(cfg.get_value("run", "police_scan_faction_id", ""))
+    police_scan_timer = float(cfg.get_value("run", "police_scan_timer", 0.0))
+    police_scan_duration = float(cfg.get_value("run", "police_scan_duration", 0.0))
+    police_scan_attempted = bool(cfg.get_value("run", "police_scan_attempted", false))
+    police_scan_result_timer = float(cfg.get_value("run", "police_scan_result_timer", 0.0))
+    police_scan_result_text = String(cfg.get_value("run", "police_scan_result_text", ""))
+    if police_scan_active and (encounter_mode != "police" or encounter_hostile or police_scan_faction_id != encounter_faction_id):
+        _cancel_police_scan()
     _sync_legacy_pirate_state()
     hub_open = not route_active
     objects.clear()
@@ -4144,6 +4325,10 @@ func _draw_hud() -> void:
 
     if boss_active:
         _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
+    elif police_scan_active:
+        _text("CARGO SCAN %.1fs" % police_scan_timer, Vector2(121, 146), 15, Color("ffd166"))
+    elif police_scan_result_timer > 0.0 and not police_scan_result_text.is_empty():
+        _text_center(police_scan_result_text, 146.0, 13, Color("ff8fa6") if police_scan_result_text.begins_with("CONTRABAND") else Color("6bffb0"), 52.0, 338.0)
     elif encounter_active and encounter_mode == "pirate":
         _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
     elif encounter_active and encounter_mode == "police":
