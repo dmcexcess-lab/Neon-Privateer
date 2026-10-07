@@ -4,10 +4,10 @@ const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
 const POLITICAL_WORLD_SCHEMA := 2
-const ECONOMY_SCHEMA_VERSION := 2
+const ECONOMY_SCHEMA_VERSION := 3
 const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
-const CONTRACT_SCHEMA_VERSION := 1
+const CONTRACT_SCHEMA_VERSION := 2
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -79,6 +79,17 @@ const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
 const HUB_CAREERS_RECT := Rect2(35.0, 700.0, 320.0, 58.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
 const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
+const BANK_ACCOUNT_TAB_RECT := Rect2(18.0, 126.0, 84.0, 42.0)
+const BANK_GREEN_TAB_RECT := Rect2(106.0, 126.0, 84.0, 42.0)
+const BANK_GREY_TAB_RECT := Rect2(194.0, 126.0, 84.0, 42.0)
+const BANK_CURRENCY_TAB_RECT := Rect2(282.0, 126.0, 90.0, 42.0)
+const BANK_DEPOSIT_RECT := Rect2(32.0, 250.0, 326.0, 64.0)
+const BANK_WITHDRAW_RECT := Rect2(32.0, 332.0, 326.0, 64.0)
+const BANK_PAGE_PREV_RECT := Rect2(32.0, 668.0, 142.0, 50.0)
+const BANK_PAGE_NEXT_RECT := Rect2(216.0, 668.0, 142.0, 50.0)
+const BANK_MARKET_ROWS_PER_PAGE := 6
+const BANK_INTEREST_RATE := 0.03
+const DOCKED_MARKET_TICK_SECONDS := 10.0
 const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
 const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
@@ -173,7 +184,16 @@ var level := 1
 var shop_open := false
 var last_level_bonus := 0
 var score := 0
+# Legacy variable name retained across the codebase: this is now carried CASH.
 var research_credits := 1200
+var bank_balance := 0
+var currency_holdings: Dictionary = {}
+var currency_markets: Dictionary = {}
+var bank_interest_cycles := 0
+var bank_last_interest := 0
+var bank_view := "account"
+var bank_market_page := 0
+var docked_market_clock := 0.0
 var research_ship_speed := 0
 var research_dash := 0
 var research_damage := 0
@@ -241,7 +261,52 @@ var pirate_attack_clock := 999.0
 var pirate_banner_timer := 0.0
 var last_trip_summary := "Docked"
 var planet_names: Array[String] = []
-var commodity_names: Array[String] = ["Food", "Ore", "Medicine", "Electronics", "Fuel", "Arms", "Narcotics"]
+var legal_commodity_names: Array[String] = [
+    "Grain", "Protein", "Produce", "Luxury Food",
+    "Iron", "Copper", "Titanium", "Rare Alloys",
+    "First Aid", "Antibiotics", "Vaccines", "Regenerative Medicine"
+]
+var grey_commodity_names: Array[String] = [
+    "Small Arms", "Heavy Weapons", "Explosives", "Military Tech",
+    "Stims", "Sedatives", "Euphorics", "Neurodust",
+    "Holovids", "Sim Chips", "VR Experiences", "Unlicensed Media"
+]
+var commodity_names: Array[String] = legal_commodity_names + grey_commodity_names
+const LEGACY_COMMODITY_MAP := {
+    "Food": "Grain",
+    "Ore": "Iron",
+    "Medicine": "First Aid",
+    "Electronics": "Sim Chips",
+    "Fuel": "Titanium",
+    "Arms": "Small Arms",
+    "Narcotics": "Stims"
+}
+const COMMODITY_INFO := {
+    "Grain": {"category": "food", "base": 20, "volatility": 0.008},
+    "Protein": {"category": "food", "base": 45, "volatility": 0.012},
+    "Produce": {"category": "food", "base": 32, "volatility": 0.018},
+    "Luxury Food": {"category": "food", "base": 110, "volatility": 0.035},
+    "Iron": {"category": "metal", "base": 40, "volatility": 0.010},
+    "Copper": {"category": "metal", "base": 70, "volatility": 0.015},
+    "Titanium": {"category": "metal", "base": 170, "volatility": 0.028},
+    "Rare Alloys": {"category": "metal", "base": 420, "volatility": 0.050},
+    "First Aid": {"category": "medicine", "base": 55, "volatility": 0.010},
+    "Antibiotics": {"category": "medicine", "base": 95, "volatility": 0.018},
+    "Vaccines": {"category": "medicine", "base": 180, "volatility": 0.025},
+    "Regenerative Medicine": {"category": "medicine", "base": 520, "volatility": 0.055},
+    "Small Arms": {"category": "weapons", "base": 220, "volatility": 0.030},
+    "Heavy Weapons": {"category": "weapons", "base": 520, "volatility": 0.050},
+    "Explosives": {"category": "weapons", "base": 380, "volatility": 0.060},
+    "Military Tech": {"category": "weapons", "base": 900, "volatility": 0.075},
+    "Stims": {"category": "narcotics", "base": 160, "volatility": 0.060},
+    "Sedatives": {"category": "narcotics", "base": 240, "volatility": 0.045},
+    "Euphorics": {"category": "narcotics", "base": 430, "volatility": 0.080},
+    "Neurodust": {"category": "narcotics", "base": 780, "volatility": 0.100},
+    "Holovids": {"category": "entertainment", "base": 75, "volatility": 0.020},
+    "Sim Chips": {"category": "entertainment", "base": 140, "volatility": 0.035},
+    "VR Experiences": {"category": "entertainment", "base": 280, "volatility": 0.050},
+    "Unlicensed Media": {"category": "entertainment", "base": 500, "volatility": 0.080}
+}
 var markets: Dictionary = {}
 var cargo: Dictionary = {}
 var contract_board: Array[Dictionary] = []
