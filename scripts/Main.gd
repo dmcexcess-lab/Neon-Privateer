@@ -2,7 +2,7 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.webp"
+const PRIVATEER_UI_ATLAS_PATH := "res://art/privateer_ui_atlas.b64"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -10,10 +10,10 @@ const ART_BG_HUB := Rect2(0.0, 0.0, 195.0, 422.0)
 const ART_BG_MARKET := Rect2(195.0, 0.0, 195.0, 422.0)
 const ART_BG_OPS := Rect2(0.0, 422.0, 195.0, 422.0)
 const ART_BG_UPGRADES := Rect2(195.0, 422.0, 195.0, 422.0)
-const ART_PLANET_ASTER := Rect2(0.0, 844.0, 192.0, 192.0)
-const ART_PLANET_CINDER := Rect2(192.0, 844.0, 192.0, 192.0)
-const ART_PLANET_VESPER := Rect2(0.0, 1036.0, 192.0, 192.0)
-const ART_PLANET_HELIX := Rect2(192.0, 1036.0, 192.0, 192.0)
+const ART_PLANET_ASTER := Rect2(0.0, 844.0, 195.0, 192.0)
+const ART_PLANET_CINDER := Rect2(195.0, 844.0, 195.0, 192.0)
+const ART_PLANET_VESPER := Rect2(0.0, 1036.0, 195.0, 192.0)
+const ART_PLANET_HELIX := Rect2(195.0, 1036.0, 195.0, 192.0)
 const PLAYER_Y := 680.0
 const LEFT := 32.0
 const RIGHT := 358.0
@@ -3255,11 +3255,19 @@ func _draw_career_slots_menu() -> void:
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _load_privateer_ui_art() -> void:
     privateer_ui_atlas = null
-    var bytes := FileAccess.get_file_as_bytes(PRIVATEER_UI_ATLAS_PATH)
+    if not FileAccess.file_exists(PRIVATEER_UI_ATLAS_PATH):
+        return
+    var file := FileAccess.open(PRIVATEER_UI_ATLAS_PATH, FileAccess.READ)
+    if file == null:
+        return
+    var encoded := file.get_as_text().strip_edges()
+    var bytes := Marshalls.base64_to_raw(encoded)
     if bytes.is_empty():
         return
     var image := Image.new()
-    if image.load_webp_from_buffer(bytes) != OK:
+    if image.load_jpg_from_buffer(bytes) != OK:
+        return
+    if image.get_width() != 390 or image.get_height() != 1228:
         return
     privateer_ui_atlas = ImageTexture.create_from_image(image)
 
