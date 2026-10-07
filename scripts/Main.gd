@@ -2,8 +2,8 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
-const PRIVATEER_UI_ATLAS_PATH := "res://art/privateer_ui_atlas_%d.b64"
-const PRIVATEER_UI_ATLAS_CHUNKS := 4
+const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.webp"
+const PRIVATEER_UI_ATLAS_TEXTURE: Texture2D = preload("res://assets/privateer_ui/privateer_ui_atlas.webp")
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
 # the arcade-flight renderer remains fully procedural.
@@ -3255,25 +3255,9 @@ func _draw_career_slots_menu() -> void:
     draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _load_privateer_ui_art() -> void:
-    privateer_ui_atlas = null
-    var encoded := ""
-    for chunk_index in PRIVATEER_UI_ATLAS_CHUNKS:
-        var chunk_path := PRIVATEER_UI_ATLAS_PATH % chunk_index
-        if not FileAccess.file_exists(chunk_path):
-            return
-        var file := FileAccess.open(chunk_path, FileAccess.READ)
-        if file == null:
-            return
-        encoded += file.get_as_text().strip_edges()
-    var bytes := Marshalls.base64_to_raw(encoded)
-    if bytes.is_empty():
-        return
-    var image := Image.new()
-    if image.load_jpg_from_buffer(bytes) != OK:
-        return
-    if image.get_width() != 390 or image.get_height() != 1228:
-        return
-    privateer_ui_atlas = ImageTexture.create_from_image(image)
+    # Use Godot's imported texture resource directly. This creates an explicit
+    # dependency so Web export must package the generated art.
+    privateer_ui_atlas = PRIVATEER_UI_ATLAS_TEXTURE
 
 func _privateer_art_ready() -> bool:
     return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
