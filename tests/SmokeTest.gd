@@ -172,11 +172,11 @@ func _production_world_issue(scene, world: Dictionary) -> String:
     var states: Dictionary = {}
     for gy in 13:
         for gx in 17:
-            var sample := bounds.position + Vector2(
+            var sample: Vector2 = bounds.position + Vector2(
                 bounds.size.x * float(gx) / 16.0,
                 bounds.size.y * float(gy) / 12.0
             )
-            var context := scene.PoliticalWorld.political_context_at(world, sample)
+            var context: Dictionary = scene.PoliticalWorld.political_context_at(world, sample)
             states[String(context.get("state", ""))] = true
     for required_state in ["CORE", "CONTROLLED", "CONTESTED", "UNCONTROLLED"]:
         if not states.has(required_state):
@@ -194,8 +194,8 @@ func _production_world_issue(scene, world: Dictionary) -> String:
             return "route segments"
         if float(segments[0].get("start_t", 1.0)) > 0.001 or float(segments[-1].get("end_t", 0.0)) < 0.999:
             return "route segment coverage"
-        var danger := int(route.get("danger", 0))
-        var wealth := int(route.get("wealth", 0))
+        var danger: int = int(route.get("danger", 0))
+        var wealth: int = int(route.get("wealth", 0))
         if danger < 1 or danger > 5:
             return "route danger"
         if wealth < 1 or wealth > 5:
@@ -213,7 +213,7 @@ func _production_world_issue(scene, world: Dictionary) -> String:
     var seen: Dictionary = {first_id: true}
     var queue: Array[String] = [first_id]
     while not queue.is_empty():
-        var current := String(queue.pop_front())
+        var current: String = String(queue.pop_front())
         for neighbor in scene.PoliticalWorld.neighbors(world, current):
             if not seen.has(neighbor):
                 seen[neighbor] = true
@@ -352,7 +352,7 @@ func _initialize() -> void:
     # satisfy the same topology/political invariants and reproduce exactly.
     for production_seed in range(7101, 7113):
         var production_world: Dictionary = scene.PoliticalWorld.generate(production_seed)
-        var issue := _production_world_issue(scene, production_world)
+        var issue: String = _production_world_issue(scene, production_world)
         if not issue.is_empty():
             _fail("production seed %d failed %s" % [production_seed, issue])
             return
