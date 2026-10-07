@@ -24,7 +24,7 @@ Each level adds:
 
 - +4% world/level scroll speed
 - +4% left/right steering speed
-- +8% near-miss score
+- ordinary near-miss score scales proportionally with actual Ship Speed
 
 Because level progress uses world scroll speed, a faster researched ship reaches the end of levels sooner in real time and faces faster incoming geometry.
 
@@ -34,7 +34,7 @@ Each level adds:
 
 - +35 px dash distance
 - only +40 px/s dash speed
-- +12% dash-near-miss score
+- dash-kill and dash-near-miss score scale proportionally with actual Dash Speed
 
 Dash has 10 research levels. The baseline dash is intentionally short and slow; research extends its reach much more aggressively than its raw speed.
 
@@ -107,7 +107,7 @@ Harder enemies multiply that same ladder by their normal enemy value:
 
 Normal kills are not speed-scaled. Ordinary near misses are multiplied by current Ship Speed relative to baseline Ship Speed. Dash kills and dash near misses are multiplied by current Dash Speed relative to baseline Dash Speed. The unupgraded ship therefore produces the exact 1/10/10/100 asteroid values above, while speed upgrades increase only their designated score classes.
 
-Each qualifying enemy is scored independently, even when several enemies are killed or near-missed at nearly the same time. Hard-lane difficulty does not add a multiplier to enemy-event scoring.
+Each qualifying enemy is scored independently, even when several enemies are killed or near-missed at nearly the same time. The hard lane adds **+35%** only when the scoring event physically occurs inside the hard-lane portion of the split structure. Score behind, ahead of, or outside that structure receives no hard-lane bonus.
 
 Green energy orb scoring remains separate: **25** base score, or **125** during the dash scoring window, before any active lane pickup bonus. Nonlethal weapon damage gives no score.
 
@@ -117,7 +117,7 @@ Green energy balls are the game's renewable score pickups.
 
 - They spawn randomly during normal play.
 - Their random spawn interval gets gradually shorter as levels increase.
-- During a station split, they spawn more frequently and are strongly biased toward the hard side.
+- While the split structure is crossing the **top generation boundary**, they spawn more frequently and are strongly biased toward the hard side. The instant the structure's trailing edge clears the top of the screen, pickup generation returns to normal.
 - Destroyed enemies have an **8% chance** to release a green energy ball.
 - Destroyed enemies separately have a **2% chance** to release a free **+1 hit** pickup.
 - Kill drops remain intentionally rare; most kills still award only their normal single-digit score.
@@ -144,9 +144,15 @@ Enemy progression remains gradual:
 
 Levels gradually lengthen, station splits become longer and more numerous, and enemy pressure rises slowly.
 
-## Split cleanup
+## Split structure lifecycle
 
-Hard/easy lane difficulty now ends exactly when the station split ends. Surviving lane-bound objects are released back to full-width movement, their hard-lane tag is cleared, and any lane-only speed modifier is removed. New spawns after the split always use neutral full-width rules, so the former hard half cannot stay harder after the station has passed.
+The split structure itself defines three separate rules:
+
+- **Generation:** the top edge of the screen is the generation boundary. Split-specific easy/hard spawning begins when the structure's first pixel reaches the top and ends immediately when its trailing/last pixel clears the top. Generation behind the structure is neutral full-width again even while the structure remains visible farther downscreen.
+- **Visuals:** the red hard-lane tint exists only inside the physical hard-lane portion of the structure and moves downscreen with it. It never fills the full screen.
+- **Scoring:** the +35% hard-lane bonus applies only to scoring events physically inside that hard-lane structure region.
+
+When the entire structure eventually leaves the playfield, surviving lane-bound objects are released back to full-width movement, their hard-lane tag is cleared, and lane-only speed modifiers are removed.
 
 ## Pause and persistence
 
