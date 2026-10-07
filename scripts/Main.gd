@@ -440,7 +440,10 @@ func _reset_career_state() -> void:
     research_start_seeker = false
     starting_weapon = "none"
 
-    current_planet = "Aster"
+    political_world.clear()
+    world_seed = 0
+    planet_names.clear()
+    current_planet = ""
     destination_planet = ""
     route_origin = ""
     route_distance = 1
@@ -454,7 +457,10 @@ func _reset_career_state() -> void:
     pirate_attack_timer = 0.0
     pirate_attack_clock = 999.0
     pirate_banner_timer = 0.0
-    last_trip_summary = "Docked at Aster"
+    last_trip_summary = "Docked"
+    system_map_zoom = 1.0
+    system_map_pan = Vector2.ZERO
+    system_map_touches.clear()
     markets.clear()
     cargo.clear()
     contract_board.clear()
@@ -575,7 +581,97 @@ func _open_profile_menu() -> void:
     weapon_research_open = false
     queue_redraw()
 
+func _generate_political_world(seed_override: int = 0) -> void:
+    if seed_override != 0:
+        world_seed = seed_override
+    elif world_seed == 0:
+        world_seed = int(rng.randi())
+        if world_seed == 0:
+            world_seed = 1
+    political_world = PoliticalWorld.generate(world_seed)
+    _sync_generated_planets()
+
+func _sync_generated_planets() -> void:
+    planet_names.clear()
+    for planet in political_world.get("planets", []):
+        planet_names.append(String(planet.id))
+    if current_planet.is_empty() or not planet_names.has(current_planet):
+        current_planet = planet_names[0] if not planet_names.is_empty() else ""
+
+func _planet_display_name(planet_id: String) -> String:
+    if ["Aster", "Cinder", "Vesper", "Helix"].has(planet_id):
+        return planet_id
+    return PoliticalWorld.planet_name(political_world, planet_id)
+
+func _planet_type(planet_id: String) -> String:
+    if ["Aster", "Cinder", "Vesper", "Helix"].has(planet_id):
+        return PoliticalWorld.legacy_type_for_name(planet_id)
+    return PoliticalWorld.planet_type(political_world, planet_id)
+
+func _planet_visual_key(planet_id: String) -> String:
+    if ["Aster", "Cinder", "Vesper", "Helix"].has(planet_id):
+        return planet_id
+    return PoliticalWorld.visual_key_for_type(_planet_type(planet_id))
+
+func _get_political_context_at(position: Vector2) -> Dictionary:
+    return PoliticalWorld.political_context_at(political_world, position)
+
+func _political_laws_at(position: Vector2) -> Dictionary:
+    var context := _get_political_context_at(position)
+    var faction_id := String(context.get("faction_id", ""))
+    if faction_id.is_empty():
+        return {}
+    return PoliticalWorld.faction_record(political_world, faction_id).get("laws", {}).duplicate(true)
+
+func _route_political_segment_at_progress(origin: String, destination: String, progress: float) -> Dictionary:
+    var route := PoliticalWorld.direct_route(political_world, origin, destination)
+    if route.is_empty():
+        return {}
+    var t := clampf(progress, 0.0, 1.0)
+    for segment in route.get("segments", []):
+        if t >= float(segment.start_t) and t <= float(segment.end_t) + 0.0001:
+            return segment.duplicate(true)
+    return {}
+
+func _direct_route_spec(origin: String, destination: String) -> Dictionary:
+    var route := PoliticalWorld.direct_route(political_world, origin, destination)
+    if route.is_empty():
+        return {}
+    return {
+        "distance": int(route.distance),
+        "danger": int(route.danger),
+        "segments": route.segments,
+        "direct": true,
+        "path": [origin, destination],
+        "hops": 1
+    }
+
+func _route_political_percentages(origin: String, destination: String) -> Dictionary:
+    var spec := _route_spec(origin, destination)
+    var totals := {"CORE": 0.0, "CONTROLLED": 0.0, "CONTESTED": 0.0, "UNCONTROLLED": 0.0}
+    var path: Array = spec.get("path", [])
+    var total_weight := 0.0
+    for i in range(maxi(0, path.size() - 1)):
+        var route := PoliticalWorld.direct_route(political_world, String(path[i]), String(path[i + 1]))
+        var length := float(route.get("length", 1.0))
+        for segment in route.get("segments", []):
+            var weight := length * maxf(0.0, float(segment.end_t) - float(segment.start_t))
+            var state := String(segment.state)
+            totals[state] = float(totals.get(state, 0.0)) + weight
+            total_weight += weight
+    if total_weight > 0.0:
+        for state in totals.keys():
+            totals[state] = float(totals[state]) / total_weight
+    return totals
+
 func _init_privateer_world() -> void:
+    if political_world.is_empty() or int(political_world.get("schema", 0)) < POLITICAL_WORLD_SCHEMA:
+        _generate_political_world()
+    else:
+        world_seed = int(political_world.get("seed", world_seed))
+        _sync_generated_planets()
+    if current_planet.is_empty() and not planet_names.is_empty():
+        current_planet = planet_names[0]
     if cargo.is_empty():
         for commodity in commodity_names:
             cargo[commodity] = 0
@@ -593,31 +689,34 @@ func _init_privateer_world() -> void:
             markets[planet] = planet_market
     if contract_board.is_empty():
         _regenerate_contracts()
+    if last_trip_summary == "Docked":
+        last_trip_summary = "Docked at %s" % _planet_display_name(current_planet)
+
 
 func _market_profile(planet: String, commodity: String) -> Vector2:
-    match planet:
-        "Aster":
+    match _planet_type(planet):
+        "LUSH":
             match commodity:
                 "Food": return Vector2(8.0, 4.0)
                 "Ore": return Vector2(2.0, 6.0)
                 "Medicine": return Vector2(3.0, 4.0)
                 "Electronics": return Vector2(5.0, 3.0)
                 "Fuel": return Vector2(2.0, 5.0)
-        "Cinder":
+        "VOLCANIC":
             match commodity:
                 "Food": return Vector2(1.0, 7.0)
                 "Ore": return Vector2(10.0, 2.0)
                 "Medicine": return Vector2(1.0, 5.0)
                 "Electronics": return Vector2(2.0, 5.0)
                 "Fuel": return Vector2(9.0, 3.0)
-        "Vesper":
+        "FROZEN":
             match commodity:
                 "Food": return Vector2(5.0, 5.0)
                 "Ore": return Vector2(2.0, 5.0)
                 "Medicine": return Vector2(9.0, 2.0)
                 "Electronics": return Vector2(2.0, 6.0)
                 "Fuel": return Vector2(3.0, 5.0)
-        "Helix":
+        "INDUSTRIAL":
             match commodity:
                 "Food": return Vector2(2.0, 6.0)
                 "Ore": return Vector2(4.0, 4.0)
@@ -646,10 +745,11 @@ func _market_price(planet: String, commodity: String) -> int:
     var scarcity := clampf((target_stock - stock) / maxf(20.0, target_stock), -0.55, 1.25)
     var flow_pressure := clampf((consumption - production) / 12.0, -0.25, 0.45)
     var planet_bias := 1.0
-    if planet == "Cinder" and commodity == "Ore": planet_bias = 0.88
-    if planet == "Vesper" and commodity == "Medicine": planet_bias = 0.86
-    if planet == "Helix" and commodity == "Electronics": planet_bias = 0.87
-    if planet == "Aster" and commodity == "Food": planet_bias = 0.90
+    var type_id := _planet_type(planet)
+    if type_id == "VOLCANIC" and commodity == "Ore": planet_bias = 0.88
+    if type_id == "FROZEN" and commodity == "Medicine": planet_bias = 0.86
+    if type_id == "INDUSTRIAL" and commodity == "Electronics": planet_bias = 0.87
+    if type_id == "LUSH" and commodity == "Food": planet_bias = 0.90
     return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
 
 func _market_buy_price(planet: String, commodity: String) -> int:
