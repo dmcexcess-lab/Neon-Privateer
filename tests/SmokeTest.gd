@@ -1477,7 +1477,7 @@ func _initialize() -> void:
     if scene.pending_drops.size() != 2 or diamond_units < 4 or diamond_units > 6 or diamond_units <= square_units:
         _fail("reinforced container loot is not larger than basic-container loot")
         return
-    var premium_goods := ["Copper", "Small Arms", "First Aid", "Stims", "Titanium", "Iron"]
+    var premium_goods := ["Titanium", "Rare Alloys", "Vaccines", "Regenerative Medicine", "Heavy Weapons", "Explosives", "Military Tech", "Euphorics", "Neurodust", "VR Experiences", "Unlicensed Media"]
     for loot in scene.pending_drops:
         if not premium_goods.has(String(loot.commodity)):
             _fail("reinforced container used non-premium loot table")
@@ -2010,8 +2010,12 @@ func _initialize() -> void:
     var legal_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, slice9_legal_faction).duplicate(true)
     var illegal_laws: Dictionary = illegal_record.get("laws", {}).duplicate(true)
     var legal_laws: Dictionary = legal_record.get("laws", {}).duplicate(true)
-    illegal_laws["arms_legal"] = false
-    legal_laws["arms_legal"] = true
+    var illegal_grey: Dictionary = illegal_laws.get("grey_legal", {}).duplicate(true)
+    var legal_grey: Dictionary = legal_laws.get("grey_legal", {}).duplicate(true)
+    illegal_grey["Small Arms"] = false
+    legal_grey["Small Arms"] = true
+    illegal_laws["grey_legal"] = illegal_grey
+    legal_laws["grey_legal"] = legal_grey
     illegal_record["laws"] = illegal_laws
     legal_record["laws"] = legal_laws
     scene.PoliticalWorld._replace_faction(scene.political_world, slice9_illegal_faction, illegal_record)
