@@ -43,19 +43,20 @@ See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, r
 
 ## Bank, markets, and economy
 
-Every docked world exposes its economy through the **Bank**. The Bank has four tabs:
+Every docked world exposes investing through the **Bank**. ACCOUNT is the cash/savings screen; the Bank then offers exactly **three investment markets**:
 
-- **ACCOUNT** — move money between carried cash and the protected bank balance.
-- **GREEN** — trade the 12 legal commodities.
-- **GREY** — trade all 12 grey commodities while seeing the local faction's item-level legality.
-- **CURRENCY** — buy and sell investment units in each generated superpower.
+- **GREEN** — a low-volatility system index built from the summed value and price movement of all real Green commodity trade.
+- **GREY** — a deliberately volatile system index built from the summed value and price movement of all real Grey commodity trade.
+- **CURRENCY** — separate investable currencies for each generated superpower.
+
+Green/Grey index positions and faction-currency positions are financial assets: they consume no cargo space and survive ship destruction.
 
 ### Cash and bank balance
 
 `research_credits` remains the internal compatibility field for **carried cash**, but the player-facing economy distinguishes CASH from BANK.
 
-- Flight bonuses, contracts, commodity sales, and currency sales pay carried cash.
-- Commodity purchases, currency purchases, fines, and ship upgrades spend carried cash.
+- Flight bonuses, contracts, investment sales, and other payouts pay carried cash.
+- Green/Grey index purchases, currency purchases, fines, and ship upgrades spend carried cash.
 - **Ship destruction loses all carried cash.**
 - The protected bank balance survives ship destruction.
 - Depositing and withdrawing currently move the full available balance with one tap.
@@ -84,17 +85,34 @@ A grey good is not automatically illegal. Every superpower independently permits
 
 Illegal grey goods receive the existing black-market price premium: 30% in an illegal market and 14% in mixed-law territory. Police scans inspect every carried grey good and confiscate only the individual items banned by that patrol faction.
 
-### Local day trading and hauling
+### Real simulated trade
 
-Each world maintains its own persistent stock, production, consumption, and price factor for all 24 goods. Price movement combines scarcity, production/consumption pressure, planet-type specialization, item volatility, and grey-market law.
+The 24 commodities remain the physical economy underneath the three Bank markets. Every planet has **one persistent specialty commodity** selected from its archetype-compatible production pool. That specialty receives the world's strongest surplus and is the main commodity the planet contributes to whichever empire currently controls it.
 
-While the Bank is open, the economy advances periodically, so the player can **day trade a single local market without taking a flight**. The same physical commodities occupy cargo space, so buying locally and flying to a different world remains the hauling/arbitrage game.
+Each economy tick:
 
-Travel also advances the wider economy. LUSH worlds favor food and narcotics, VOLCANIC worlds favor metals, FROZEN worlds favor medicine, and INDUSTRIAL worlds favor weapons and entertainment.
+1. planets really produce and consume persistent stock;
+2. specialist surplus is offered along actual generated trade lanes;
+3. neighboring shortages and price differences determine shipment quantity;
+4. actual stock is removed from the exporting planet and added to the importing planet;
+5. the transaction value is recorded as Green or Grey trade;
+6. same-empire and peaceful cross-empire trade add revenue/trade volume to the participating powers.
 
-### Faction currency market
+If two empires are at war, direct trade between those powers stops. Grey goods that are illegal at the destination are not magically erased from the economy, but official flow is sharply reduced, representing thinner black-market movement.
 
-Each generated superpower has a tradeable currency/index. Its underlying value derives from faction level, controlled-world footprint, and route wealth, with a persistent market factor adding bounded movement over time. Players buy and sell currency units directly from the Bank's CURRENCY tab; these positions do not occupy cargo space.
+The **Green index** uses the legal commodity basket plus the summed value of real Green shipments. It has a tight spread and capped movement. The **Grey index** uses the Grey basket plus summed Grey shipments; its underlying goods have higher volatility and war demand can move it sharply. The index itself does not add cosmetic random movement—the volatility comes from the simulated underlying economy.
+
+The economy advances while the Bank is open and when travel completes, so the system keeps trading even when the player is not hauling cargo personally.
+
+### Empire growth, war, and faction currency
+
+Trade now feeds politics. Controlled specialist worlds contribute revenue to their empire. Real shipment value builds faction treasury and trade volume; treasury funds military replacement and peaceful expansion.
+
+A peaceful, solvent empire gradually spends surplus treasury to increase its existing influence **strength/radius**. This can turn uncontrolled or contested space into controlled territory. Expansion does not write a second ownership map: after influence changes, the game recomputes political route segments, danger, wealth, and the map overlay from the same authoritative influence query already used by encounters and contracts.
+
+Wars can begin only between powers that share an actual contested frontier, have completed any cooldown, and possess enough economic depth to fight. During war both sides spend treasury and military capacity. Relative military/economic power pushes the shared influence frontier toward the stronger side; exhaustion or a decisive advantage eventually ends the war and applies a cooldown.
+
+Each generated superpower's **Currency** instrument now derives from the empire's live fundamentals: faction level, controlled worlds, route wealth, treasury, military capacity, trade volume, and an active-war penalty, plus bounded currency-market movement. Currency positions use no cargo capacity.
 
 ## Faction reputation and criminal state
 
@@ -261,11 +279,11 @@ Internally some legacy variable/function names still use `research_*` for save/c
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus **economy schema 3**, crime schema 1, enforcement schema 1, and **contract schema 2**, all 32 generated planets, item-level grey laws, faction level/reputation/crime state, sparse route graph and political segments, current location, all 24 local commodity markets, cargo, faction-currency holdings/indices, bank-interest cycle state, contracts, passengers, and economy tick. Carried cash and protected bank balance are persisted in the career meta save.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus **economy schema 4**, crime schema 1, enforcement schema 1, and **contract schema 2**, all 32 generated planets, one commodity specialty per planet, item-level grey laws, empire treasury/military/trade/war state, sparse route graph and dynamically recomputed political segments, current location, all 24 physical commodity markets, Green/Grey index state and holdings, the real-trade ledger, faction-currency holdings/indices, bank-interest cycle state, contracts, passengers, and economy tick. Carried cash and protected bank balance are persisted in the career meta save.
 
 Generated political state is created once and never rerolled on reload. Existing generated careers missing route-wealth metadata derive it deterministically from their preserved capitals and route graph, without rerolling planets or lanes.
 
-Older four-world careers still migrate once to political schema 2. Economy-2 careers migrate deterministically to economy schema 3: the retired seven commodity IDs map to their nearest new goods, all markets become exactly 24 active goods, old commodity keys are retired, faction grey laws are generated deterministically from the preserved world/faction identity, old credits remain carried cash, and the new bank starts at zero unless already saved. The political world, locations, routes, faction relations, and practical player progression are preserved.
+Older four-world careers still migrate once to political schema 2. Economy-2/3 careers migrate deterministically to economy schema 4: retired commodity IDs map to the 24-good model, existing worlds gain deterministic planet specialties, factions gain macroeconomic/war fields without rerolling geography, Green/Grey index holdings start clean when absent, old credits remain carried cash, and the existing bank/relations/routes/progression are preserved.
 
 The active route snapshot remains separate and preserves exact in-flight state.
 
@@ -302,7 +320,7 @@ CI requires the production-closure marker before the frozen Classic regression, 
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers the complete Privateer system pass, including the 24-good economy, six-row Green/Grey pagination, item-level grey laws, local docked price ticks, bank deposit/withdrawal, exact 3% completed-flight interest, death loss of cash while preserving the bank, faction-currency trading with zero cargo use, career-slot financial isolation, economy-3/contract-2 migration, deterministic generated worlds, contracts, contraband scans, political/crime state, route/encounter balance, phone layout, Classic regression, durable active-route save/reload, and core flight mechanics.
+The smoke test covers the complete Privateer system pass, including 24 persistent physical goods, archetype-valid planet specialties, real route shipment stock transfer, summed Green/Grey trade ledgers, aggregate index investing, Green-vs-Grey risk/spread behavior, docked economy ticks, bank deposit/withdrawal, exact 3% completed-flight interest, death loss of cash while preserving bank/investments, faction currency, peaceful influence expansion, forced-war resource consumption/frontier movement, currency-fundamental response, career isolation, economy-4/contract-2 migration, deterministic worlds, contracts, contraband, route/encounter balance, phone layout, Classic regression, durable active-route save/reload, and core flight mechanics.
 
 
 ## Preserved arcade version
