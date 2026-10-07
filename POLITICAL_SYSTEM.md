@@ -203,6 +203,61 @@ Asteroids no longer award kill credits. They retain the existing near-miss/dash-
 
 Basic and reinforced containers award no kill credits and no near-miss credits.
 
+## Slice 5 territory encounter director
+
+Hostile flight encounters now use the political segment the ship is physically crossing. Route danger no longer grants hostile-ship permission by itself.
+
+Authoritative eligibility:
+
+- **UNCONTROLLED:** random pirate contacts are eligible.
+- **CONTESTED:** random pirate contacts are eligible.
+- **CORE / CONTROLLED, player clean with controlling faction:** no hostile faction patrol.
+- **CORE / CONTROLLED, ordinary criminal with controlling faction:** random faction patrol contact is eligible.
+- **CORE / CONTROLLED, heavy-enforcement criminal with controlling faction:** faction patrols are eligible and pentagon heavy enforcement may appear.
+
+The Slice 3 thresholds remain authoritative:
+
+- ordinary police hostility at heat >= 30 or relation <= -50;
+- heavy enforcement at heat >= 60 or relation <= -75.
+
+Encounter state is generic:
+
+- `encounter_active`
+- `encounter_mode` = `pirate` or `police`
+- `encounter_faction_id` for faction patrols
+- `encounter_timer`
+- `encounter_clock`
+
+The director queries the current route segment every update through the existing route-political authority. An active contact ends when the ship enters a segment that no longer permits that mode/faction. Already-visible encounter ships are not deleted at the border; no additional hostile ships are spawned once authorization ends.
+
+### Shape roles under the director
+
+- Trapezoid / kind 3 = hostile ship. It can be a pirate ship in pirate space or a faction patrol ship in hostile controlled space.
+- Pentagon / kind 4 = heavy faction enforcement platform. Random pirate encounters never spawn pentagons.
+- Bounty-boss pentagons remain an explicit contract encounter and are not random route traffic.
+
+Faction patrol ships/platforms carry their enforcing faction ID and render using that faction's color. Pirate ships use a distinct pirate treatment.
+
+### Randomness
+
+Eligibility does not guarantee an encounter. Pirate and patrol contacts remain random windows while the ship stays in eligible space.
+
+Uncontrolled pirate windows are somewhat more frequent than contested pirate windows. Faction patrol cadence increases with heat and is tighter in CORE than CONTROLLED space.
+
+### Save compatibility
+
+Active encounter mode/faction/timers are stored in the run snapshot.
+
+Pre-Slice-5 snapshots containing only the old:
+
+- `pirate_active`
+- `pirate_timer`
+- `pirate_clock`
+
+fields load as a modern `pirate` encounter. Legacy keys continue to be written as compatibility mirrors.
+
+Contraband scans, confiscation, fines, and scan-based escalation are not part of Slice 5.
+
 ## Route graph
 
 The 32 planets are not a complete graph.
