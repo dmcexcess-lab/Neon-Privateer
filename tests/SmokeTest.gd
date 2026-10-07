@@ -64,6 +64,8 @@ func _world_difference(a: Dictionary, b: Dictionary) -> String:
             return "faction %d radius" % i
         if absf(float(af[i].strength) - float(bf[i].strength)) > 0.0001:
             return "faction %d strength" % i
+        if int(af[i].get("level", 0)) != int(bf[i].get("level", 0)):
+            return "faction %d level" % i
         if Color(af[i].color) != Color(bf[i].color):
             return "faction %d color" % i
         var al: Dictionary = af[i].laws
@@ -135,7 +137,7 @@ func _initialize() -> void:
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
         "_planet_jurisdiction_label", "_ensure_commodity_schema", "_new_market_entry",
-        "_ensure_crime_schema", "_faction_relation", "_faction_heat",
+        "_ensure_crime_schema", "_ensure_enforcement_schema", "_faction_level", "_faction_relation", "_faction_heat",
         "_faction_crime_state", "_is_criminal_with_faction",
         "_police_hostile_eligible", "_heavy_enforcement_eligible",
         "_adjust_faction_relation", "_adjust_faction_heat",
@@ -151,8 +153,12 @@ func _initialize() -> void:
         "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
         "_accept_contract", "_route_level_for", "_route_duration_for", "_start_route",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
-        "_encounter_cooldown", "_encounter_duration", "_sync_legacy_pirate_state",
+        "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
+        "_try_start_route_encounter", "_encounter_duration", "_sync_legacy_pirate_state",
         "_start_route_encounter", "_end_route_encounter", "_update_route_encounter",
+        "_police_scan_chance", "_police_scan_duration_for_faction",
+        "_illegal_cargo_for_faction", "_begin_police_scan", "_maybe_begin_police_scan",
+        "_cancel_police_scan", "_complete_police_scan", "_update_police_scan",
         "_ship_is_hostile", "_player_can_damage_hazard", "_handle_enforcement_kill",
         "_update_pirate_attack", "_begin_bounty_boss", "_handle_route_end",
         "_arrive_at_destination", "_fail_route", "_save_privateer_state",
@@ -307,6 +313,9 @@ func _initialize() -> void:
             return
         if not faction.has("relation") or not faction.has("heat") or not faction.has("offenses") or not faction.has("last_offense"):
             _fail("fresh faction crime schema is incomplete")
+            return
+        if not faction.has("level") or int(faction.level) < 1 or int(faction.level) > 5:
+            _fail("fresh faction enforcement level is missing/out of range")
             return
         if int(faction.relation) != 0 or int(faction.heat) != 0 or int(faction.offenses) != 0:
             _fail("fresh faction crime state is not clean")
@@ -542,6 +551,54 @@ func _initialize() -> void:
     if not bool(clean_controlled.eligible) or String(clean_controlled.mode) != "police" or bool(clean_controlled.hostile) or bool(clean_controlled.heavy):
         _fail("clean CONTROLLED space did not produce a lawful non-hostile patrol eligibility")
         return
+    # Slice 7: police occurrence is faction-level + RNG only, never guaranteed by route difficulty.
+    var secondary_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, secondary_faction).duplicate(true)
+    secondary_record["level"] = 1
+    scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    var level_one_chance: float = scene._encounter_roll_chance(clean_controlled)
+    scene.route_danger = 1
+    var low_danger_chance: float = scene._encounter_roll_chance(clean_controlled)
+    scene.route_danger = 5
+    var high_danger_chance: float = scene._encounter_roll_chance(clean_controlled)
+    if absf(low_danger_chance - high_danger_chance) > 0.000001:
+        _fail("police encounter chance changed with route danger")
+        return
+    if level_one_chance <= 0.0 or level_one_chance >= 1.0:
+        _fail("level-1 police encounter chance is not genuinely probabilistic")
+        return
+
+    secondary_record = scene.PoliticalWorld.faction_record(scene.political_world, secondary_faction).duplicate(true)
+    secondary_record["level"] = 5
+    scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    var level_five_chance: float = scene._encounter_roll_chance(clean_controlled)
+    if level_five_chance <= level_one_chance or level_five_chance >= 1.0:
+        _fail("faction level does not raise police chance without guaranteeing it")
+        return
+
+    # Failed random opportunities can leave an entire flight quiet.
+    scene.route_active = true
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
+    for quiet_roll in 5:
+        if scene._try_start_route_encounter(clean_controlled, 0.99) or scene.encounter_active:
+            _fail("failed police opportunity still forced an encounter")
+            return
+    if scene.encounter_clock >= 900.0 or scene.encounter_clock <= 0.0:
+        _fail("failed police roll did not schedule a later random opportunity")
+        return
+    scene._end_route_encounter()
+
+    # Pirates are likewise random contacts rather than guaranteed by danger.
+    var pirate_chance: float = scene._encounter_roll_chance(pirate_uncontrolled)
+    if pirate_chance <= 0.0 or pirate_chance >= 1.0:
+        _fail("pirate contact chance is not probabilistic")
+        return
+    if scene._try_start_route_encounter(pirate_uncontrolled, 0.99):
+        _fail("failed pirate roll still forced an encounter")
+        return
+    scene._end_route_encounter()
+
 
     scene._adjust_faction_heat(primary_faction, 30, false)
     var heavy_controlled: Dictionary = scene._encounter_eligibility_for_context({
@@ -636,7 +693,7 @@ func _initialize() -> void:
         _fail("generated lanes lack segments needed for encounter-director verification")
         return
 
-    # Pirate segment: clock expiry starts pirate contact regardless of route danger.
+    # Pirate segment authorizes a pirate contact, but the random roll decides whether it occurs.
     scene.route_origin = String(pirate_route.a)
     scene.destination_planet = String(pirate_route.b)
     scene.route_duration = 100.0
@@ -646,10 +703,9 @@ func _initialize() -> void:
     scene.encounter_active = false
     scene.encounter_mode = ""
     scene.encounter_faction_id = ""
-    scene.encounter_clock = 0.0
-    scene._update_route_encounter(0.01)
-    if not scene.encounter_active or scene.encounter_mode != "pirate":
-        _fail("real contested/uncontrolled route segment did not start pirate encounter")
+    var real_pirate_eligibility: Dictionary = scene._current_encounter_eligibility()
+    if String(real_pirate_eligibility.mode) != "pirate" or not scene._try_start_route_encounter(real_pirate_eligibility, 0.0):
+        _fail("real contested/uncontrolled route segment could not start pirate contact on successful roll")
         return
 
     # Crossing into a clean controlled segment immediately ends the pirate window.
@@ -666,11 +722,14 @@ func _initialize() -> void:
         _fail("pirate encounter remained active after entering clean controlled space")
         return
 
-    # Same clean controlled segment can produce a lawful patrol, which is not hostile.
-    scene.encounter_clock = 0.0
-    scene._update_route_encounter(0.01)
+    # Same clean controlled segment can produce a lawful patrol only when its random roll succeeds.
+    var real_police_eligibility: Dictionary = scene._current_encounter_eligibility()
+    if String(real_police_eligibility.mode) != "police" or not scene._try_start_route_encounter(real_police_eligibility, 0.0):
+        _fail("clean controlled route segment could not produce lawful patrol on successful roll")
+        return
+    scene._cancel_police_scan()
     if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != controlled_faction or scene.encounter_hostile:
-        _fail("clean controlled route segment did not produce lawful faction patrol")
+        _fail("successful lawful patrol roll produced wrong encounter state")
         return
 
     # Crossing the criminal threshold flips the live patrol hostile without replacing the contact.
@@ -683,6 +742,119 @@ func _initialize() -> void:
     scene._adjust_faction_heat(controlled_faction, -scene._faction_heat(controlled_faction), false)
     scene._adjust_faction_relation(controlled_faction, old_controlled_relation, false)
     scene._adjust_faction_heat(controlled_faction, old_controlled_heat, false)
+
+    # Slice 7: lawful patrols sometimes scan; faction law controls contraband.
+    var scan_faction := ""
+    for faction in scene.political_world.factions:
+        var scan_laws: Dictionary = faction.laws
+        if not bool(scan_laws.arms_legal) or not bool(scan_laws.narcotics_legal):
+            scan_faction = String(faction.id)
+            break
+    if scan_faction.is_empty():
+        _fail("generated world has no faction with restricted contraband law")
+        return
+
+    scene._adjust_faction_relation(scan_faction, -scene._faction_relation(scan_faction), false)
+    scene._adjust_faction_heat(scan_faction, -scene._faction_heat(scan_faction), false)
+    scene.route_active = true
+    scene.encounter_active = true
+    scene.encounter_mode = "police"
+    scene.encounter_faction_id = scan_faction
+    scene.encounter_hostile = false
+    scene.encounter_timer = 12.0
+    scene.police_scan_attempted = false
+    scene._cancel_police_scan()
+
+    var scan_chance: float = scene._police_scan_chance(scan_faction)
+    if scan_chance <= 0.0 or scan_chance >= 1.0:
+        _fail("police scan chance is not probabilistic")
+        return
+    if scene._maybe_begin_police_scan(0.99):
+        _fail("failed scan roll still began scan")
+        return
+    scene.police_scan_attempted = false
+    if not scene._maybe_begin_police_scan(0.0) or not scene.police_scan_active or scene.police_scan_timer <= 0.0:
+        _fail("successful scan roll did not begin timed cargo scan")
+        return
+    scene._cancel_police_scan()
+
+    # Clear scan causes no faction consequence.
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
+    scene.cargo["Food"] = 2
+    var clear_rel_before: int = scene._faction_relation(scan_faction)
+    var clear_heat_before: int = scene._faction_heat(scan_faction)
+    if not scene._begin_police_scan(scan_faction, 0.01):
+        _fail("could not begin deterministic clear scan")
+        return
+    scene._update_police_scan(0.02)
+    if scene.police_scan_active or scene.police_scan_result_text != "SCAN CLEAR":
+        _fail("clear cargo scan did not complete cleanly")
+        return
+    if scene._faction_relation(scan_faction) != clear_rel_before or scene._faction_heat(scan_faction) != clear_heat_before:
+        _fail("clear scan changed faction relation/heat")
+        return
+
+    # Contraband scan confiscates only commodities illegal to that specific faction.
+    var scan_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, scan_faction)
+    var scan_laws: Dictionary = scan_record.laws
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
+    scene.cargo["Food"] = 1
+    scene.cargo["Arms"] = 2
+    scene.cargo["Narcotics"] = 2
+    scene.research_credits = 5000
+    scene.encounter_hostile = false
+    var expected_illegal_units := 0
+    if not bool(scan_laws.arms_legal):
+        expected_illegal_units += 2
+    if not bool(scan_laws.narcotics_legal):
+        expected_illegal_units += 2
+    var credits_before_scan: int = scene.research_credits
+    if not scene._begin_police_scan(scan_faction, 0.01):
+        _fail("could not begin deterministic contraband scan")
+        return
+    var scan_result: Dictionary = {}
+    scene._update_police_scan(0.02)
+    if scene.police_scan_result_text.begins_with("CONTRABAND"):
+        scan_result = {"clear": false}
+    if scan_result.is_empty() or expected_illegal_units <= 0:
+        _fail("contraband scan did not detect faction-illegal cargo")
+        return
+    if int(scene.cargo.Food) != 1:
+        _fail("contraband scan confiscated unrestricted Food")
+        return
+    if bool(scan_laws.arms_legal) and int(scene.cargo.Arms) != 2:
+        _fail("scan confiscated Arms that are legal to scanning faction")
+        return
+    if not bool(scan_laws.arms_legal) and int(scene.cargo.Arms) != 0:
+        _fail("scan failed to confiscate illegal Arms")
+        return
+    if bool(scan_laws.narcotics_legal) and int(scene.cargo.Narcotics) != 2:
+        _fail("scan confiscated Narcotics that are legal to scanning faction")
+        return
+    if not bool(scan_laws.narcotics_legal) and int(scene.cargo.Narcotics) != 0:
+        _fail("scan failed to confiscate illegal Narcotics")
+        return
+    if scene.research_credits >= credits_before_scan:
+        _fail("contraband scan did not apply a fine")
+        return
+    if scene._faction_heat(scan_faction) < 30 or not scene.encounter_hostile:
+        _fail("contraband discovery did not create hostile criminal enforcement state")
+        return
+    var scan_after_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, scan_faction)
+    if String(scan_after_record.last_offense) != "contraband_scan":
+        _fail("contraband discovery did not record scan offense")
+        return
+
+    # Reset faction/cargo after scan consequence.
+    scene._adjust_faction_relation(scan_faction, -scene._faction_relation(scan_faction), false)
+    scene._adjust_faction_heat(scan_faction, -scene._faction_heat(scan_faction), false)
+    scene.encounter_hostile = false
+    scene.police_scan_result_timer = 0.0
+    scene.police_scan_result_text = ""
+    for commodity in scene.commodity_names:
+        scene.cargo[commodity] = 0
 
     # Slice 6: lawful patrol traffic is non-hostile/non-targetable until criminal state exists.
     scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
@@ -1169,6 +1341,41 @@ func _initialize() -> void:
         _fail("political world save/reload changed " + reload_difference)
         return
 
+    # Existing careers add deterministic faction levels without rerolling political state.
+    var enforcement_upgrade_seed: int = int(scene.world_seed)
+    var enforcement_cfg: ConfigFile = ConfigFile.new()
+    if enforcement_cfg.load(scene._active_world_path()) != OK:
+        _fail("could not load career for enforcement-schema migration fixture")
+        return
+    var old_enforcement_world: Dictionary = enforcement_cfg.get_value("political", "world", {}).duplicate(true)
+    var old_enforcement_factions: Array = old_enforcement_world.get("factions", [])
+    for fi in old_enforcement_factions.size():
+        var ef: Dictionary = old_enforcement_factions[fi]
+        ef.erase("level")
+        old_enforcement_factions[fi] = ef
+    old_enforcement_world["factions"] = old_enforcement_factions
+    enforcement_cfg.set_value("political", "world", old_enforcement_world)
+    enforcement_cfg.set_value("world", "enforcement_schema", 0)
+    if enforcement_cfg.save(scene._active_world_path()) != OK:
+        _fail("could not write enforcement-schema migration fixture")
+        return
+    scene.political_world.clear()
+    scene.planet_names.clear()
+    scene.markets.clear()
+    scene.current_planet = ""
+    scene._load_privateer_state()
+    if scene.world_seed != enforcement_upgrade_seed:
+        _fail("enforcement-schema upgrade rerolled the political world")
+        return
+    for faction in scene.political_world.factions:
+        if int(faction.get("level", 0)) < 1 or int(faction.get("level", 0)) > 5:
+            _fail("enforcement-schema upgrade did not add valid faction level")
+            return
+    var enforcement_saved: ConfigFile = ConfigFile.new()
+    if enforcement_saved.load(scene._active_world_path()) != OK or int(enforcement_saved.get_value("world", "enforcement_schema", 0)) != scene.ENFORCEMENT_SCHEMA_VERSION:
+        _fail("enforcement-schema upgrade did not persist schema version")
+        return
+
     # Existing political-schema careers upgrade crime fields in place without rerolling.
     var pre_crime_upgrade_seed: int = int(scene.world_seed)
     var pre_crime_upgrade_first_planet: String = String(scene.political_world.planets[0].id)
@@ -1275,6 +1482,10 @@ func _initialize() -> void:
     if int(migrated_cfg.get_value("world", "crime_schema", 0)) != scene.CRIME_SCHEMA_VERSION:
         _fail("legacy migration did not persist Slice 3 crime schema")
         return
+    if int(migrated_cfg.get_value("world", "enforcement_schema", 0)) != scene.ENFORCEMENT_SCHEMA_VERSION:
+        _fail("legacy migration did not persist Slice 7 enforcement schema")
+        return
+
     scene.political_world.clear()
     scene.planet_names.clear()
     scene.markets.clear()
@@ -1388,12 +1599,19 @@ func _initialize() -> void:
     # Active route snapshot preserves generated IDs and Slice 5 encounter context.
     scene.elapsed = 7.5
     scene.score = 4
+    scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
     scene.encounter_active = true
     scene.encounter_mode = "police"
     scene.encounter_faction_id = primary_faction
-    scene.encounter_hostile = true
-    scene.encounter_timer = 3.25
+    scene.encounter_hostile = false
+    scene.encounter_timer = 6.5
     scene.encounter_clock = 9.5
+    scene.police_scan_attempted = true
+    scene.police_scan_active = true
+    scene.police_scan_faction_id = primary_faction
+    scene.police_scan_duration = 5.0
+    scene.police_scan_timer = 3.25
     scene._sync_legacy_pirate_state()
     scene._pause_run()
     if not scene._load_run_snapshot():
@@ -1402,8 +1620,11 @@ func _initialize() -> void:
     if scene.destination_planet != neighbor or scene.route_origin != scene.current_planet or absf(scene.elapsed - 7.5) > 0.01:
         _fail("route snapshot did not preserve generated route identity")
         return
-    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or not scene.encounter_hostile or absf(scene.encounter_timer - 3.25) > 0.01:
-        _fail("route snapshot did not preserve Slice 5 encounter context")
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or scene.encounter_hostile or absf(scene.encounter_timer - 6.5) > 0.01:
+        _fail("route snapshot did not preserve police encounter context")
+        return
+    if not scene.police_scan_active or scene.police_scan_faction_id != primary_faction or absf(scene.police_scan_timer - 3.25) > 0.01:
+        _fail("route snapshot did not preserve active police scan")
         return
     scene._end_route_encounter()
 
@@ -1414,7 +1635,10 @@ func _initialize() -> void:
         return
     for encounter_key in [
         "encounter_active", "encounter_mode", "encounter_faction_id", "encounter_hostile",
-        "encounter_timer", "encounter_clock", "encounter_banner_timer"
+        "encounter_timer", "encounter_clock", "encounter_banner_timer",
+        "police_scan_active", "police_scan_faction_id", "police_scan_timer",
+        "police_scan_duration", "police_scan_attempted", "police_scan_result_timer",
+        "police_scan_result_text"
     ]:
         legacy_run_cfg.erase_section_key("run", encounter_key)
     legacy_run_cfg.set_value("run", "pirate_active", true)
@@ -1440,6 +1664,20 @@ func _initialize() -> void:
     scene.run_paused = false
     scene.playing = true
     scene.score = 6
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
+    scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
+    scene.cargo["Arms"] = 1
+    scene.encounter_active = true
+    scene.encounter_mode = "police"
+    scene.encounter_faction_id = primary_faction
+    scene.encounter_hostile = false
+    scene.police_scan_attempted = true
+    scene.police_scan_active = true
+    scene.police_scan_faction_id = primary_faction
+    scene.police_scan_duration = 5.0
+    scene.police_scan_timer = 4.0
+    var arrival_arms_before: int = int(scene.cargo.Arms)
+    var arrival_heat_before: int = scene._faction_heat(primary_faction)
     var credits_before_arrival: int = int(scene.research_credits)
     scene._arrive_at_destination()
     if scene.current_planet != neighbor or scene.route_active or scene.playing:
@@ -1448,6 +1686,13 @@ func _initialize() -> void:
     if scene.research_credits < credits_before_arrival + 6:
         _fail("arrival did not bank flight bonus")
         return
+    if scene.police_scan_active:
+        _fail("arrival did not terminate unfinished police scan")
+        return
+    if int(scene.cargo.Arms) != arrival_arms_before or scene._faction_heat(primary_faction) != arrival_heat_before:
+        _fail("unfinished arrival scan still applied contraband consequences")
+        return
+
 
     # Delivery contract on a direct lane still reserves cargo and pays.
     var delivery_origin: String = String(scene.current_planet)
