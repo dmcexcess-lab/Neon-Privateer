@@ -1540,6 +1540,7 @@ func _contract_row_rect(index: int) -> Rect2:
 func _handle_hub_tap(pos: Vector2) -> void:
     if HUB_TRAVEL_RECT.has_point(pos):
         travel_selected_planet = _default_travel_selection()
+        _reset_system_map_view()
         travel_open = true
         hub_open = false
     elif HUB_MARKET_RECT.has_point(pos):
@@ -1556,23 +1557,40 @@ func _handle_hub_tap(pos: Vector2) -> void:
         return
     queue_redraw()
 
+func _next_hop_toward(destination: String) -> String:
+    if destination == current_planet:
+        return ""
+    var spec := _route_spec(current_planet, destination)
+    var path: Array = spec.get("path", [])
+    if path.size() < 2:
+        return ""
+    return String(path[1])
+
 func _handle_travel_tap(pos: Vector2) -> void:
     if SYSTEM_MAP_BACK_RECT.has_point(pos):
         travel_open = false
         hub_open = true
         travel_selected_planet = ""
+        system_map_touches.clear()
         queue_redraw()
         return
+    if SYSTEM_RESET_RECT.has_point(pos):
+        _reset_system_map_view()
+        return
 
-    for planet in planet_names:
-        if _system_planet_hit_rect(planet).has_point(pos):
-            _set_travel_selection(planet)
-            return
+    if SYSTEM_MAP_RECT.has_point(pos):
+        for planet in planet_names:
+            if _system_planet_hit_rect(planet).has_point(pos):
+                _set_travel_selection(planet)
+                return
 
     if SYSTEM_FLY_RECT.has_point(pos):
         if planet_names.has(travel_selected_planet) and travel_selected_planet != current_planet:
-            _start_route(travel_selected_planet)
+            var next_hop := _next_hop_toward(travel_selected_planet)
+            if not next_hop.is_empty():
+                _start_route(next_hop)
         return
+
 
 func _handle_market_tap(pos: Vector2) -> void:
     if SUBMENU_BACK_RECT.has_point(pos):
