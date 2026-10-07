@@ -20,9 +20,11 @@ func _world_signature(world: Dictionary) -> String:
             str(bool(laws.arms_legal)), str(bool(laws.narcotics_legal))
         ])
     for route in world.get("routes", []):
-        parts.append("route,%s,%s,%s,%.5f,%d,%d" % [
+        parts.append("route,%s,%s,%s,%.5f,%d,%d,%d,%.5f,%.5f" % [
             String(route.id), String(route.a), String(route.b),
-            float(route.length), int(route.distance), int(route.danger)
+            float(route.length), int(route.distance), int(route.danger),
+            int(route.get("wealth", 0)), float(route.get("core_proximity", 0.0)),
+            float(route.get("traffic_score", 0.0))
         ])
         for segment in route.get("segments", []):
             parts.append("segment,%s,%s,%s,%.6f,%.6f" % [
@@ -89,10 +91,14 @@ func _world_difference(a: Dictionary, b: Dictionary) -> String:
         for key in ["id", "a", "b"]:
             if String(ar[i].get(key, "")) != String(br[i].get(key, "")):
                 return "route %d %s" % [i, key]
-        if int(ar[i].distance) != int(br[i].distance) or int(ar[i].danger) != int(br[i].danger):
+        if int(ar[i].distance) != int(br[i].distance) or int(ar[i].danger) != int(br[i].danger) or int(ar[i].get("wealth", 0)) != int(br[i].get("wealth", 0)):
             return "route %d rating" % i
         if absf(float(ar[i].length) - float(br[i].length)) > 0.001:
             return "route %d length" % i
+        if absf(float(ar[i].get("core_proximity", 0.0)) - float(br[i].get("core_proximity", 0.0))) > 0.0001:
+            return "route %d core proximity" % i
+        if absf(float(ar[i].get("traffic_score", 0.0)) - float(br[i].get("traffic_score", 0.0))) > 0.0001:
+            return "route %d traffic score" % i
         var aseg: Array = ar[i].segments
         var bseg: Array = br[i].segments
         if aseg.size() != bseg.size():
@@ -137,7 +143,7 @@ func _initialize() -> void:
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
         "_planet_jurisdiction_label", "_ensure_commodity_schema", "_new_market_entry",
-        "_ensure_crime_schema", "_ensure_enforcement_schema", "_faction_level", "_faction_relation", "_faction_heat",
+        "_ensure_crime_schema", "_ensure_enforcement_schema", "_ensure_route_wealth_schema", "_faction_level", "_faction_relation", "_faction_heat",
         "_faction_crime_state", "_is_criminal_with_faction",
         "_police_hostile_eligible", "_heavy_enforcement_eligible",
         "_adjust_faction_relation", "_adjust_faction_heat",
@@ -163,7 +169,9 @@ func _initialize() -> void:
         "_update_pirate_attack", "_begin_bounty_boss", "_handle_route_end",
         "_arrive_at_destination", "_fail_route", "_save_privateer_state",
         "_load_privateer_state", "_save_all_state", "_start_game", "_dash",
-        "_fire_weapon", "_choose_enemy_kind", "_apply_damage_to_hazard",
+        "_fire_weapon", "_route_asteroid_weight", "_route_container_weight",
+        "_route_object_spawn_interval", "_choose_route_environment_kind",
+        "_police_combat_active", "_choose_enemy_kind", "_apply_damage_to_hazard",
         "_save_run_snapshot", "_load_run_snapshot", "_pause_run",
         "_create_new_career", "_load_career", "_continue_career",
         "_career_slot_exists", "_career_slot_summary", "_open_profile_menu",
@@ -377,10 +385,15 @@ func _initialize() -> void:
     scene._adjust_faction_heat(primary_faction, -1000, false)
     scene._adjust_faction_relation(primary_faction, -50, false)
     crime_state = scene._faction_crime_state(primary_faction)
-    if int(crime_state.relation) != -50 or not bool(crime_state.criminal) or scene._heavy_enforcement_eligible(primary_faction):
-        _fail("relation -50 did not independently create ordinary criminal status")
+    if int(crime_state.relation) != -50 or bool(crime_state.criminal) or scene._police_hostile_eligible(primary_faction):
+        _fail("UNFRIENDLY relation -50 incorrectly caused attack-on-sight")
         return
-    scene._adjust_faction_relation(primary_faction, -25, false)
+    scene._adjust_faction_relation(primary_faction, -10, false)
+    crime_state = scene._faction_crime_state(primary_faction)
+    if int(crime_state.relation) != -60 or String(crime_state.relation_label) != "HOSTILE" or not bool(crime_state.criminal) or not scene._police_hostile_eligible(primary_faction):
+        _fail("HOSTILE relation -60 did not enable attack-on-sight")
+        return
+    scene._adjust_faction_relation(primary_faction, -15, false)
     if not scene._heavy_enforcement_eligible(primary_faction):
         _fail("relation -75 did not enable heavy enforcement")
         return
@@ -461,6 +474,10 @@ func _initialize() -> void:
     var degree: Dictionary = {}
     var min_route_danger: int = 99
     var max_route_danger: int = -1
+    var min_route_wealth: int = 99
+    var max_route_wealth: int = -1
+    var saw_core_wealth_basis: bool = false
+    var saw_traffic_wealth_basis: bool = false
     var saw_contested_segment: bool = false
     var saw_core_segment: bool = false
     for pid in scene.planet_names:
@@ -487,6 +504,19 @@ func _initialize() -> void:
             return
         min_route_danger = mini(min_route_danger, int(route.danger))
         max_route_danger = maxi(max_route_danger, int(route.danger))
+        var route_wealth_value := int(route.get("wealth", 0))
+        if route_wealth_value < 1 or route_wealth_value > 5:
+            _fail("route wealth is outside 1-5")
+            return
+        min_route_wealth = mini(min_route_wealth, route_wealth_value)
+        max_route_wealth = maxi(max_route_wealth, route_wealth_value)
+        var core_basis := float(route.get("core_proximity", -1.0))
+        var traffic_basis := float(route.get("traffic_score", -1.0))
+        if core_basis < 0.0 or core_basis > 1.0001 or traffic_basis < 0.0 or traffic_basis > 1.0001:
+            _fail("route wealth basis is outside normalized range")
+            return
+        saw_core_wealth_basis = saw_core_wealth_basis or core_basis >= 0.75
+        saw_traffic_wealth_basis = saw_traffic_wealth_basis or traffic_basis >= 0.95
         for segment in route.segments:
             if String(segment.state) == "CONTESTED":
                 saw_contested_segment = true
@@ -495,6 +525,35 @@ func _initialize() -> void:
     if not saw_contested_segment or not saw_core_segment or max_route_danger <= min_route_danger:
         _fail("route politics do not produce meaningful danger variation")
         return
+    if max_route_wealth <= min_route_wealth or not saw_core_wealth_basis or not saw_traffic_wealth_basis:
+        _fail("route wealth does not reflect both core proximity and major traffic lanes")
+        return
+
+    var legacy_wealth_world: Dictionary = scene.political_world.duplicate(true)
+    var legacy_wealth_routes: Array = legacy_wealth_world.get("routes", [])
+    for legacy_route in legacy_wealth_routes:
+        legacy_route.erase("wealth")
+        legacy_route.erase("core_proximity")
+        legacy_route.erase("traffic_score")
+    legacy_wealth_world["routes"] = legacy_wealth_routes
+    if not scene.PoliticalWorld.ensure_route_wealth(legacy_wealth_world):
+        _fail("legacy route wealth fields were not migrated")
+        return
+    if scene.PoliticalWorld.ensure_route_wealth(legacy_wealth_world):
+        _fail("route wealth migration is not idempotent")
+        return
+    var migrated_wealth_routes: Array = legacy_wealth_world.get("routes", [])
+    if migrated_wealth_routes.size() != routes.size():
+        _fail("route wealth migration changed route count")
+        return
+    for wi in routes.size():
+        if String(routes[wi].id) != String(migrated_wealth_routes[wi].id) or int(routes[wi].danger) != int(migrated_wealth_routes[wi].danger) or int(routes[wi].distance) != int(migrated_wealth_routes[wi].distance):
+            _fail("route wealth migration changed existing lane identity")
+            return
+        if int(routes[wi].wealth) != int(migrated_wealth_routes[wi].wealth):
+            _fail("route wealth migration was not deterministic")
+            return
+
     var reachable: Dictionary = _reachable_planets(scene, scene.planet_names[0])
     if reachable.size() != 32:
         _fail("route graph is not fully connected")
@@ -551,10 +610,11 @@ func _initialize() -> void:
     if not bool(clean_controlled.eligible) or String(clean_controlled.mode) != "police" or bool(clean_controlled.hostile) or bool(clean_controlled.heavy):
         _fail("clean CONTROLLED space did not produce a lawful non-hostile patrol eligibility")
         return
-    # Slice 7: police occurrence is faction-level + RNG only, never guaranteed by route difficulty.
+    # Patrol occurrence is faction level + route wealth + RNG; route danger never changes the roll.
     var secondary_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, secondary_faction).duplicate(true)
     secondary_record["level"] = 1
     scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    scene.route_wealth = 3
     var level_one_chance: float = scene._encounter_roll_chance(clean_controlled)
     scene.route_danger = 1
     var low_danger_chance: float = scene._encounter_roll_chance(clean_controlled)
@@ -563,6 +623,13 @@ func _initialize() -> void:
     if absf(low_danger_chance - high_danger_chance) > 0.000001:
         _fail("police encounter chance changed with route danger")
         return
+    scene.route_wealth = 1
+    var low_wealth_police_chance := scene._encounter_roll_chance(clean_controlled)
+    scene.route_wealth = 5
+    var high_wealth_police_chance := scene._encounter_roll_chance(clean_controlled)
+    if high_wealth_police_chance <= low_wealth_police_chance:
+        _fail("route wealth did not raise patrol encounter chance")
+        return
     if level_one_chance <= 0.0 or level_one_chance >= 1.0:
         _fail("level-1 police encounter chance is not genuinely probabilistic")
         return
@@ -570,6 +637,7 @@ func _initialize() -> void:
     secondary_record = scene.PoliticalWorld.faction_record(scene.political_world, secondary_faction).duplicate(true)
     secondary_record["level"] = 5
     scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    scene.route_wealth = 3
     var level_five_chance: float = scene._encounter_roll_chance(clean_controlled)
     if level_five_chance <= level_one_chance or level_five_chance >= 1.0:
         _fail("faction level does not raise police chance without guaranteeing it")
@@ -589,10 +657,16 @@ func _initialize() -> void:
         return
     scene._end_route_encounter()
 
-    # Pirates are likewise random contacts rather than guaranteed by danger.
-    var pirate_chance: float = scene._encounter_roll_chance(pirate_uncontrolled)
-    if pirate_chance <= 0.0 or pirate_chance >= 1.0:
-        _fail("pirate contact chance is not probabilistic")
+    # Pirates are always hostile when rolled, and wealthy eligible lanes attract them more often.
+    scene.route_wealth = 1
+    var poor_pirate_chance := scene._encounter_roll_chance(pirate_uncontrolled)
+    scene.route_wealth = 5
+    var rich_pirate_chance := scene._encounter_roll_chance(pirate_uncontrolled)
+    if poor_pirate_chance <= 0.0 or rich_pirate_chance >= 1.0 or rich_pirate_chance <= poor_pirate_chance:
+        _fail("pirate contact chance is not probabilistic/wealth-scaled")
+        return
+    if not bool(pirate_uncontrolled.hostile):
+        _fail("pirates are not attack-on-sight")
         return
     if scene._try_start_route_encounter(pirate_uncontrolled, 0.99):
         _fail("failed pirate roll still forced an encounter")
@@ -651,13 +725,20 @@ func _initialize() -> void:
         return
 
     scene._adjust_faction_heat(primary_faction, 30, false)
+    scene.encounter_hostile = false
+    scene.rng.seed = 51003
+    for sample_index in 1200:
+        if scene._choose_enemy_kind(false) == 4:
+            _fail("pentagon spawned while patrol was not in active combat")
+            return
+    scene.encounter_hostile = true
     scene.rng.seed = 51003
     var heavy_pentagon_count := 0
     for sample_index in 1800:
         if scene._choose_enemy_kind(false) == 4:
             heavy_pentagon_count += 1
     if heavy_pentagon_count <= 0:
-        _fail("heavy police encounter never spawned pentagon enforcement")
+        _fail("active heavy patrol combat never spawned pentagon enforcement")
         return
 
     scene.encounter_active = false
@@ -1277,17 +1358,60 @@ func _initialize() -> void:
         _fail("destroyed asteroid still awarded kill credits")
         return
 
-    # Reinforced containers are materially rarer than basic containers at the same route cap.
+    # Route danger controls asteroid density while route wealth controls container density.
     scene.route_active = true
     scene.encounter_active = false
     scene.encounter_mode = ""
     scene.encounter_faction_id = ""
     scene.pirate_attack_active = false
     scene.level = 5
+
+    scene.route_wealth = 3
+    scene.route_danger = 1
     scene.rng.seed = 81173
+    var low_danger_asteroids := 0
+    for sample_index in 2400:
+        if scene._choose_enemy_kind(false) == 0:
+            low_danger_asteroids += 1
+    var low_danger_interval := scene._route_object_spawn_interval(false, false)
+
+    scene.route_danger = 5
+    scene.rng.seed = 81173
+    var high_danger_asteroids := 0
+    for sample_index in 2400:
+        if scene._choose_enemy_kind(false) == 0:
+            high_danger_asteroids += 1
+    var high_danger_interval := scene._route_object_spawn_interval(false, false)
+    if high_danger_asteroids <= low_danger_asteroids or high_danger_interval >= low_danger_interval:
+        _fail("route danger did not increase asteroid density")
+        return
+
+    scene.route_danger = 3
+    scene.route_wealth = 1
+    scene.rng.seed = 91173
+    var poor_route_containers := 0
+    for sample_index in 2400:
+        var poor_kind := scene._choose_enemy_kind(false)
+        if poor_kind == 1 or poor_kind == 2:
+            poor_route_containers += 1
+
+    scene.route_wealth = 5
+    scene.rng.seed = 91173
+    var rich_route_containers := 0
+    for sample_index in 2400:
+        var rich_kind := scene._choose_enemy_kind(false)
+        if rich_kind == 1 or rich_kind == 2:
+            rich_route_containers += 1
+    if rich_route_containers <= poor_route_containers:
+        _fail("route wealth did not increase container density")
+        return
+
+    # Reinforced containers remain materially rarer than basic containers.
+    scene.route_wealth = 3
+    scene.rng.seed = 101173
     var square_count := 0
     var diamond_count := 0
-    for sample_index in 2000:
+    for sample_index in 2400:
         var sampled_kind: int = scene._choose_enemy_kind(false)
         if sampled_kind == 1:
             square_count += 1
@@ -1575,15 +1699,18 @@ func _initialize() -> void:
         _fail("contract board lost required job classes")
         return
 
-    # Route planning scales and actual launch uses a real direct lane.
-    var all_specs: Array = []
+    # Route length alone controls travel time; danger/contract pressure do not extend the lane.
+    var min_distance := 99
+    var max_distance := 0
     for route in scene.political_world.routes:
-        all_specs.append({"distance": int(route.distance), "danger": int(route.danger)})
-    all_specs.sort_custom(func(a, b): return int(a.distance) + int(a.danger) < int(b.distance) + int(b.danger))
-    var easy_spec: Dictionary = all_specs[0]
-    var hard_spec: Dictionary = all_specs[-1]
-    if scene._route_duration_for(int(hard_spec.distance), int(hard_spec.danger), 0) <= scene._route_duration_for(int(easy_spec.distance), int(easy_spec.danger), 0):
-        _fail("generated route difficulty does not scale flight duration")
+        min_distance = mini(min_distance, int(route.distance))
+        max_distance = maxi(max_distance, int(route.distance))
+    if max_distance > min_distance and scene._route_duration_for(max_distance, 1, 0) <= scene._route_duration_for(min_distance, 5, 5):
+        _fail("longer route did not produce longer travel time")
+        return
+    var fixed_length_time := scene._route_duration_for(3, 1, 0)
+    if absf(fixed_length_time - scene._route_duration_for(3, 5, 5)) > 0.0001:
+        _fail("danger or contract difficulty changed travel time for the same route length")
         return
 
     scene.current_planet = scene.planet_names[0]
@@ -1595,8 +1722,13 @@ func _initialize() -> void:
     if not scene.playing or not scene.route_active or scene.destination_planet != neighbor:
         _fail("generated direct lane did not enter flight mode")
         return
+    var launched_route: Dictionary = scene.PoliticalWorld.direct_route(scene.political_world, scene.current_planet, neighbor)
+    if scene.route_wealth != int(launched_route.get("wealth", 0)):
+        _fail("launched route did not inherit generated route wealth")
+        return
+    var expected_snapshot_wealth := scene.route_wealth
 
-    # Active route snapshot preserves generated IDs and Slice 5 encounter context.
+    # Active route snapshot preserves generated IDs, wealth, and encounter context.
     scene.elapsed = 7.5
     scene.score = 4
     scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
@@ -1619,6 +1751,9 @@ func _initialize() -> void:
         return
     if scene.destination_planet != neighbor or scene.route_origin != scene.current_planet or absf(scene.elapsed - 7.5) > 0.01:
         _fail("route snapshot did not preserve generated route identity")
+        return
+    if scene.route_wealth != expected_snapshot_wealth:
+        _fail("route snapshot did not preserve route wealth")
         return
     if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or scene.encounter_hostile or absf(scene.encounter_timer - 6.5) > 0.01:
         _fail("route snapshot did not preserve police encounter context")
