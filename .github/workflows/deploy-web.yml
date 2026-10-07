@@ -84,6 +84,14 @@ jobs:
           mv "build/web/${BASENAME}.html" build/web/index.html
           test -f "build/web/${BASENAME}.pck"
 
+          # The generated Privateer art is stored as raw .b64 chunks. These are
+          # not Godot resources, so export_presets.cfg must explicitly include
+          # them. Assert the exported PCK contains every chunk so Pages cannot
+          # silently ship the procedural fallback again.
+          for CHUNK in 0 1 2 3; do
+            grep -a -q "privateer_ui_atlas_${CHUNK}.b64" "build/web/${BASENAME}.pck"
+          done
+
           CLASSIC_BASENAME="neon-driftline-classic-${SHORT_SHA}"
           CLASSIC_LOG=/tmp/classic-export.log
           set +e
