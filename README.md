@@ -13,18 +13,33 @@ A phone-first Privateer-style trading, contract, and space-combat game in Godot.
 
 The old Neon Driftline arcade game is now the **space-travel layer** rather than the complete game.
 
-## Planets and routes
+## Procedural political system
 
-The initial playable network has four planets:
+Every career now owns one persistent **32-planet generated star system**.
 
-- **Aster**
-- **Cinder**
-- **Vesper**
-- **Helix**
+The old Aster, Cinder, Vesper, and Helix identities are planet **types**, not fixed worlds:
 
-Travel now uses a real **spatial system map** rather than a destination list. Aster, Cinder, Vesper, and Helix occupy fixed map positions around the system primary; all six playable interplanetary routes are drawn between them and use the same distance/danger data that drives actual flights. Route color communicates danger, the current world is marked, active-contract destinations are highlighted, and tapping a planet selects it before the player presses **FLY**.
+- **LUSH** — former Aster visual/economic profile.
+- **VOLCANIC** — former Cinder profile.
+- **FROZEN** — former Vesper profile.
+- **INDUSTRIAL** — former Helix profile.
 
-The selected-route card shows distance, danger, flight duration, and effective flight level. Longer and more dangerous routes still produce longer flights and higher flight difficulty. Contract difficulty is added on top, so a high-risk bounty can make the same physical route substantially harder.
+Each generated planet has a stable internal ID, unique display name, type, and system position. All four types appear multiple times and reuse the existing generated planet art.
+
+A new career also generates **2–4 superpowers** with separated capitals, colors, persistent player relation fields, influence radius/strength, and initial Arms/Narcotics law data. Political geography is derived from those influence fields:
+
+- **CORE** — strong space around a capital; lowest political risk.
+- **CONTROLLED** — clearly dominated by one power.
+- **CONTESTED** — meaningful overlapping influence between powers; highest routine political risk.
+- **UNCONTROLLED** — no power has sufficient influence.
+
+The 32 worlds are connected by a sparse generated trade-lane network rather than a complete graph. Generation guarantees connectivity, adds local alternatives, limits excessive node degree/crossings, and includes a few longer strategic links.
+
+Every lane is sampled through the authoritative political influence model and compressed into political segments. Route political danger is derived from those segments rather than assigned by a fixed route table. A short contested section therefore remains meaningful even on an otherwise safer route.
+
+The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/reset, direct planet selection, route planning, capitals, faction influence, and segment-colored trade lanes. Selecting a distant world plans a multi-hop route; pressing **FLY** launches the next real lane on that path.
+
+See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, route generation/segmentation, danger derivation, persistence, and migration contract.
 
 ## Economy
 
@@ -36,7 +51,7 @@ Five commodities are currently simulated:
 - Electronics
 - Fuel
 
-Every planet maintains persistent stock for every commodity plus local production and consumption rates. Prices are calculated from current stock scarcity, production/consumption pressure, base commodity value, and local production advantages.
+Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its production/consumption profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Prices are calculated from current stock scarcity, production/consumption pressure, base commodity value, and local production advantages.
 
 Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system. This makes prices stateful rather than fixed buy/sell tables.
 
@@ -66,18 +81,18 @@ The contract board regenerates at each arrival and includes:
 
 ## Generated Privateer menu art
 
-Docked/privateer-facing screens now use generated sci-fi artwork while the arcade flight layer remains procedural and unchanged.
+Docked/privateer-facing screens use generated sci-fi artwork while the arcade flight layer remains procedural and unchanged.
 
-- **Aster:** lush ocean/jungle world.
-- **Cinder:** volcanic lava world.
-- **Vesper:** frozen ice world.
-- **Helix:** industrial/smog world.
-- **Hub / careers:** orbital passenger-lounge / spaceport interior.
-- **Market:** interstellar trade concourse.
-- **Travel + contracts:** navigation / operations room.
-- **Ship upgrades + starting weapons:** outfitting hangar.
+The four planet portraits are now reusable archetype art:
 
-The assets are packed into one compact **390×1228 JPEG atlas**, stored as four small embedded Base64 chunks and decoded into one Godot texture at boot for reliable repo/Web export. Menu hitboxes and gameplay logic are unchanged. The arcade renderer does not reference the atlas.
+- **LUSH:** ocean/jungle world.
+- **VOLCANIC:** lava world.
+- **FROZEN:** ice world.
+- **INDUSTRIAL:** smog/industrial world.
+
+Hub/career, market, navigation/contracts, and ship-upgrade screens continue using the generated station interiors. The 32 generated worlds reuse the portrait matching their type.
+
+The atlas remains menu-only; the arcade renderer does not reference it.
 
 ## Space travel
 
@@ -119,12 +134,13 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 ## Persistence
 
-Two save layers are maintained:
+Three career slots are maintained. The persistent Privateer world save now includes the political schema/seed, all 32 generated planets, factions, capitals, influence parameters, faction law fields, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
 
-- Persistent Privateer world state: current planet, markets, cargo, contracts, passengers, economy tick, credits/upgrades.
-- Active route snapshot: exact flight state, route identity, pirate state, bounty boss state, projectiles, hazards, HP, weapon, and timing.
+Generated political state is created once and never rerolled on reload.
 
-Focus loss / phone suspension pauses and snapshots an active flight.
+Older four-world careers migrate once to schema 2. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
+
+The active route snapshot remains separate and preserves exact in-flight state.
 
 ## Technical target
 
