@@ -4,7 +4,7 @@ const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
 const POLITICAL_WORLD_SCHEMA := 2
-const ECONOMY_SCHEMA_VERSION := 3
+const ECONOMY_SCHEMA_VERSION := 4
 const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
 const CONTRACT_SCHEMA_VERSION := 2
@@ -88,8 +88,13 @@ const BANK_WITHDRAW_RECT := Rect2(32.0, 332.0, 326.0, 64.0)
 const BANK_PAGE_PREV_RECT := Rect2(32.0, 668.0, 142.0, 50.0)
 const BANK_PAGE_NEXT_RECT := Rect2(216.0, 668.0, 142.0, 50.0)
 const BANK_MARKET_ROWS_PER_PAGE := 6
+const BANK_INDEX_BUY_RECT := Rect2(32.0, 448.0, 154.0, 62.0)
+const BANK_INDEX_SELL_RECT := Rect2(204.0, 448.0, 154.0, 62.0)
 const BANK_INTEREST_RATE := 0.03
 const DOCKED_MARKET_TICK_SECONDS := 10.0
+const EMPIRE_MACRO_INTERVAL := 4
+const GREEN_INDEX_BASE := 100.0
+const GREY_INDEX_BASE := 100.0
 const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
 const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
@@ -187,6 +192,19 @@ var score := 0
 # Legacy variable name retained across the codebase: this is now carried CASH.
 var research_credits := 1200
 var bank_balance := 0
+var market_index_holdings: Dictionary = {"green": 0, "grey": 0}
+var market_indices: Dictionary = {
+    "green": {"price": GREEN_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0},
+    "grey": {"price": GREY_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0}
+}
+var trade_ledger: Dictionary = {
+    "green_volume": 0.0,
+    "grey_volume": 0.0,
+    "cross_empire_volume": 0.0,
+    "shipments": 0,
+    "last_route": "",
+    "last_commodity": ""
+}
 var currency_holdings: Dictionary = {}
 var currency_markets: Dictionary = {}
 var bank_interest_cycles := 0
@@ -546,6 +564,12 @@ func _migrate_legacy_career_if_needed() -> void:
 func _reset_career_state() -> void:
     research_credits = 1200
     bank_balance = 0
+    market_index_holdings = {"green": 0, "grey": 0}
+    market_indices = {
+        "green": {"price": GREEN_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0},
+        "grey": {"price": GREY_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0}
+    }
+    trade_ledger = {"green_volume": 0.0, "grey_volume": 0.0, "cross_empire_volume": 0.0, "shipments": 0, "last_route": "", "last_commodity": ""}
     currency_holdings.clear()
     currency_markets.clear()
     bank_interest_cycles = 0
