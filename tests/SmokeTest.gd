@@ -122,6 +122,106 @@ func _reachable_planets(scene, start_id: String) -> Dictionary:
                 queue.append(neighbor)
     return seen
 
+func _production_world_issue(scene, world: Dictionary) -> String:
+    var planets: Array = world.get("planets", [])
+    var factions: Array = world.get("factions", [])
+    var routes: Array = world.get("routes", [])
+    if planets.size() != 32:
+        return "planet count"
+    if factions.size() < 2 or factions.size() > 4:
+        return "faction count"
+    if routes.size() < 31 or routes.size() > 55:
+        return "route density"
+
+    var ids: Dictionary = {}
+    var names: Dictionary = {}
+    var type_counts := {"LUSH": 0, "VOLCANIC": 0, "FROZEN": 0, "INDUSTRIAL": 0}
+    for planet in planets:
+        var pid := String(planet.get("id", ""))
+        var pname := String(planet.get("name", ""))
+        var ptype := String(planet.get("type", ""))
+        if pid.is_empty() or ids.has(pid):
+            return "planet IDs"
+        if pname.is_empty() or names.has(pname):
+            return "planet names"
+        if not type_counts.has(ptype):
+            return "planet type"
+        ids[pid] = true
+        names[pname] = true
+        type_counts[ptype] = int(type_counts[ptype]) + 1
+    for ptype in type_counts.keys():
+        if int(type_counts[ptype]) < 2:
+            return "planet type coverage"
+
+    var law_profiles: Dictionary = {}
+    for faction in factions:
+        var capital_id := String(faction.get("capital_id", ""))
+        if not ids.has(capital_id):
+            return "capital identity"
+        var laws: Dictionary = faction.get("laws", {})
+        if not laws.has("arms_legal") or not laws.has("narcotics_legal"):
+            return "faction laws"
+        law_profiles["%s|%s" % [str(bool(laws.arms_legal)), str(bool(laws.narcotics_legal))]] = true
+        var capital_context: Dictionary = scene.PoliticalWorld.political_context_at(world, scene.PoliticalWorld.planet_position(world, capital_id))
+        if String(capital_context.get("state", "")) != "CORE":
+            return "capital core"
+    if law_profiles.size() < 2:
+        return "law variation"
+
+    var bounds := Rect2(world.get("bounds", scene.PoliticalWorld.WORLD_BOUNDS))
+    var states: Dictionary = {}
+    for gy in 13:
+        for gx in 17:
+            var sample := bounds.position + Vector2(
+                bounds.size.x * float(gx) / 16.0,
+                bounds.size.y * float(gy) / 12.0
+            )
+            var context := scene.PoliticalWorld.political_context_at(world, sample)
+            states[String(context.get("state", ""))] = true
+    for required_state in ["CORE", "CONTROLLED", "CONTESTED", "UNCONTROLLED"]:
+        if not states.has(required_state):
+            return "political state " + required_state
+
+    var min_danger := 99
+    var max_danger := -1
+    var min_wealth := 99
+    var max_wealth := -1
+    for route in routes:
+        if not ids.has(String(route.get("a", ""))) or not ids.has(String(route.get("b", ""))):
+            return "route endpoint"
+        var segments: Array = route.get("segments", [])
+        if segments.is_empty():
+            return "route segments"
+        if float(segments[0].get("start_t", 1.0)) > 0.001 or float(segments[-1].get("end_t", 0.0)) < 0.999:
+            return "route segment coverage"
+        var danger := int(route.get("danger", 0))
+        var wealth := int(route.get("wealth", 0))
+        if danger < 1 or danger > 5:
+            return "route danger"
+        if wealth < 1 or wealth > 5:
+            return "route wealth"
+        min_danger = mini(min_danger, danger)
+        max_danger = maxi(max_danger, danger)
+        min_wealth = mini(min_wealth, wealth)
+        max_wealth = maxi(max_wealth, wealth)
+    if min_danger >= max_danger:
+        return "danger variation"
+    if min_wealth >= max_wealth:
+        return "wealth variation"
+
+    var first_id := String(planets[0].id)
+    var seen: Dictionary = {first_id: true}
+    var queue: Array[String] = [first_id]
+    while not queue.is_empty():
+        var current := String(queue.pop_front())
+        for neighbor in scene.PoliticalWorld.neighbors(world, current):
+            if not seen.has(neighbor):
+                seen[neighbor] = true
+                queue.append(neighbor)
+    if seen.size() != 32:
+        return "route connectivity"
+    return ""
+
 func _initialize() -> void:
     var packed: PackedScene = load("res://main.tscn")
     if packed == null:
@@ -166,7 +266,7 @@ func _initialize() -> void:
         "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract",
         "_route_level_for", "_route_duration_for", "_start_route",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
-        "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
+        "_route_wealth_encounter_multiplier", "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
         "_try_start_route_encounter", "_encounter_duration", "_sync_legacy_pirate_state",
         "_start_route_encounter", "_end_route_encounter", "_update_route_encounter",
         "_police_scan_chance", "_police_scan_duration_for_faction",
@@ -203,6 +303,63 @@ func _initialize() -> void:
     if not scene._privateer_art_ready():
         _fail("Privateer native generated-art texture did not load")
         return
+
+    # Slice 10 phone/browser closure: fixed portrait viewport and all primary
+    # touch controls remain on-screen with comfortable mobile hit targets.
+    if int(ProjectSettings.get_setting("display/window/size/viewport_width", 0)) != 390 or int(ProjectSettings.get_setting("display/window/size/viewport_height", 0)) != 844:
+        _fail("phone viewport is not 390x844")
+        return
+    if String(ProjectSettings.get_setting("display/window/stretch/mode", "")) != "canvas_items":
+        _fail("phone viewport stretch mode changed")
+        return
+    var viewport_rect := Rect2(0.0, 0.0, 390.0, 844.0)
+    var primary_touch_rects: Array = [
+        scene.PROFILE_CONTINUE_RECT, scene.PROFILE_NEW_RECT,
+        scene.HUB_TRAVEL_RECT, scene.HUB_MARKET_RECT, scene.HUB_CONTRACTS_RECT, scene.HUB_UPGRADES_RECT, scene.HUB_CAREERS_RECT,
+        scene.SUBMENU_BACK_RECT, scene.SYSTEM_MAP_BACK_RECT, scene.SYSTEM_FLY_RECT,
+        scene.LEFT_CONTROL_RECT, scene.DASH_RECT, scene.RIGHT_CONTROL_RECT,
+        scene.PAUSE_RESUME_RECT, scene.PAUSE_QUIT_RECT,
+        scene.RESEARCH_SHIP_RECT, scene.RESEARCH_DASH_RECT, scene.RESEARCH_DAMAGE_RECT,
+        scene.RESEARCH_HITS_RECT, scene.RESEARCH_SHIELD_RECT, scene.RESEARCH_WEAPONS_RECT
+    ]
+    for control_variant in primary_touch_rects:
+        var control_rect: Rect2 = Rect2(control_variant)
+        if not viewport_rect.encloses(control_rect):
+            _fail("primary phone control extends outside viewport")
+            return
+        if control_rect.size.x < 44.0 or control_rect.size.y < 44.0:
+            _fail("primary phone control is smaller than 44px touch target")
+            return
+    for market_index in 7:
+        if not viewport_rect.encloses(scene._market_buy_rect(market_index)) or not viewport_rect.encloses(scene._market_sell_rect(market_index)):
+            _fail("market row extends outside phone viewport")
+            return
+    for contract_index in 5:
+        if not viewport_rect.encloses(scene._contract_row_rect(contract_index)):
+            _fail("contract row extends outside phone viewport")
+            return
+    if scene._contract_row_rect(4).end.y >= scene.SUBMENU_BACK_RECT.position.y:
+        _fail("contract board overlaps BACK on phone")
+        return
+    if scene._market_sell_rect(6).end.y >= scene.SUBMENU_BACK_RECT.position.y:
+        _fail("seven-row market overlaps BACK on phone")
+        return
+    if scene.SYSTEM_ROUTE_INFO_RECT.end.y >= scene.SYSTEM_MAP_BACK_RECT.position.y:
+        _fail("system route card overlaps phone navigation controls")
+        return
+
+    # Production generated-world sweep. Multiple deterministic seeds must all
+    # satisfy the same topology/political invariants and reproduce exactly.
+    for production_seed in range(7101, 7113):
+        var production_world: Dictionary = scene.PoliticalWorld.generate(production_seed)
+        var issue := _production_world_issue(scene, production_world)
+        if not issue.is_empty():
+            _fail("production seed %d failed %s" % [production_seed, issue])
+            return
+        var production_world_again: Dictionary = scene.PoliticalWorld.generate(production_seed)
+        if _world_signature(production_world) != _world_signature(production_world_again):
+            _fail("production seed %d is not deterministic" % production_seed)
+            return
 
     # Four reusable archetype portraits remain distinct.
     var art_regions: Dictionary = {}
@@ -712,6 +869,33 @@ func _initialize() -> void:
         _fail("faction level does not raise police chance without guaranteeing it")
         return
 
+    # Slice 10 balance envelope: even maximum patrol traffic is probabilistic,
+    # while low-level/backwater patrols remain uncommon rather than absent.
+    scene.route_wealth = 1
+    secondary_record["level"] = 1
+    scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    var production_police_min: float = float(scene._encounter_roll_chance(clean_controlled))
+    var production_scan_min: float = float(scene._police_scan_chance(secondary_faction))
+    scene.route_wealth = 5
+    secondary_record["level"] = 5
+    scene.PoliticalWorld._replace_faction(scene.political_world, secondary_faction, secondary_record)
+    var production_police_max: float = float(scene._encounter_roll_chance(clean_controlled))
+    var production_scan_max: float = float(scene._police_scan_chance(secondary_faction))
+    if production_police_min < 0.09 or production_police_min > 0.14 or production_police_max < 0.40 or production_police_max > 0.50:
+        _fail("police encounter tuning left production envelope")
+        return
+    if production_scan_min < 0.12 or production_scan_min > 0.18 or production_scan_max < 0.28 or production_scan_max > 0.36:
+        _fail("police scan tuning left production envelope")
+        return
+    if production_police_max * production_scan_max >= 0.17:
+        _fail("maximum scan-per-opportunity rate is too aggressive")
+        return
+    for interval_sample in 20:
+        var police_interval: float = float(scene._encounter_opportunity_interval(clean_controlled))
+        if police_interval < scene.POLICE_OPPORTUNITY_MIN or police_interval > scene.POLICE_OPPORTUNITY_MAX:
+            _fail("police opportunity interval left production range")
+            return
+
     # Failed random opportunities can leave an entire flight quiet.
     scene.route_active = true
     scene.encounter_active = false
@@ -734,6 +918,14 @@ func _initialize() -> void:
     if poor_pirate_chance <= 0.0 or rich_pirate_chance >= 1.0 or rich_pirate_chance <= poor_pirate_chance:
         _fail("pirate contact chance is not probabilistic/wealth-scaled")
         return
+    if poor_pirate_chance < 0.18 or poor_pirate_chance > 0.24 or rich_pirate_chance < 0.39 or rich_pirate_chance > 0.46:
+        _fail("pirate encounter tuning left production envelope")
+        return
+    for interval_sample in 20:
+        var pirate_interval: float = float(scene._encounter_opportunity_interval(pirate_uncontrolled))
+        if pirate_interval < scene.PIRATE_OPPORTUNITY_MIN or pirate_interval > scene.PIRATE_OPPORTUNITY_MAX:
+            _fail("pirate opportunity interval left production range")
+            return
     if not bool(pirate_uncontrolled.hostile):
         _fail("pirates are not attack-on-sight")
         return
@@ -1273,6 +1465,45 @@ func _initialize() -> void:
         if not premium_goods.has(String(loot.commodity)):
             _fail("reinforced container used non-premium loot table")
             return
+
+    # Slice 10 loot envelope: preserve the intended small square / valuable
+    # diamond distinction across a deterministic sample, without cargo inflation.
+    scene.rng.seed = 77123
+    var basic_total := 0
+    var reinforced_total := 0
+    for loot_sample in 200:
+        scene.pending_drops.clear()
+        basic_total += int(scene._queue_container_loot(square_fixture))
+        scene.pending_drops.clear()
+        reinforced_total += int(scene._queue_container_loot(diamond_fixture))
+    var basic_average := float(basic_total) / 200.0
+    var reinforced_average := float(reinforced_total) / 200.0
+    if basic_average < 1.35 or basic_average > 1.65:
+        _fail("basic container average loot left production range")
+        return
+    if reinforced_average < 4.70 or reinforced_average > 5.30:
+        _fail("reinforced container average loot left production range")
+        return
+    scene.pending_drops.clear()
+    if not scene._queue_asteroid_ore_drop(asteroid_fixture, 0.099) or scene._queue_asteroid_ore_drop(asteroid_fixture, 0.10):
+        _fail("asteroid Ore salvage is not the tuned 10% threshold")
+        return
+
+    # Slice 10 penalty hierarchy: property crime < reinforced theft <
+    # killing police < destroying heavy enforcement. Contraband detection still
+    # jumps directly to WANTED heat so a completed illegal scan matters.
+    if scene.BASIC_CONTAINER_RELATION_LOSS <= 0 or scene.BASIC_CONTAINER_RELATION_LOSS >= scene.REINFORCED_CONTAINER_RELATION_LOSS:
+        _fail("container reputation penalties are not ordered")
+        return
+    if scene.REINFORCED_CONTAINER_RELATION_LOSS >= scene.POLICE_SHIP_KILL_RELATION_LOSS or scene.POLICE_SHIP_KILL_RELATION_LOSS >= scene.HEAVY_ENFORCEMENT_KILL_RELATION_LOSS:
+        _fail("enforcement reputation penalties are not meaningfully hierarchical")
+        return
+    if scene.POLICE_SHIP_KILL_HEAT_GAIN >= scene.HEAVY_ENFORCEMENT_KILL_HEAT_GAIN or scene.POLICE_SCAN_HEAT_BASE_GAIN < scene.PoliticalWorld.CRIMINAL_HEAT_THRESHOLD:
+        _fail("heat penalties no longer match enforcement severity")
+        return
+    if scene._contract_relation_reward("bounty", false) >= scene.POLICE_SHIP_KILL_RELATION_LOSS:
+        _fail("legitimate contract reputation gain can erase police killing too quickly")
+        return
 
     # Owned container destruction damages only the owner's relation, records an offense, and adds no heat.
     scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction), false)
