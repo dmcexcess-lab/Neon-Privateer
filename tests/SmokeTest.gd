@@ -1859,18 +1859,18 @@ func _initialize() -> void:
         return
     var scan_destination := String(smuggling_fixture.destination)
     var scan_commodity := String(smuggling_fixture.commodity)
-    var scan_faction := scene._planet_primary_faction(scan_destination)
-    if scan_faction.is_empty() or scene.PoliticalWorld.faction_commodity_legal(scene.political_world, scan_faction, scan_commodity):
+    var slice9_scan_faction := scene._planet_primary_faction(scan_destination)
+    if slice9_scan_faction.is_empty() or scene.PoliticalWorld.faction_commodity_legal(scene.political_world, slice9_scan_faction, scan_commodity):
         _fail("smuggling fixture has no enforcing destination faction")
         return
     scene.active_contract = smuggling_fixture.duplicate(true)
     scene.cargo[scan_commodity] = 0
     scene.encounter_active = true
     scene.encounter_mode = "police"
-    scene.encounter_faction_id = scan_faction
+    scene.encounter_faction_id = slice9_scan_faction
     scene.encounter_hostile = false
     scene.police_scan_attempted = false
-    if not scene._begin_police_scan(scan_faction, 1.0):
+    if not scene._begin_police_scan(slice9_scan_faction, 1.0):
         _fail("could not start scan for smuggling contract")
         return
     var smuggling_scan: Dictionary = scene._complete_police_scan()
@@ -1881,8 +1881,8 @@ func _initialize() -> void:
         _fail("confiscated smuggling contract remained active")
         return
     scene._end_route_encounter()
-    scene._adjust_faction_heat(scan_faction, -scene._faction_heat(scan_faction), false)
-    scene._adjust_faction_relation(scan_faction, -scene._faction_relation(scan_faction), false)
+    scene._adjust_faction_heat(slice9_scan_faction, -scene._faction_heat(slice9_scan_faction), false)
+    scene._adjust_faction_relation(slice9_scan_faction, -scene._faction_relation(slice9_scan_faction), false)
 
     # Completing a legitimate faction freight job moves commodity stock and improves issuer relation.
     if legal_delivery_fixture.is_empty():
