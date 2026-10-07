@@ -57,11 +57,13 @@ Green/Grey index positions and faction-currency positions are financial assets: 
 
 - Flight bonuses, contracts, investment sales, and other payouts pay carried cash.
 - Green/Grey index purchases, currency purchases, fines, and ship upgrades spend carried cash.
-- **Ship destruction loses all carried cash.**
+- **Ship destruction loses all carried cash, all cargo, all passengers, all ship upgrades, all weapon unlocks, and the current weapon/loadout.**
+- The player respawns docked at the **last planet successfully landed on** (the route origin for an in-progress flight).
 - The protected bank balance survives ship destruction.
+- Green/Grey index positions and faction-currency positions survive ship loss and use no cargo space.
+- Faction reputation/crime state, empire simulation, contracts board state, and the persistent galaxy continue from the same career.
 - Depositing and withdrawing currently move the full available balance with one tap.
 - The bank balance earns **3% once per successfully completed flight**. Reopening the Bank does not trigger interest.
-- Faction-currency positions survive ship loss and use no cargo space.
 
 ### Green-market commodities
 
@@ -262,11 +264,11 @@ Arcade score is a small travel bonus rather than the primary economy.
 - Asteroid and cargo-container destruction: **0 kill credits**.
 - Existing ship/platform kill scoring remains in place until their later role-specific slices.
 
-Flight bonus score is converted to carried cash on successful arrival. **Destroying the ship loses all carried cash, not just that flight's bonus; banked money and investment positions survive.** Manually aborting a flight preserves accumulated cash while returning to the origin and failing the active contract.
+Flight bonus score is converted to carried cash on successful arrival. **Destroying the ship is a total ship loss:** all unbanked cash, cargo, passengers, upgrades, weapon unlocks, and the current weapon are lost. The player respawns at the last planet successfully landed on. Banked money and financial investments survive. Manually aborting a flight is not a death and therefore preserves the ship, its cargo, upgrades, weapon research, and carried cash while returning to the origin and failing the active contract.
 
 ## Ship upgrades
 
-The old Research currency is gone as a concept. Permanent ship upgrades are paid from **carried cash**:
+The old Research currency is gone as a concept. Ship upgrades are paid from **carried cash** and remain installed only until the ship is destroyed:
 
 - Ship speed
 - Dash
@@ -275,7 +277,7 @@ The old Research currency is gone as a concept. Permanent ship upgrades are paid
 - Shield charges
 - Starting weapon unlocks
 
-Internally some legacy variable/function names still use `research_*` for save/code compatibility, but the player-facing financial state is CASH, BANK, commodity inventory, and faction-currency positions.
+All five upgrade tracks and all starting-weapon unlocks reset to zero/locked on ship destruction. A replacement ship starts with the baseline two hits, zero shield charges, and no starting weapon. Internally some legacy variable/function names still use `research_*` for save/code compatibility, but the player-facing financial state is CASH, BANK, commodity inventory, and faction-currency positions.
 
 ## Persistence
 
@@ -320,7 +322,7 @@ CI requires the production-closure marker before the frozen Classic regression, 
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers the complete Privateer system pass, including 24 persistent physical goods, archetype-valid planet specialties, real route shipment stock transfer, summed Green/Grey trade ledgers, aggregate index investing, Green-vs-Grey risk/spread behavior, docked economy ticks, bank deposit/withdrawal, exact 3% completed-flight interest, death loss of cash while preserving bank/investments, faction currency, peaceful influence expansion, forced-war resource consumption/frontier movement, currency-fundamental response, career isolation, economy-4/contract-2 migration, deterministic worlds, contracts, contraband, route/encounter balance, phone layout, Classic regression, durable active-route save/reload, and core flight mechanics.
+The smoke test covers the complete Privateer system pass, including 24 persistent physical goods, archetype-valid planet specialties, real route shipment stock transfer, summed Green/Grey trade ledgers, aggregate index investing, Green-vs-Grey risk/spread behavior, docked economy ticks, bank deposit/withdrawal, exact 3% completed-flight interest, **full ship-loss reset and last-landing respawn while preserving bank/investments**, faction currency, peaceful influence expansion, forced-war resource consumption/frontier movement, currency-fundamental response, career isolation, economy-4/contract-2 migration, deterministic worlds, contracts, contraband, route/encounter balance, phone layout, Classic regression, durable active-route save/reload, and core flight mechanics.
 
 
 ## Preserved arcade version
