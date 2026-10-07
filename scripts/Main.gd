@@ -3255,13 +3255,17 @@ func _draw_career_slots_menu() -> void:
     _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _load_privateer_ui_art() -> void:
     privateer_ui_atlas = null
-    if not ResourceLoader.exists(PRIVATEER_UI_ATLAS_PATH):
+    if not FileAccess.file_exists(PRIVATEER_UI_ATLAS_PATH):
         return
-    var art_resource := load(PRIVATEER_UI_ATLAS_PATH)
-    if art_resource is Image:
-        privateer_ui_atlas = ImageTexture.create_from_image(art_resource)
-    elif art_resource is Texture2D:
-        privateer_ui_atlas = art_resource
+    var bytes := FileAccess.get_file_as_bytes(PRIVATEER_UI_ATLAS_PATH)
+    if bytes.is_empty():
+        return
+    var image := Image.new()
+    if image.load_jpg_from_buffer(bytes) != OK:
+        return
+    if image.get_width() != 390 or image.get_height() != 1228:
+        return
+    privateer_ui_atlas = ImageTexture.create_from_image(image)
 
 func _privateer_art_ready() -> bool:
     return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
