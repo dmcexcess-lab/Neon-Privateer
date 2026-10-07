@@ -2846,10 +2846,34 @@ func _political_risk_label(danger: int) -> String:
 
 
 func _market_buy_rect(index: int) -> Rect2:
-    return Rect2(22.0, 166.0 + float(index) * 74.0, 165.0, 60.0)
+    return Rect2(22.0, 204.0 + float(index) * 72.0, 165.0, 56.0)
 
 func _market_sell_rect(index: int) -> Rect2:
-    return Rect2(203.0, 166.0 + float(index) * 74.0, 165.0, 60.0)
+    return Rect2(203.0, 204.0 + float(index) * 72.0, 165.0, 56.0)
+
+func _bank_goods_for_view() -> Array[String]:
+    return legal_commodity_names if bank_view == "green" else grey_commodity_names
+
+func _bank_market_page_count() -> int:
+    if bank_view != "green" and bank_view != "grey":
+        return 1
+    return maxi(1, int(ceil(float(_bank_goods_for_view().size()) / float(BANK_MARKET_ROWS_PER_PAGE))))
+
+func _bank_visible_goods() -> Array[String]:
+    var result: Array[String] = []
+    if bank_view != "green" and bank_view != "grey":
+        return result
+    var goods := _bank_goods_for_view()
+    var start_index := bank_market_page * BANK_MARKET_ROWS_PER_PAGE
+    for i in range(start_index, mini(goods.size(), start_index + BANK_MARKET_ROWS_PER_PAGE)):
+        result.append(String(goods[i]))
+    return result
+
+func _currency_faction_ids() -> Array[String]:
+    var result: Array[String] = []
+    for faction in political_world.get("factions", []):
+        result.append(String(faction.get("id", "")))
+    return result
 
 func _contract_row_rect(index: int) -> Rect2:
     return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
@@ -2861,6 +2885,9 @@ func _handle_hub_tap(pos: Vector2) -> void:
         travel_open = true
         hub_open = false
     elif HUB_MARKET_RECT.has_point(pos):
+        bank_view = "account"
+        bank_market_page = 0
+        docked_market_clock = 0.0
         market_open = true
         hub_open = false
     elif HUB_CONTRACTS_RECT.has_point(pos):
@@ -2915,15 +2942,71 @@ func _handle_market_tap(pos: Vector2) -> void:
         hub_open = true
         queue_redraw()
         return
-    for i in commodity_names.size():
-        if _market_buy_rect(i).has_point(pos):
-            _buy_commodity(commodity_names[i])
+
+    if BANK_ACCOUNT_TAB_RECT.has_point(pos):
+        bank_view = "account"
+        bank_market_page = 0
+        queue_redraw()
+        return
+    if BANK_GREEN_TAB_RECT.has_point(pos):
+        bank_view = "green"
+        bank_market_page = 0
+        queue_redraw()
+        return
+    if BANK_GREY_TAB_RECT.has_point(pos):
+        bank_view = "grey"
+        bank_market_page = 0
+        queue_redraw()
+        return
+    if BANK_CURRENCY_TAB_RECT.has_point(pos):
+        bank_view = "currency"
+        bank_market_page = 0
+        queue_redraw()
+        return
+
+    if bank_view == "account":
+        if BANK_DEPOSIT_RECT.has_point(pos):
+            _deposit_all_cash()
             queue_redraw()
             return
-        if _market_sell_rect(i).has_point(pos):
-            _sell_commodity(commodity_names[i])
+        if BANK_WITHDRAW_RECT.has_point(pos):
+            _withdraw_all_bank()
             queue_redraw()
             return
+        return
+
+    if bank_view == "green" or bank_view == "grey":
+        if BANK_PAGE_PREV_RECT.has_point(pos):
+            bank_market_page = maxi(0, bank_market_page - 1)
+            queue_redraw()
+            return
+        if BANK_PAGE_NEXT_RECT.has_point(pos):
+            bank_market_page = mini(_bank_market_page_count() - 1, bank_market_page + 1)
+            queue_redraw()
+            return
+        var visible_goods := _bank_visible_goods()
+        for i in visible_goods.size():
+            if _market_buy_rect(i).has_point(pos):
+                _buy_commodity(visible_goods[i])
+                queue_redraw()
+                return
+            if _market_sell_rect(i).has_point(pos):
+                _sell_commodity(visible_goods[i])
+                queue_redraw()
+                return
+        return
+
+    if bank_view == "currency":
+        var faction_ids := _currency_faction_ids()
+        for i in faction_ids.size():
+            if _market_buy_rect(i).has_point(pos):
+                _buy_currency(faction_ids[i])
+                queue_redraw()
+                return
+            if _market_sell_rect(i).has_point(pos):
+                _sell_currency(faction_ids[i])
+                queue_redraw()
+                return
 
 func _handle_contracts_tap(pos: Vector2) -> void:
     if SUBMENU_BACK_RECT.has_point(pos):
@@ -5383,7 +5466,7 @@ func _draw_title() -> void:
     _text_center(last_trip_summary, 370.0, 11, Color("8ea9b8"), 35.0, 355.0)
     _text("CAREER %d" % active_career_slot, Vector2(292, 38), 11, Color("8ea9b8"))
 
-    var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
+    var labels := ["TRAVEL", "BANK", "CONTRACTS", "SHIP UPGRADES"]
     for i in 4:
         var rect := _hub_button_rect(i)
         draw_rect(rect, Color(0.04, 0.12, 0.17, 0.91), true)
@@ -5546,37 +5629,93 @@ func _draw_travel_menu() -> void:
     draw_rect(SYSTEM_FLY_RECT, Color("6bffb0") if can_fly else Color("46515c"), false, 2.5)
     _text_center("FLY", SYSTEM_FLY_RECT.position.y + 35.0, 19, Color("f0fbff") if can_fly else Color("68737d"), SYSTEM_FLY_RECT.position.x, SYSTEM_FLY_RECT.end.x)
 
+func _draw_bank_tab(rect: Rect2, label: String, key: String) -> void:
+    var selected := bank_view == key
+    draw_rect(rect, Color(0.04, 0.18, 0.14, 0.96) if selected else Color(0.035, 0.07, 0.10, 0.92), true)
+    draw_rect(rect, Color("6bffb0") if selected else Color("465f72"), false, 2.0)
+    _text_center(label, rect.position.y + 27.0, 12, Color("f0fbff"), rect.position.x, rect.end.x)
+
 func _draw_market_menu() -> void:
     _draw_menu_art(ART_BG_MARKET, 0.67)
-    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 144.0), 0.78)
-    _draw_planet_art(current_planet, Rect2(306.0, 18.0, 60.0, 60.0), 0.96)
-    _text("%s MARKET" % _planet_display_name(current_planet).to_upper(), Vector2(28, 48), 24, Color("77f7ff"))
-    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(28, 76), 14, Color("ffd166"))
-    _text(_planet_jurisdiction_label(current_planet), Vector2(28, 101), 10, Color("bdeef4"))
-    _text(_planet_law_summary(current_planet), Vector2(28, 121), 10, Color("8ea9b8"))
-    _text(_planet_crime_summary(current_planet), Vector2(28, 142), 9, Color("ffb347") if _planet_crime_summary(current_planet).contains("HUNTED") or _planet_crime_summary(current_planet).contains("WANTED") else Color("8ea9b8"))
+    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 102.0), 0.78)
+    _draw_planet_art(current_planet, Rect2(310.0, 20.0, 54.0, 54.0), 0.96)
+    _text("%s BANK" % _planet_display_name(current_planet).to_upper(), Vector2(28, 45), 23, Color("77f7ff"))
+    _text("CASH %d   BANK %d" % [research_credits, bank_balance], Vector2(28, 72), 13, Color("ffd166"))
+    _text("BANK RETURN 3%% / COMPLETED FLIGHT", Vector2(28, 96), 10, Color("6bffb0"))
 
-    for i in commodity_names.size():
-        var commodity: String = commodity_names[i]
-        var buy_price: int = _market_buy_price(current_planet, commodity)
-        var sell_price: int = _market_sell_price(current_planet, commodity)
-        var market_data: Dictionary = markets[current_planet][commodity]
-        var stock: int = int(round(float(market_data.stock)))
-        var held: int = int(cargo.get(commodity, 0))
-        var buy_rect: Rect2 = _market_buy_rect(i)
-        var sell_rect: Rect2 = _market_sell_rect(i)
-        draw_rect(buy_rect, Color(0.035, 0.16, 0.12, 0.91), true)
-        draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
-        draw_rect(sell_rect, Color(0.16, 0.07, 0.11, 0.91), true)
-        draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
-        _text(commodity, buy_rect.position + Vector2(8, 19), 14, Color("f0fbff"))
-        _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 46), 13, Color("6bffb0"))
-        _text("SELL %d" % sell_price, sell_rect.position + Vector2(9, 46), 13, Color("ffb0c0"))
-        _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(86, 19), 11, Color("8ea9b8"))
-        if PoliticalWorld.RESTRICTED_COMMODITIES.has(commodity):
-            var legality: Dictionary = _planet_commodity_legality(current_planet, commodity)
-            var status: String = _commodity_legality_short(current_planet, commodity)
-            _text(status, sell_rect.position + Vector2(9, 19), 10, _commodity_legality_color(String(legality.status)))
+    _draw_bank_tab(BANK_ACCOUNT_TAB_RECT, "ACCOUNT", "account")
+    _draw_bank_tab(BANK_GREEN_TAB_RECT, "GREEN", "green")
+    _draw_bank_tab(BANK_GREY_TAB_RECT, "GREY", "grey")
+    _draw_bank_tab(BANK_CURRENCY_TAB_RECT, "CURRENCY", "currency")
+
+    if bank_view == "account":
+        _draw_menu_panel(Rect2(28.0, 196.0, 334.0, 242.0), 0.86, Color("6bffb0"))
+        _text_center("PROTECTED ACCOUNT", 230.0, 22, Color("6bffb0"), 32.0, 358.0)
+        _text_center("BANK %07d" % bank_balance, 274.0, 24, Color("ffd166"), 32.0, 358.0)
+        _text_center("CARRIED CASH %07d" % research_credits, 306.0, 16, Color("f0fbff"), 32.0, 358.0)
+        _text_center("CASH IS LOST IF YOUR SHIP IS DESTROYED", 424.0, 11, Color("ffb347"), 30.0, 360.0)
+        draw_rect(BANK_DEPOSIT_RECT, Color(0.04, 0.18, 0.14, 0.96), true)
+        draw_rect(BANK_DEPOSIT_RECT, Color("6bffb0"), false, 2.0)
+        _text_center("DEPOSIT ALL CASH", BANK_DEPOSIT_RECT.position.y + 40.0, 18, Color("f0fbff"), BANK_DEPOSIT_RECT.position.x, BANK_DEPOSIT_RECT.end.x)
+        draw_rect(BANK_WITHDRAW_RECT, Color(0.08, 0.10, 0.20, 0.96), true)
+        draw_rect(BANK_WITHDRAW_RECT, Color("77f7ff"), false, 2.0)
+        _text_center("WITHDRAW ALL", BANK_WITHDRAW_RECT.position.y + 40.0, 18, Color("f0fbff"), BANK_WITHDRAW_RECT.position.x, BANK_WITHDRAW_RECT.end.x)
+        _text_center("LAST INTEREST +%d   CYCLES %d" % [bank_last_interest, bank_interest_cycles], 470.0, 13, Color("8ea9b8"), 30.0, 360.0)
+
+    elif bank_view == "green" or bank_view == "grey":
+        var goods := _bank_visible_goods()
+        var page_count := _bank_market_page_count()
+        var title := "GREEN MARKET — LEGAL GOODS" if bank_view == "green" else "GREY MARKET — FACTION LAW APPLIES"
+        _text_center(title, 193.0, 12, Color("6bffb0") if bank_view == "green" else Color("ffb347"), 20.0, 370.0)
+        for i in goods.size():
+            var commodity := goods[i]
+            var buy_price := _market_buy_price(current_planet, commodity)
+            var sell_price := _market_sell_price(current_planet, commodity)
+            var market_data: Dictionary = markets[current_planet][commodity]
+            var stock := int(round(float(market_data.get("stock", 0.0))))
+            var held := int(cargo.get(commodity, 0))
+            var buy_rect := _market_buy_rect(i)
+            var sell_rect := _market_sell_rect(i)
+            draw_rect(buy_rect, Color(0.035, 0.16, 0.12, 0.91), true)
+            draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
+            draw_rect(sell_rect, Color(0.16, 0.07, 0.11, 0.91), true)
+            draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
+            _text(_short_map_label(commodity.to_upper(), 17), buy_rect.position + Vector2(7, 18), 11, Color("f0fbff"))
+            _text("BUY %d" % buy_price, buy_rect.position + Vector2(7, 43), 12, Color("6bffb0"))
+            _text("SELL %d" % sell_price, sell_rect.position + Vector2(8, 43), 12, Color("ffb0c0"))
+            _text("H%d S%d V%d%%" % [held, stock, int(round(_commodity_volatility(commodity) * 100.0))], sell_rect.position + Vector2(8, 18), 9, Color("8ea9b8"))
+            if bank_view == "grey":
+                var legality: Dictionary = _planet_commodity_legality(current_planet, commodity)
+                _text(_commodity_legality_short(current_planet, commodity), buy_rect.position + Vector2(112, 18), 8, _commodity_legality_color(String(legality.get("status", "LEGAL"))))
+        draw_rect(BANK_PAGE_PREV_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
+        draw_rect(BANK_PAGE_PREV_RECT, Color("77f7ff"), false, 2.0)
+        _text_center("PREV", BANK_PAGE_PREV_RECT.position.y + 32.0, 15, Color("f0fbff"), BANK_PAGE_PREV_RECT.position.x, BANK_PAGE_PREV_RECT.end.x)
+        draw_rect(BANK_PAGE_NEXT_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
+        draw_rect(BANK_PAGE_NEXT_RECT, Color("77f7ff"), false, 2.0)
+        _text_center("NEXT", BANK_PAGE_NEXT_RECT.position.y + 32.0, 15, Color("f0fbff"), BANK_PAGE_NEXT_RECT.position.x, BANK_PAGE_NEXT_RECT.end.x)
+        _text_center("PAGE %d/%d   CARGO %d/%d" % [bank_market_page + 1, page_count, _cargo_used(), _cargo_capacity()], 650.0, 11, Color("8ea9b8"), 25.0, 365.0)
+
+    elif bank_view == "currency":
+        _text_center("FACTION CURRENCY MARKET", 193.0, 13, Color("b56cff"), 20.0, 370.0)
+        var faction_ids := _currency_faction_ids()
+        for i in faction_ids.size():
+            var faction_id := faction_ids[i]
+            var faction := PoliticalWorld.faction_record(political_world, faction_id)
+            var buy_price := _currency_buy_price(faction_id)
+            var sell_price := _currency_sell_price(faction_id)
+            var held := int(currency_holdings.get(faction_id, 0))
+            var buy_rect := _market_buy_rect(i)
+            var sell_rect := _market_sell_rect(i)
+            draw_rect(buy_rect, Color(0.05, 0.10, 0.18, 0.94), true)
+            draw_rect(buy_rect, Color(faction.get("color", Color("77f7ff"))), false, 2.0)
+            draw_rect(sell_rect, Color(0.12, 0.06, 0.14, 0.94), true)
+            draw_rect(sell_rect, Color("b56cff"), false, 2.0)
+            _text(_short_map_label(String(faction.get("name", faction_id)).to_upper(), 17), buy_rect.position + Vector2(7, 18), 10, Color("f0fbff"))
+            _text("BUY %d" % buy_price, buy_rect.position + Vector2(7, 43), 12, Color("6bffb0"))
+            _text("INDEX %d" % _faction_currency_price(faction_id), sell_rect.position + Vector2(8, 18), 10, Color("bdeef4"))
+            _text("SELL %d  H%d" % [sell_price, held], sell_rect.position + Vector2(8, 43), 11, Color("ffb0c0"))
+        _text_center("CURRENCY POSITIONS USE NO CARGO SPACE", 560.0, 11, Color("8ea9b8"), 25.0, 365.0)
+
     _draw_submenu_back()
 
 func _draw_contracts_menu() -> void:
