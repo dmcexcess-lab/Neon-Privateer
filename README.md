@@ -143,10 +143,11 @@ The contract board regenerates at each arrival and is now integrated with the ge
 
 Every contract stores its origin, destination, issuer, route pirate exposure, payout breakdown, relation reward, and political role. Legitimate faction jobs improve relation with the issuing faction when completed; underworld smuggling jobs do not grant faction reputation.
 
-### Freight / smuggling
+### Special delivery / smuggling
 
-- Delivery contracts reserve one cargo slot and name the actual commodity being moved.
-- Legal freight selection follows market demand and destination legality rather than choosing arbitrary cargo.
+- **Special deliveries are timed multi-jump jobs.** They deliberately choose a destination requiring at least two jumps with the current drive, reserve one cargo slot, and name the actual commodity being moved.
+- Their deadline persists across intermediate landings; taking too long fails the job and releases the reserved slot.
+- Normal legal freight selection still follows market demand and destination legality rather than choosing arbitrary cargo.
 - Grey commodities sold where that **specific item** is illegal carry a black-market price premium; mixed-law destinations have a smaller premium.
 - When a destination bans a grey good, the board can generate an **UNDERWORLD / SMUGGLE** delivery with a separate illegal-cargo premium.
 - Smuggling contract cargo is real contraband for police scans. If a patrol faction bans that commodity and completes a scan, the contract cargo is confiscated, the contract fails, and normal contraband fine/relation/heat consequences apply.
@@ -154,18 +155,21 @@ Every contract stores its origin, destination, issuer, route pirate exposure, pa
 
 ### Passenger
 
-- Passenger contracts reserve one passenger berth.
-- The generator prefers politically meaningful destinations such as rival-faction, contested, or uncontrolled worlds.
+- Passenger contracts reserve one passenger berth and deliberately choose **multi-jump** destinations.
+- They have no normal delivery deadline; intermediate landings do not fail them.
+- Passenger patience is intentionally generous, but after an extreme delay (15 minutes of active contract time) the passenger leaves and the contract fails.
+- The generator still prefers politically meaningful destinations such as rival-faction, contested, or uncontrolled worlds.
 - Cross-faction passenger work receives a political payout premium.
 - Legitimate passenger completion improves issuer relation.
 
 ### Bounty
 
 - Bounties require an armed starting ship.
-- The generator prefers destinations whose route has the greatest CONTESTED/UNCONTROLLED exposure.
-- Pirate-region exposure directly raises bounty pay rather than merely raising an abstract difficulty value.
-- At the destination threshold, the route transitions into the existing boss fight.
-- The contract pays only after the boss is destroyed, and legitimate completion improves issuer relation.
+- Travel to the bounty target is ordinary distance-based travel using the same jump-range and fuel rules as everything else; multi-jump targets remain ordinary flights until the final destination.
+- Pirate-region exposure and target distance both contribute to bounty selection/payout.
+- At the **final target arrival**, normal forward travel stops, route/object spawning stops, and the game becomes a dedicated boss arena. Lateral movement, weapons, and dash remain active.
+- Target classes are **trapezoid patrol**, **stationary pentagon platform**, or a high-HP **octagon flagship**. The octagon uses multiple weapon systems (spread cannon + homing missiles).
+- The contract pays only after the target is destroyed; then landing completes and legitimate completion improves issuer relation.
 
 ### Risk premiums
 
@@ -188,11 +192,14 @@ The atlas remains menu-only; the arcade renderer does not reference it.
 
 ## Space travel
 
-Every direct lane has three separate route axes:
+Every direct lane has separate route axes:
 
-- **Length / distance** controls total flight time. Danger and contract difficulty do not lengthen a lane.
+- **Length / distance** controls baseline flight time and fuel consumption.
+- **Jump range** gates which direct lanes the current ship can cross. The navigator finds the shortest path using only edges within the current drive range, so range upgrades can open new regions and shortcuts.
+- **Fuel** is ship state, not cargo. A jump burns fuel equal to that direct lane's distance; refueling is paid while docked at 20 credits per fuel unit. The tank holds 12 units.
+- **Travel time** has bounded ±7% variation. Even the longest baseline jump is capped at 30 seconds, and the Ship Speed upgrade reduces real wall-clock travel time.
 - **Danger** controls asteroid density during travel.
-- **Wealth** controls cargo-container density and modifies the random chance of patrol/pirate contacts. Wealth is generated from proximity to faction core worlds/capitals and from major traffic-lane centrality in the sparse route network.
+- **Wealth** controls cargo-container density and modifies random patrol/pirate contact probability.
 
 The arcade renderer uses shape as object identity:
 
@@ -200,7 +207,8 @@ The arcade renderer uses shape as object identity:
 - **Squares — basic cargo containers.** Stationary laterally, low durability, one random 1–2 unit commodity bundle.
 - **Diamonds — reinforced cargo containers.** Stationary laterally, tougher/rarer, two larger 2–3 unit bundles.
 - **Trapezoids — ships.** Pirates in CONTESTED/UNCONTROLLED space; faction patrol ships in CORE/CONTROLLED space.
-- **Pentagons — heavy government enforcement.** Random pentagons are faction-only, require the heavy criminal threshold, and can spawn only while a faction patrol is already in active hostile combat with the player. Pirate contacts never spawn them. Bounty bosses remain the explicit contract exception.
+- **Pentagons — heavy government enforcement.** Random pentagons are faction-only, require the heavy criminal threshold, and can spawn only while a faction patrol is already in active hostile combat with the player. A stationary pentagon can also be an explicit bounty target.
+- **Octagons — bounty flagships only.** Large, high-HP targets with multiple weapon systems; they do not appear as ordinary route traffic.
 
 ### Territory contacts and enforcement
 
@@ -270,6 +278,7 @@ Flight bonus score is converted to carried cash on successful arrival. **Destroy
 
 The old Research currency is gone as a concept. Ship upgrades are paid from **carried cash** and remain installed only until the ship is destroyed:
 
+- Max jump range
 - Ship speed
 - Dash
 - Weapon damage
@@ -277,17 +286,17 @@ The old Research currency is gone as a concept. Ship upgrades are paid from **ca
 - Shield charges
 - Starting weapon unlocks
 
-All five upgrade tracks and all starting-weapon unlocks reset to zero/locked on ship destruction. A replacement ship starts with the baseline two hits, zero shield charges, and no starting weapon. Internally some legacy variable/function names still use `research_*` for save/code compatibility, but the player-facing financial state is CASH, BANK, commodity inventory, and faction-currency positions.
+All six upgrade tracks and all starting-weapon unlocks reset to zero/locked on ship destruction. Jump range returns to the baseline drive, and the replacement ship starts with a **full fuel tank**, two hits, zero shield charges, and no starting weapon. Internally some legacy variable/function names still use `research_*` for save/code compatibility, but the player-facing financial state is CASH, BANK, commodity inventory, and faction-currency positions.
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus **economy schema 4**, crime schema 1, enforcement schema 1, and **contract schema 2**, all 32 generated planets, one commodity specialty per planet, item-level grey laws, empire treasury/military/trade/war state, sparse route graph and dynamically recomputed political segments, current location, all 24 physical commodity markets, Green/Grey index state and holdings, the real-trade ledger, faction-currency holdings/indices, bank-interest cycle state, contracts, passengers, and economy tick. Carried cash and protected bank balance are persisted in the career meta save.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus **economy schema 4**, crime schema 1, enforcement schema 1, and **contract schema 3**, all 32 generated planets, one commodity specialty per planet, item-level grey laws, empire treasury/military/trade/war state, sparse route graph and dynamically recomputed political segments, current location, all 24 physical commodity markets, Green/Grey index state and holdings, the real-trade ledger, faction-currency holdings/indices, bank-interest cycle state, contracts, passengers, and economy tick. Carried cash and protected bank balance are persisted in the career meta save.
 
 Generated political state is created once and never rerolled on reload. Existing generated careers missing route-wealth metadata derive it deterministically from their preserved capitals and route graph, without rerolling planets or lanes.
 
 Older four-world careers still migrate once to political schema 2. Economy-2/3 careers migrate deterministically to economy schema 4: retired commodity IDs map to the 24-good model, existing worlds gain deterministic planet specialties, factions gain macroeconomic/war fields without rerolling geography, Green/Grey index holdings start clean when absent, old credits remain carried cash, and the existing bank/relations/routes/progression are preserved.
 
-The active route snapshot remains separate and preserves exact in-flight state.
+The active route snapshot remains separate and preserves exact in-flight state. Career meta state now also persists current fuel and the max-jump upgrade.
 
 ## Slice 10 production closure
 
