@@ -545,6 +545,14 @@ func _migrate_legacy_career_if_needed() -> void:
 
 func _reset_career_state() -> void:
     research_credits = 1200
+    bank_balance = 0
+    currency_holdings.clear()
+    currency_markets.clear()
+    bank_interest_cycles = 0
+    bank_last_interest = 0
+    bank_view = "account"
+    bank_market_page = 0
+    docked_market_clock = 0.0
     research_ship_speed = 0
     research_dash = 0
     research_damage = 0
@@ -939,23 +947,28 @@ func _commodity_legality_short(planet_id: String, commodity: String) -> String:
         _:
             return "LEGAL"
 
+func _faction_grey_category_count(faction_id: String, goods: Array) -> int:
+    var total := 0
+    for commodity in goods:
+        if PoliticalWorld.faction_commodity_legal(political_world, faction_id, String(commodity)):
+            total += 1
+    return total
+
 func _planet_law_summary(planet_id: String) -> String:
     var faction_ids := _planet_faction_ids(planet_id)
-    if faction_ids.size() >= 2:
-        var pieces: Array[String] = []
-        for faction_id in faction_ids:
-            pieces.append("%s A:%s N:%s" % [
-                _faction_tag(faction_id),
-                "OK" if PoliticalWorld.faction_commodity_legal(political_world, faction_id, "Arms") else "NO",
-                "OK" if PoliticalWorld.faction_commodity_legal(political_world, faction_id, "Narcotics") else "NO"
-            ])
-            if pieces.size() >= 2:
-                break
-        return " • ".join(pieces)
-    return "ARMS %s  NARC %s" % [
-        _commodity_legality_short(planet_id, "Arms"),
-        _commodity_legality_short(planet_id, "Narcotics")
-    ]
+    if faction_ids.is_empty():
+        return "GREY MARKET UNREGULATED"
+    var pieces: Array[String] = []
+    for faction_id in faction_ids:
+        pieces.append("%s W%d N%d E%d" % [
+            _faction_tag(faction_id),
+            _faction_grey_category_count(faction_id, PoliticalWorld.GREY_WEAPONS),
+            _faction_grey_category_count(faction_id, PoliticalWorld.GREY_NARCOTICS),
+            _faction_grey_category_count(faction_id, PoliticalWorld.GREY_ENTERTAINMENT)
+        ])
+        if pieces.size() >= 2:
+            break
+    return " • ".join(pieces)
 
 func _planet_jurisdiction_label(planet_id: String) -> String:
     var context: Dictionary = _get_political_context_at(_system_planet_world_position(planet_id))
@@ -1421,7 +1434,7 @@ func _best_legal_delivery_profile(origin: String, profiles: Array) -> Dictionary
         var destination := String(profile.destination)
         var commodity := ""
         var commodity_score := -INF
-        for candidate in commodity_names:
+        for candidate in legal_commodity_names:
             var legality := String(_planet_commodity_legality(destination, candidate).get("status", "LEGAL"))
             if legality == "ILLEGAL":
                 continue
@@ -1596,7 +1609,7 @@ func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> 
     var origin := String(upgraded.get("origin", fallback_origin))
     var destination := String(upgraded.get("destination", ""))
     var smuggling := bool(upgraded.get("smuggling", false))
-    var commodity := String(upgraded.get("commodity", "Food" if kind == "delivery" else ""))
+    var commodity := _migrate_commodity_id(String(upgraded.get("commodity", "Grain" if kind == "delivery" else "")))
     var issuer_faction := String(upgraded.get("issuer_faction", _planet_primary_faction(origin)))
     if smuggling:
         issuer_faction = ""
@@ -1639,7 +1652,7 @@ func _regenerate_contracts() -> void:
 
     var legal_profile := _best_legal_delivery_profile(current_planet, profiles)
     if not legal_profile.is_empty():
-        contract_board.append(_make_contract("delivery", current_planet, legal_profile, String(legal_profile.get("commodity", "Food")), false))
+        contract_board.append(_make_contract("delivery", current_planet, legal_profile, String(legal_profile.get("commodity", "Grain")), false))
 
     var passenger_profile := _best_passenger_profile(profiles, issuer_faction)
     if not passenger_profile.is_empty():
@@ -1650,11 +1663,11 @@ func _regenerate_contracts() -> void:
 
     var smuggling_profile := _best_smuggling_profile(current_planet, profiles)
     if not smuggling_profile.is_empty():
-        contract_board.append(_make_contract("delivery", current_planet, smuggling_profile, String(smuggling_profile.get("commodity", "Arms")), true))
+        contract_board.append(_make_contract("delivery", current_planet, smuggling_profile, String(smuggling_profile.get("commodity", "Small Arms")), true))
     elif not legal_profile.is_empty():
         var alternate := _best_legal_delivery_profile(current_planet, profiles)
         if not alternate.is_empty():
-            contract_board.append(_make_contract("delivery", current_planet, alternate, String(alternate.get("commodity", "Food")), false))
+            contract_board.append(_make_contract("delivery", current_planet, alternate, String(alternate.get("commodity", "Grain")), false))
 
 func _accept_contract(index: int) -> bool:
     if not active_contract.is_empty() or index < 0 or index >= contract_board.size():
