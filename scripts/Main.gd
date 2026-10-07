@@ -117,14 +117,7 @@ const DASH_FORWARD_SPEED := 700.0
 const DASH_FORWARD_DISTANCE := 160.0
 const DASH_RETURN_RATE := 0.55
 const DASH_SCORE_DURATION := 0.9
-const LANE_EVENT_FIRST := 7.0
 const PLAYER_RADIUS := 14.0
-const STATION_HEIGHT_BASE := 300.0
-const STATION_HEIGHT_STEP := 45.0
-const STATION_HEIGHT_MAX := 660.0
-const STATION_SPEED := 210.0
-const STATION_CENTER_WALL := 24.0
-const STATION_EDGE_WALL := 42.0
 const SHOT_RADIUS := 4.0
 const SINGLE_INTERVAL := 0.24
 const DUAL_INTERVAL := 0.32
@@ -368,12 +361,6 @@ var finale_banner_timer := 0.0
 var extraction_spawned := false
 var extraction_lane := ""
 var result_reason := ""
-var hard_lane_right := true
-var lane_event_active := false
-var lane_event_timer := 0.0
-var next_lane_event_at := LANE_EVENT_FIRST
-var lane_events_started := 0
-var lane_choice_banner_timer := 0.0
 var neutral_spawn_clock := 0.0
 var fire_clock := 0.0
 var repair_clock := 0.0
@@ -382,9 +369,6 @@ var weapon_banner_timer := 0.0
 var weapon_banner_text := ""
 var loot_banner_timer := 0.0
 var loot_banner_text := ""
-var station_height := STATION_HEIGHT_BASE
-var station_top := -STATION_HEIGHT_BASE - 40.0
-var station_locked_side := ""
 var objects: Array[Dictionary] = []
 var shots: Array[Dictionary] = []
 var enemy_shots: Array[Dictionary] = []
@@ -2448,9 +2432,6 @@ func _begin_bounty_boss() -> void:
         return
     boss_active = true
     _end_route_encounter()
-    lane_event_active = false
-    lane_event_timer = 0.0
-    station_locked_side = ""
     objects.clear()
     enemy_shots.clear()
     var difficulty := int(active_contract.get("difficulty", 1))
@@ -3602,14 +3583,6 @@ func _start_game() -> void:
     banked_this_run = false
     last_banked_score = 0
     world_scroll = 0.0
-    hard_lane_right = true
-    lane_event_active = false
-    lane_event_timer = 0.0
-    lane_events_started = 0
-    lane_choice_banner_timer = 0.0
-    station_height = _station_height_for_level()
-    station_top = -station_height - 40.0
-    station_locked_side = ""
     objects.clear()
     shots.clear()
     enemy_shots.clear()
@@ -3640,24 +3613,6 @@ func _level_duration() -> float:
     if route_active:
         return route_duration
     return minf(LEVEL_TIME_MAX, LEVEL_TIME_BASE + float(level - 1) * LEVEL_TIME_STEP)
-
-func _split_count_for_level() -> int:
-    return mini(4, 1 + int((level - 1) / 2))
-
-func _station_height_for_level() -> float:
-    return minf(STATION_HEIGHT_MAX, STATION_HEIGHT_BASE + float(level - 1) * STATION_HEIGHT_STEP)
-
-func _first_split_time() -> float:
-    var count := _split_count_for_level()
-    return maxf(6.0, _level_duration() / float(count + 1))
-
-func _schedule_next_split() -> void:
-    var count := _split_count_for_level()
-    if lane_events_started >= count:
-        next_lane_event_at = _level_duration() + 1.0
-        return
-    var target := _level_duration() * float(lane_events_started + 1) / float(count + 1)
-    next_lane_event_at = maxf(target, elapsed + 1.25)
 
 func _level_difficulty() -> float:
     var level_pressure := float(level - 1) * 0.12
@@ -3698,10 +3653,6 @@ func _open_shop() -> void:
     objects.clear()
     shots.clear()
     enemy_shots.clear()
-    lane_event_active = false
-    lane_event_timer = 0.0
-    station_locked_side = ""
-    station_top = -station_height - 40.0
     _play_sfx(level_clear_sfx)
     _save_run_snapshot()
     queue_redraw()
@@ -3757,13 +3708,6 @@ func _start_next_level() -> void:
     finale_active = false
     extraction_spawned = false
     extraction_lane = ""
-    lane_event_active = false
-    lane_event_timer = 0.0
-    lane_events_started = 0
-    lane_choice_banner_timer = 0.0
-    station_height = _station_height_for_level()
-    station_top = -station_height - 40.0
-    station_locked_side = ""
     objects.clear()
     shots.clear()
     enemy_shots.clear()
@@ -4108,14 +4052,6 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "dash_timer", dash_timer)
     cfg.set_value("run", "dash_score_timer", dash_score_timer)
     cfg.set_value("run", "current_weapon", current_weapon)
-    cfg.set_value("run", "hard_lane_right", hard_lane_right)
-    cfg.set_value("run", "lane_event_active", lane_event_active)
-    cfg.set_value("run", "lane_event_timer", lane_event_timer)
-    cfg.set_value("run", "lane_events_started", lane_events_started)
-    cfg.set_value("run", "next_lane_event_at", next_lane_event_at)
-    cfg.set_value("run", "station_height", station_height)
-    cfg.set_value("run", "station_top", station_top)
-    cfg.set_value("run", "station_locked_side", station_locked_side)
     cfg.set_value("run", "world_scroll", world_scroll)
     cfg.set_value("run", "last_level_bonus", last_level_bonus)
     cfg.set_value("run", "route_active", route_active)
@@ -4186,14 +4122,6 @@ func _load_run_snapshot() -> bool:
     dash_timer = float(cfg.get_value("run", "dash_timer", 0.0))
     dash_score_timer = float(cfg.get_value("run", "dash_score_timer", 0.0))
     current_weapon = String(cfg.get_value("run", "current_weapon", "none"))
-    hard_lane_right = bool(cfg.get_value("run", "hard_lane_right", true))
-    lane_event_active = bool(cfg.get_value("run", "lane_event_active", false))
-    lane_event_timer = float(cfg.get_value("run", "lane_event_timer", 0.0))
-    lane_events_started = int(cfg.get_value("run", "lane_events_started", 0))
-    next_lane_event_at = float(cfg.get_value("run", "next_lane_event_at", _first_split_time()))
-    station_height = float(cfg.get_value("run", "station_height", _station_height_for_level()))
-    station_top = float(cfg.get_value("run", "station_top", -station_height - 40.0))
-    station_locked_side = String(cfg.get_value("run", "station_locked_side", ""))
     world_scroll = float(cfg.get_value("run", "world_scroll", 0.0))
     last_level_bonus = int(cfg.get_value("run", "last_level_bonus", 0))
     route_active = bool(cfg.get_value("run", "route_active", false))
@@ -4265,94 +4193,6 @@ func _lane_score_multiplier() -> float:
 
 func _dash_score_multiplier() -> float:
     return 2.0 if dash_score_timer > 0.0 else 1.0
-
-func _begin_lane_event() -> void:
-    lane_event_active = true
-    station_height = _station_height_for_level()
-    station_top = -station_height - 40.0
-    station_locked_side = ""
-    lane_event_timer = (H + 80.0 + station_height) / STATION_SPEED
-    lane_events_started += 1
-    _schedule_next_split()
-    hard_lane_right = rng.randf() < 0.5
-    lane_choice_banner_timer = 2.4
-    easy_spawn_clock = 0.18 if level == 1 else 0.12
-    hard_spawn_clock = 0.14 if level == 1 else 0.08
-    shake = maxf(shake, 1.8)
-
-func _end_lane_event() -> void:
-    lane_event_active = false
-    lane_event_timer = 0.0
-    lane_choice_banner_timer = 0.0
-    station_locked_side = ""
-    station_top = -station_height - 40.0
-    hard_lane_right = false
-    neutral_spawn_clock = maxf(neutral_spawn_clock, 0.45)
-    _neutralize_lane_objects()
-
-func _neutralize_lane_objects() -> void:
-    for obj in objects:
-        if not obj.has("lane_min") or not obj.has("lane_max"):
-            continue
-        obj.lane_min = LEFT
-        obj.lane_max = RIGHT
-        obj.hard = false
-        if obj.type == "hazard" and obj.has("lane_speed_mult"):
-            var lane_mult := maxf(0.01, float(obj.lane_speed_mult))
-            obj.speed = float(obj.speed) / lane_mult
-            obj.lane_speed_mult = 1.0
-
-func _station_at_player() -> bool:
-    if not lane_event_active:
-        return false
-    return player_y + PLAYER_RADIUS >= station_top and player_y - PLAYER_RADIUS <= station_top + station_height
-
-func _station_barrier_rects() -> Array[Rect2]:
-    return [
-        Rect2(0.0, station_top, STATION_EDGE_WALL, station_height),
-        Rect2(LANE_SPLIT - STATION_CENTER_WALL * 0.5, station_top, STATION_CENTER_WALL, station_height),
-        Rect2(W - STATION_EDGE_WALL, station_top, STATION_EDGE_WALL, station_height)
-    ]
-
-func _check_station_collision() -> void:
-    if not _station_at_player():
-        return
-
-    var player_rect := Rect2(
-        Vector2(player_x - PLAYER_RADIUS, player_y - PLAYER_RADIUS),
-        Vector2(PLAYER_RADIUS * 2.0, PLAYER_RADIUS * 2.0)
-    )
-
-    for barrier in _station_barrier_rects():
-        if player_rect.intersects(barrier):
-            hp = 0
-            combo = 1
-            flash = 0.45
-            shake = 12.0
-            result_reason = "STATION COLLISION"
-            _burst(Vector2(player_x, player_y), 24, Color("ffb347"))
-            _finish(false)
-            return
-
-    if station_locked_side.is_empty():
-        station_locked_side = "RIGHT" if player_x > LANE_SPLIT else "LEFT"
-
-func _is_hard_position(x: float) -> bool:
-    if x >= RIGHT_LANE_MIN:
-        return hard_lane_right
-    if x <= LEFT_LANE_MAX:
-        return not hard_lane_right
-    return false
-
-func _lane_bounds(hard_lane: bool) -> Vector2:
-    var use_right := hard_lane == hard_lane_right
-    if use_right:
-        return Vector2(RIGHT_LANE_MIN, RIGHT_LANE_MAX)
-    return Vector2(LEFT_LANE_MIN, LEFT_LANE_MAX)
-
-func _lane_center(hard_lane: bool) -> float:
-    var bounds := _lane_bounds(hard_lane)
-    return (bounds.x + bounds.y) * 0.5
 
 func _enemy_kind_cap_for_level() -> int:
     if level <= 1:
@@ -4436,38 +4276,6 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
         return 1
     return 0
 
-
-func _spawn_circle_bunch(hard_lane: bool, count: int) -> void:
-    var bounds := _lane_bounds(hard_lane)
-    var center := rng.randf_range(bounds.x + 34.0, bounds.y - 34.0)
-    for i in count:
-        var radius := rng.randf_range(17.0, 22.0)
-        var x := clampf(center + rng.randf_range(-24.0, 24.0), bounds.x + radius, bounds.y - radius)
-        var hp_value := _obstacle_max_hp(0)
-        objects.append({
-            "id": rng.randi(),
-            "type": "hazard",
-            "kind": 0,
-            "hp": hp_value,
-            "max_hp": hp_value,
-            "hard": hard_lane,
-            "x": x,
-            "y": -40.0 - float(i) * rng.randf_range(20.0, 34.0),
-            "r": radius,
-            "speed": rng.randf_range(165.0, 195.0),
-            "drift": rng.randf_range(-5.0, 5.0),
-            "shoot_clock": 999.0,
-            "angle": rng.randf_range(0.0, TAU),
-            "spin": rng.randf_range(-0.18, 0.18),
-            "lane_speed_mult": 1.0,
-            "lane_min": bounds.x,
-            "lane_max": bounds.y
-        })
-
-func _route_progress_fraction() -> float:
-    if not route_active or route_duration <= 0.0:
-        return 0.0
-    return clampf(elapsed / route_duration, 0.0, 1.0)
 
 func _current_flight_political_context() -> Dictionary:
     if route_active and not route_origin.is_empty() and not destination_planet.is_empty():
@@ -4605,11 +4413,8 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         base_speed = rng.randf_range(155.0, 185.0)
 
     var lane_speed_mult := 1.0
-    if lane_mode:
-        lane_speed_mult = 1.10 if hard_lane else 0.92
-
-    var speed := base_speed * lane_speed_mult
-    var bounds := _lane_bounds(hard_lane) if lane_mode else Vector2(LEFT, RIGHT)
+    var speed := base_speed
+    var bounds := Vector2(LEFT, RIGHT)
     var lane_min := bounds.x
     var lane_max := bounds.y
     var x := rng.randf_range(lane_min + radius, lane_max - radius)
@@ -4646,7 +4451,7 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         "kind": kind,
         "hp": obstacle_hp,
         "max_hp": obstacle_hp,
-        "hard": hard_lane and lane_mode,
+        "hard": false,
         "x": x,
         "y": -40.0,
         "r": radius,
@@ -5425,11 +5230,6 @@ func _draw() -> void:
     elif run_paused:
         _draw_pause_overlay()
 
-func _hard_lane_background_rect() -> Rect2:
-    if hard_lane_right:
-        return Rect2(LANE_SPLIT, 0.0, W - LANE_SPLIT, H)
-    return Rect2(0.0, 0.0, LANE_SPLIT, H)
-
 func _draw_background() -> void:
     var t := Time.get_ticks_msec() / 1000.0
 
@@ -5450,36 +5250,6 @@ func _draw_background() -> void:
         var y2 := fmod(float(i) * 139.0 + world_scroll * 0.42, H + 120.0) - 60.0
         var x2 := 28.0 + float((i * 127 + 91) % 330)
         draw_circle(Vector2(x2, y2), 2.1, Color(0.88, 0.93, 1.0, 0.48))
-
-func _draw_station(offset: Vector2) -> void:
-    if not lane_event_active:
-        return
-
-    var y0 := station_top
-    var y1 := station_top + station_height
-
-    var metal := Color("596777")
-    var metal_dark := Color("1e2833")
-    var edge := Color("9aa9b8")
-    var warning := Color("ffb347")
-
-    for barrier in _station_barrier_rects():
-        var shifted := Rect2(barrier.position + offset, barrier.size)
-        draw_rect(shifted, metal_dark, true)
-        draw_rect(shifted, metal, false, 4.0)
-        var strip_y := shifted.position.y + 24.0
-        while strip_y < shifted.end.y - 12.0:
-            draw_line(Vector2(shifted.position.x + 4.0, strip_y), Vector2(shifted.end.x - 4.0, strip_y + 18.0), warning, 4.0)
-            draw_line(Vector2(shifted.position.x + 4.0, strip_y + 18.0), Vector2(shifted.end.x - 4.0, strip_y), metal_dark, 4.0)
-            strip_y += 62.0
-
-    var panel_y := y0 + 38.0
-    while panel_y < y1 - 24.0:
-        draw_circle(Vector2(LANE_SPLIT, panel_y) + offset, 4.0, edge)
-        panel_y += 74.0
-
-    if _station_at_player() and not station_locked_side.is_empty():
-        _text("LOCKED %s" % station_locked_side, Vector2(135, 650), 17, Color("ffd166"))
 
 func _draw_player(offset: Vector2) -> void:
     var pos := Vector2(player_x, player_y) + offset
