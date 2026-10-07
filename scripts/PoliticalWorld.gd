@@ -25,6 +25,8 @@ const DANGER_WEIGHT := {
     STATE_CONTESTED: 5.0
 }
 
+const RESTRICTED_COMMODITIES := ["Arms", "Narcotics"]
+
 const FACTION_COLORS := [
     Color("5dd7ff"),
     Color("ff6b91"),
@@ -267,6 +269,81 @@ static func faction_record(world: Dictionary, faction_id: String) -> Dictionary:
         if String(faction.get("id", "")) == faction_id:
             return faction
     return {}
+
+static func commodity_law_key(commodity: String) -> String:
+    match commodity:
+        "Arms":
+            return "arms_legal"
+        "Narcotics":
+            return "narcotics_legal"
+    return ""
+
+static func faction_commodity_legal(world: Dictionary, faction_id: String, commodity: String) -> bool:
+    var law_key: String = commodity_law_key(commodity)
+    if law_key.is_empty():
+        return true
+    var faction: Dictionary = faction_record(world, faction_id)
+    if faction.is_empty():
+        return true
+    var laws: Dictionary = faction.get("laws", {})
+    return bool(laws.get(law_key, true))
+
+static func commodity_legality_at(world: Dictionary, pos: Vector2, commodity: String) -> Dictionary:
+    var context: Dictionary = political_context_at(world, pos)
+    var state: String = String(context.get("state", STATE_UNCONTROLLED))
+    var law_key: String = commodity_law_key(commodity)
+
+    if law_key.is_empty():
+        return {
+            "commodity": commodity,
+            "status": "LEGAL",
+            "regulated": false,
+            "mixed": false,
+            "legal": true,
+            "state": state,
+            "faction_ids": []
+        }
+
+    if state == STATE_UNCONTROLLED:
+        return {
+            "commodity": commodity,
+            "status": "UNREGULATED",
+            "regulated": false,
+            "mixed": false,
+            "legal": true,
+            "state": state,
+            "faction_ids": []
+        }
+
+    if state == STATE_CONTESTED:
+        var strongest_id: String = String(context.get("strongest_faction_id", ""))
+        var second_id: String = String(context.get("second_faction_id", ""))
+        var strongest_legal: bool = faction_commodity_legal(world, strongest_id, commodity)
+        var second_legal: bool = faction_commodity_legal(world, second_id, commodity)
+        var mixed: bool = strongest_legal != second_legal
+        return {
+            "commodity": commodity,
+            "status": "MIXED" if mixed else ("LEGAL" if strongest_legal else "ILLEGAL"),
+            "regulated": true,
+            "mixed": mixed,
+            "legal": strongest_legal and second_legal,
+            "state": state,
+            "faction_ids": [strongest_id, second_id]
+        }
+
+    var faction_id: String = String(context.get("faction_id", ""))
+    if faction_id.is_empty():
+        faction_id = String(context.get("strongest_faction_id", ""))
+    var is_legal: bool = faction_commodity_legal(world, faction_id, commodity)
+    return {
+        "commodity": commodity,
+        "status": "LEGAL" if is_legal else "ILLEGAL",
+        "regulated": true,
+        "mixed": false,
+        "legal": is_legal,
+        "state": state,
+        "faction_ids": [faction_id]
+    }
 
 static func _influence_for_faction(world: Dictionary, faction: Dictionary, pos: Vector2) -> float:
     var capital := planet_position(world, String(faction.capital_id))
