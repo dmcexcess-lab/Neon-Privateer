@@ -13,11 +13,17 @@ func _world_signature(world: Dictionary) -> String:
     for faction in world.get("factions", []):
         var laws: Dictionary = faction.laws
         var color: Color = Color(faction.color)
-        parts.append("faction,%s,%s,%s,%.5f,%.5f,%.4f,%.4f,%.4f,%.4f,%s,%s" % [
+        var grey: Dictionary = laws.get("grey_legal", {})
+        var grey_parts: Array[String] = []
+        var grey_keys: Array = grey.keys()
+        grey_keys.sort()
+        for grey_key in grey_keys:
+            grey_parts.append("%s=%s" % [String(grey_key), str(bool(grey[grey_key]))])
+        parts.append("faction,%s,%s,%s,%.5f,%.5f,%.4f,%.4f,%.4f,%.4f,%s" % [
             String(faction.id), String(faction.name), String(faction.capital_id),
             float(faction.radius), float(faction.strength),
             color.r, color.g, color.b, color.a,
-            str(bool(laws.arms_legal)), str(bool(laws.narcotics_legal))
+            ";".join(grey_parts)
         ])
     for route in world.get("routes", []):
         parts.append("route,%s,%s,%s,%.5f,%d,%d,%d,%.5f,%.5f" % [
@@ -72,7 +78,7 @@ func _world_difference(a: Dictionary, b: Dictionary) -> String:
             return "faction %d color" % i
         var al: Dictionary = af[i].laws
         var bl: Dictionary = bf[i].laws
-        if bool(al.arms_legal) != bool(bl.arms_legal) or bool(al.narcotics_legal) != bool(bl.narcotics_legal):
+        if al.get("grey_legal", {}) != bl.get("grey_legal", {}):
             return "faction %d laws" % i
         if int(af[i].get("relation", 0)) != int(bf[i].get("relation", 0)):
             return "faction %d relation" % i
@@ -159,9 +165,14 @@ func _production_world_issue(scene, world: Dictionary) -> String:
         if not ids.has(capital_id):
             return "capital identity"
         var laws: Dictionary = faction.get("laws", {})
-        if not laws.has("arms_legal") or not laws.has("narcotics_legal"):
+        var grey: Dictionary = laws.get("grey_legal", {})
+        if grey.size() != scene.PoliticalWorld.GREY_COMMODITIES.size():
             return "faction laws"
-        law_profiles["%s|%s" % [str(bool(laws.arms_legal)), str(bool(laws.narcotics_legal))]] = true
+        var legal_count := 0
+        for grey_good in scene.PoliticalWorld.GREY_COMMODITIES:
+            if bool(grey.get(grey_good, false)):
+                legal_count += 1
+        law_profiles[str(legal_count)] = true
         var capital_context: Dictionary = scene.PoliticalWorld.political_context_at(world, scene.PoliticalWorld.planet_position(world, capital_id))
         if String(capital_context.get("state", "")) != "CORE":
             return "capital core"
@@ -242,7 +253,11 @@ func _initialize() -> void:
         "_get_political_context_at", "_political_laws_at",
         "_commodity_legality_at", "_planet_commodity_legality",
         "_commodity_legality_short", "_planet_law_summary",
-        "_market_law_multiplier", "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
+        "_market_law_multiplier", "_commodity_category", "_commodity_volatility", "_is_grey_commodity",
+        "_ensure_currency_schema", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
+        "_deposit_all_cash", "_withdraw_all_bank", "_apply_bank_interest", "_buy_currency", "_sell_currency",
+        "_bank_goods_for_view", "_bank_visible_goods", "_currency_faction_ids",
+        "_planet_jurisdiction_label", "_short_map_label", "_faction_tag",
         "_faction_map_status_line", "_faction_status_color", "_planet_political_status_lines",
         "_ensure_commodity_schema", "_new_market_entry",
         "_ensure_crime_schema", "_ensure_enforcement_schema", "_ensure_route_wealth_schema", "_faction_level", "_faction_relation", "_faction_heat",
@@ -330,9 +345,13 @@ func _initialize() -> void:
         if control_rect.size.x < 44.0 or control_rect.size.y < 44.0:
             _fail("primary phone control is smaller than 44px touch target")
             return
-    for market_index in 7:
+    for market_index in scene.BANK_MARKET_ROWS_PER_PAGE:
         if not viewport_rect.encloses(scene._market_buy_rect(market_index)) or not viewport_rect.encloses(scene._market_sell_rect(market_index)):
-            _fail("market row extends outside phone viewport")
+            _fail("bank market row extends outside phone viewport")
+            return
+    for bank_rect in [scene.BANK_ACCOUNT_TAB_RECT, scene.BANK_GREEN_TAB_RECT, scene.BANK_GREY_TAB_RECT, scene.BANK_CURRENCY_TAB_RECT, scene.BANK_DEPOSIT_RECT, scene.BANK_WITHDRAW_RECT, scene.BANK_PAGE_PREV_RECT, scene.BANK_PAGE_NEXT_RECT]:
+        if not viewport_rect.encloses(Rect2(bank_rect)):
+            _fail("bank control extends outside phone viewport")
             return
     for contract_index in 5:
         if not viewport_rect.encloses(scene._contract_row_rect(contract_index)):
@@ -341,8 +360,8 @@ func _initialize() -> void:
     if scene._contract_row_rect(4).end.y >= scene.SUBMENU_BACK_RECT.position.y:
         _fail("contract board overlaps BACK on phone")
         return
-    if scene._market_sell_rect(6).end.y >= scene.SUBMENU_BACK_RECT.position.y:
-        _fail("seven-row market overlaps BACK on phone")
+    if scene._market_sell_rect(scene.BANK_MARKET_ROWS_PER_PAGE - 1).end.y >= scene.BANK_PAGE_PREV_RECT.position.y:
+        _fail("six-row bank market overlaps pagination controls")
         return
     if scene.SYSTEM_ROUTE_INFO_RECT.end.y >= scene.SYSTEM_MAP_BACK_RECT.position.y:
         _fail("system route card overlaps phone navigation controls")
@@ -443,19 +462,22 @@ func _initialize() -> void:
             _fail("political inspection omitted relation/heat status labels")
             return
         var law_summary: String = scene._planet_law_summary(capital_id)
-        if not law_summary.contains("ARMS") or not law_summary.contains("NARC"):
-            _fail("capital political inspection omitted applicable laws")
+        if not law_summary.contains("W") or not law_summary.contains("N") or not law_summary.contains("E"):
+            _fail("capital political inspection omitted grey-market category laws")
             return
 
-    if scene.commodity_names.size() != 7 or not scene.commodity_names.has("Small Arms") or not scene.commodity_names.has("Stims"):
-        _fail("Slice 2 commodity catalog is incomplete")
+    if scene.commodity_names.size() != 24 or scene.legal_commodity_names.size() != 12 or scene.grey_commodity_names.size() != 12:
+        _fail("24-good commodity catalog is incomplete")
+        return
+    if not scene.legal_commodity_names.has("Grain") or not scene.legal_commodity_names.has("Rare Alloys") or not scene.grey_commodity_names.has("Small Arms") or not scene.grey_commodity_names.has("Unlicensed Media"):
+        _fail("commodity categories are incomplete")
         return
     for commodity in scene.commodity_names:
         if not scene.cargo.has(commodity):
             _fail("fresh cargo schema missing " + commodity)
             return
-    if scene._market_sell_rect(6).end.y >= scene.SUBMENU_BACK_RECT.position.y:
-        _fail("seven-row market layout overlaps BACK control")
+    if scene._market_sell_rect(scene.BANK_MARKET_ROWS_PER_PAGE - 1).end.y >= scene.BANK_PAGE_PREV_RECT.position.y:
+        _fail("bank market layout overlaps pagination control")
         return
 
     var ids: Dictionary = {}
@@ -510,16 +532,16 @@ func _initialize() -> void:
         return
 
     if scene._market_profile(industrial, "Small Arms").x <= scene._market_profile(lush, "Small Arms").x:
-        _fail("INDUSTRIAL worlds should produce more Arms than LUSH worlds")
+        _fail("INDUSTRIAL worlds should produce more weapons than LUSH worlds")
         return
     if scene._market_profile(lush, "Stims").x <= scene._market_profile(industrial, "Stims").x:
-        _fail("LUSH worlds should produce more Narcotics than INDUSTRIAL worlds")
+        _fail("LUSH worlds should produce more narcotics than INDUSTRIAL worlds")
         return
-    if scene._commodity_base_price("Small Arms") <= scene._commodity_base_price("Copper"):
-        _fail("Arms base value is not integrated into commodity pricing")
+    if scene._commodity_base_price("Rare Alloys") <= scene._commodity_base_price("Iron"):
+        _fail("metal price tiers are not distinct")
         return
-    if scene._commodity_base_price("Stims") <= scene._commodity_base_price("Small Arms"):
-        _fail("Narcotics base value is not above Arms")
+    if scene._commodity_volatility("Neurodust") <= scene._commodity_volatility("Stims"):
+        _fail("grey commodity variance tiers are not distinct")
         return
 
     # Superpowers, capitals, laws, and geographic separation.
@@ -542,8 +564,9 @@ func _initialize() -> void:
             return
         capitals[capital_id] = true
         var laws: Dictionary = faction.laws
-        if not laws.has("arms_legal") or not laws.has("narcotics_legal"):
-            _fail("faction law fields are incomplete")
+        var grey_laws: Dictionary = laws.get("grey_legal", {})
+        if grey_laws.size() != 12:
+            _fail("faction grey-good law fields are incomplete")
             return
         if not faction.has("relation") or not faction.has("heat") or not faction.has("offenses") or not faction.has("last_offense"):
             _fail("fresh faction crime schema is incomplete")
@@ -554,21 +577,23 @@ func _initialize() -> void:
         if int(faction.relation) != 0 or int(faction.heat) != 0 or int(faction.offenses) != 0:
             _fail("fresh faction crime state is not clean")
             return
-        law_profiles["%s|%s" % [str(laws.arms_legal), str(laws.narcotics_legal)]] = true
+        var legal_grey_count := 0
+        for grey_good in scene.grey_commodity_names:
+            if bool(grey_laws.get(grey_good, false)):
+                legal_grey_count += 1
+            var grey_legality: Dictionary = scene._planet_commodity_legality(capital_id, grey_good)
+            var expected_grey := "LEGAL" if bool(grey_laws.get(grey_good, false)) else "ILLEGAL"
+            if String(grey_legality.status) != expected_grey:
+                _fail("capital grey-good legality does not match faction item law")
+                return
+        law_profiles[str(legal_grey_count)] = true
         var capital_context: Dictionary = scene._get_political_context_at(scene._system_planet_world_position(capital_id))
         if String(capital_context.state) != "CORE":
             _fail("faction capital is not CORE")
             return
-        var arms_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Small Arms")
-        var narc_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Stims")
-        var expected_arms: String = "LEGAL" if bool(laws.arms_legal) else "ILLEGAL"
-        var expected_narc: String = "LEGAL" if bool(laws.narcotics_legal) else "ILLEGAL"
-        if String(arms_legality.status) != expected_arms or String(narc_legality.status) != expected_narc:
-            _fail("capital commodity legality does not match faction law")
-            return
         var food_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Grain")
         if String(food_legality.status) != "LEGAL" or bool(food_legality.regulated):
-            _fail("ordinary commodities should not use contraband law")
+            _fail("green commodities should never use contraband law")
             return
     if factions.size() > 1 and law_profiles.size() < 2:
         _fail("generated factions have no law variation")
