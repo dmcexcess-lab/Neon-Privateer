@@ -57,7 +57,7 @@ Initial law fields:
 - `arms_legal`
 - `narcotics_legal`
 
-Slice 2 makes these laws authoritative for commodity legality. They currently classify cargo and drive market/map indicators; police scans, fines, confiscation, and hostility still belong to later slices. Installed ship weapons are not governed by `arms_legal`; only the **Arms commodity** is.
+Slice 2 made these laws authoritative for commodity legality. The current production systems consume them for market/map indicators, black-market pricing, smuggling generation, police scans, confiscation, fines, and enforcement. Installed ship weapons are not governed by `arms_legal`; only the **Arms commodity** is.
 
 ## Commodity legality
 
@@ -80,7 +80,7 @@ For restricted commodities:
 - **CONTESTED:** both meaningful claimant factions are consulted. If their laws disagree, status is `MIXED`; if they agree, the shared `LEGAL` or `ILLEGAL` result is returned.
 - **UNCONTROLLED:** status is `UNREGULATED`.
 
-This query is presentation/data authority now and is intended to become the source for police scans later. A future scan by a specific police faction should use that faction's law directly rather than infer enforcement from the generic contested-space label.
+This query remains the commodity-law authority. Police scans use the specific patrol faction's law directly rather than inferring enforcement from the generic contested-space label; Slice 9 uses the same result for black-market premiums and smuggling destinations.
 
 ## Faction reputation and criminal state
 
@@ -106,12 +106,12 @@ Heat bands:
 
 The authoritative criminal-state query is `faction_crime_state(world, faction_id)`.
 
-Eligibility thresholds reserved for later encounter/enforcement slices:
+Production encounter/enforcement thresholds:
 
 - ordinary police hostility becomes eligible at **heat >= 30** or **HOSTILE relation <= -60**;
 - heavy/pentagon enforcement becomes eligible at **heat >= 60** or **relation <= -75**.
 
-These are eligibility rules only. Slice 3 does not change encounter spawning or make police attack.
+These thresholds are consumed by the current patrol system: eligible lawful patrols remain neutral until heat/relation makes them hostile, and heavy enforcement still requires its higher threshold plus active hostile patrol combat.
 
 Authoritative mutation APIs:
 
@@ -391,7 +391,7 @@ Adjacent matching samples are compressed into segments containing:
 - normalized `start_t`
 - normalized `end_t`
 
-Future encounter systems must use these segments instead of independently recalculating territory.
+Encounter, contract-risk, and map systems use these stored segments instead of independently recalculating route territory.
 
 ## Derived political danger
 
@@ -586,6 +586,61 @@ Successful freight also adds one unit of its named commodity to the destination 
 Contract schema version 1 upgrades older saved contracts in place.
 
 Legacy records keep their original ID, type, destination, difficulty, and reward while gaining safe defaults for origin, commodity, issuer, relation reward, pirate exposure, role, and payout-breakdown metadata. The political world and existing markets are not rerolled.
+
+## Slice 10 balance + production closure
+
+Slice 10 is production hardening only. It introduces no new simulation layer.
+
+### Final balance envelope
+
+Authoritative gameplay tuning is centralized in `Main.gd`:
+
+- route-wealth encounter multiplier: 0.65x–1.35x;
+- police encounter base: 12% + 4.5% per faction level = 16.5%–34.5% before wealth;
+- pirate encounter base: 22% in CONTESTED / 32% in UNCONTROLLED before wealth;
+- police encounter opportunities: every 11–16 seconds while eligible;
+- pirate encounter opportunities: every 9.5–14.5 seconds while eligible;
+- lawful patrol scan chance: 10% + 4.5% per faction level = 14.5%–32.5%;
+- asteroid Ore salvage: 10%;
+- owned-container relation loss: 3 basic / 7 reinforced;
+- police ship destruction: -15 relation / +20 heat;
+- heavy enforcement destruction: -25 relation / +35 heat;
+- completed contraband scan base heat: 30, preserving immediate WANTED escalation.
+
+The final hierarchy is intentional: ordinary property theft is reputationally meaningful but recoverable, reinforced theft is worse, killing government enforcement is substantially worse, and heavy-enforcement destruction is the most severe direct combat offense in this pass.
+
+### Generated-world production validation
+
+The terminal smoke suite generates 12 additional deterministic careers from fixed seeds and requires, for every seed:
+
+- exactly 32 unique worlds;
+- all four planet archetypes represented at least twice;
+- 2–4 factions with valid capitals and varied laws;
+- every capital in CORE;
+- CORE, CONTROLLED, CONTESTED, and UNCONTROLLED represented by the influence field;
+- a sparse 31–55 edge route network;
+- complete route-segment coverage;
+- route danger and wealth both within 1–5 and varying meaningfully;
+- full graph connectivity;
+- bit-for-behavior deterministic regeneration from the same seed.
+
+### Phone/browser closure
+
+The production test also verifies the 390x844 portrait viewport, canvas-item stretch mode, all primary touch controls within the viewport, minimum 44px primary hit targets, seven-row market fit, five-row contract-board fit, and non-overlap of the system route card with BACK/FLY controls.
+
+The Web export remains single-thread compatible through the Godot Compatibility renderer and the CI deployment remains the browser acceptance path.
+
+### Save/load closure
+
+The final regression ends from a live flight, saves/pauses, reloads the same career, and requires:
+
+- identical generated-world signature;
+- same origin/destination;
+- same route wealth;
+- same elapsed route progress;
+- active route restored paused rather than advanced offline.
+
+This sits on top of the earlier schema/migration, career-slot isolation, contract migration, contraband-scan persistence, and active-run snapshot tests.
 
 ## Persistence
 
