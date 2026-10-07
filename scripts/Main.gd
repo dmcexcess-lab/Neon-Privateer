@@ -190,6 +190,13 @@ var route_active := false
 var boss_active := false
 var boss_defeated_pending := false
 var bounty_completed_this_route := false
+var encounter_active := false
+var encounter_mode := ""
+var encounter_faction_id := ""
+var encounter_timer := 0.0
+var encounter_clock := 999.0
+var encounter_banner_timer := 0.0
+# Legacy mirrors kept for pre-Slice-5 run snapshots/tests.
 var pirate_attack_active := false
 var pirate_attack_timer := 0.0
 var pirate_attack_clock := 999.0
@@ -460,6 +467,12 @@ func _reset_career_state() -> void:
     boss_active = false
     boss_defeated_pending = false
     bounty_completed_this_route = false
+    encounter_active = false
+    encounter_mode = ""
+    encounter_faction_id = ""
+    encounter_timer = 0.0
+    encounter_clock = 999.0
+    encounter_banner_timer = 0.0
     pirate_attack_active = false
     pirate_attack_timer = 0.0
     pirate_attack_clock = 999.0
@@ -1072,38 +1085,153 @@ func _start_route(destination: String) -> bool:
     boss_active = false
     boss_defeated_pending = false
     bounty_completed_this_route = false
+    encounter_active = false
+    encounter_mode = ""
+    encounter_faction_id = ""
+    encounter_timer = 0.0
+    encounter_clock = rng.randf_range(5.0, 8.5)
+    encounter_banner_timer = 0.0
     pirate_attack_active = false
     pirate_attack_timer = 0.0
-    pirate_attack_clock = maxf(4.5, 12.5 - float(route_danger) * 1.7)
+    pirate_attack_clock = encounter_clock
     pirate_banner_timer = 0.0
     result_reason = ""
     _save_all_state()
     return true
 
-func _update_pirate_attack(delta: float) -> void:
-    pirate_banner_timer = maxf(0.0, pirate_banner_timer - delta)
-    if not route_active or boss_active:
-        pirate_attack_active = false
-        return
-    if pirate_attack_active:
-        pirate_attack_timer = maxf(0.0, pirate_attack_timer - delta)
-        if pirate_attack_timer <= 0.0:
-            pirate_attack_active = false
-            pirate_attack_clock = maxf(4.5, rng.randf_range(10.0, 16.0) - float(route_danger) * 1.4)
-        return
-    pirate_attack_clock -= delta
-    if pirate_attack_clock <= 0.0 and (route_danger >= 2 or _contract_target_matches(destination_planet)):
-        pirate_attack_active = true
-        pirate_attack_timer = 3.5 + float(route_danger) * 1.1
-        pirate_banner_timer = 1.8
+func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
+    var state := String(context.get("state", "UNCONTROLLED"))
+    if state == "UNCONTROLLED" or state == "CONTESTED":
+        return {
+            "eligible": true,
+            "mode": "pirate",
+            "faction_id": "",
+            "heavy": false,
+            "state": state
+        }
+
+    if state == "CORE" or state == "CONTROLLED":
+        var faction_id := String(context.get("faction_id", ""))
+        if faction_id.is_empty():
+            faction_id = String(context.get("strongest_faction_id", ""))
+        if not faction_id.is_empty() and _police_hostile_eligible(faction_id):
+            return {
+                "eligible": true,
+                "mode": "police",
+                "faction_id": faction_id,
+                "heavy": _heavy_enforcement_eligible(faction_id),
+                "state": state
+            }
+
+    return {
+        "eligible": false,
+        "mode": "",
+        "faction_id": "",
+        "heavy": false,
+        "state": state
+    }
+
+func _current_encounter_eligibility() -> Dictionary:
+    return _encounter_eligibility_for_context(_current_flight_political_context())
+
+func _encounter_cooldown(eligibility: Dictionary) -> float:
+    var state := String(eligibility.get("state", "UNCONTROLLED"))
+    var mode := String(eligibility.get("mode", ""))
+    if mode == "pirate":
+        if state == "UNCONTROLLED":
+            return rng.randf_range(6.5, 10.5)
+        return rng.randf_range(8.0, 13.0)
+    if mode == "police":
+        var faction_id := String(eligibility.get("faction_id", ""))
+        var heat := _faction_heat(faction_id)
+        var pressure := clampf(float(heat) / 100.0, 0.0, 1.0)
+        var base := rng.randf_range(7.5, 12.5) if state == "CORE" else rng.randf_range(9.0, 14.0)
+        return maxf(4.5, base - pressure * 3.0)
+    return 999.0
+
+func _encounter_duration(eligibility: Dictionary) -> float:
+    var mode := String(eligibility.get("mode", ""))
+    if mode == "police":
+        var faction_id := String(eligibility.get("faction_id", ""))
+        return 4.0 + float(_faction_heat(faction_id)) * 0.025
+    return 4.2 + float(route_danger) * 0.65
+
+func _sync_legacy_pirate_state() -> void:
+    pirate_attack_active = encounter_active and encounter_mode == "pirate"
+    pirate_attack_timer = encounter_timer if pirate_attack_active else 0.0
+    pirate_attack_clock = encounter_clock
+    pirate_banner_timer = encounter_banner_timer if pirate_attack_active else 0.0
+
+func _end_route_encounter(eligibility: Dictionary = {}) -> void:
+    encounter_active = false
+    encounter_mode = ""
+    encounter_faction_id = ""
+    encounter_timer = 0.0
+    encounter_clock = _encounter_cooldown(eligibility) if bool(eligibility.get("eligible", false)) else 999.0
+    _sync_legacy_pirate_state()
+
+func _start_route_encounter(eligibility: Dictionary) -> bool:
+    if not bool(eligibility.get("eligible", false)):
+        return false
+    encounter_active = true
+    encounter_mode = String(eligibility.get("mode", ""))
+    encounter_faction_id = String(eligibility.get("faction_id", ""))
+    encounter_timer = _encounter_duration(eligibility)
+    encounter_banner_timer = 1.8
+
+    if encounter_mode == "police":
+        var faction := PoliticalWorld.faction_record(political_world, encounter_faction_id)
+        weapon_banner_text = "%s PATROL" % String(faction.get("name", "FACTION")).to_upper()
+    else:
         weapon_banner_text = "PIRATE CONTACT"
-        weapon_banner_timer = 1.8
+    weapon_banner_timer = 1.8
+    _sync_legacy_pirate_state()
+    return true
+
+func _update_route_encounter(delta: float) -> void:
+    encounter_banner_timer = maxf(0.0, encounter_banner_timer - delta)
+
+    if not route_active or boss_active:
+        _end_route_encounter()
+        return
+
+    var eligibility := _current_encounter_eligibility()
+    if encounter_active:
+        var same_mode := String(eligibility.get("mode", "")) == encounter_mode
+        var same_faction := encounter_mode != "police" or String(eligibility.get("faction_id", "")) == encounter_faction_id
+        if not bool(eligibility.get("eligible", false)) or not same_mode or not same_faction:
+            _end_route_encounter(eligibility)
+            return
+        encounter_timer = maxf(0.0, encounter_timer - delta)
+        if encounter_timer <= 0.0:
+            _end_route_encounter(eligibility)
+        else:
+            _sync_legacy_pirate_state()
+        return
+
+    if not bool(eligibility.get("eligible", false)):
+        encounter_clock = 999.0
+        _sync_legacy_pirate_state()
+        return
+
+    if encounter_clock >= 900.0:
+        encounter_clock = _encounter_cooldown(eligibility)
+    encounter_clock -= delta
+    if encounter_clock <= 0.0:
+        _start_route_encounter(eligibility)
+    else:
+        _sync_legacy_pirate_state()
+
+# Compatibility entry point for older tests/callers.
+func _update_pirate_attack(delta: float) -> void:
+    _update_route_encounter(delta)
+
 
 func _begin_bounty_boss() -> void:
     if boss_active:
         return
     boss_active = true
-    pirate_attack_active = false
+    _end_route_encounter()
     lane_event_active = false
     lane_event_timer = 0.0
     station_locked_side = ""
@@ -1355,7 +1483,7 @@ func _process(delta: float) -> void:
     fire_clock -= game_delta
     repair_clock -= game_delta
     var difficulty := _level_difficulty()
-    _update_pirate_attack(world_delta)
+    _update_route_encounter(world_delta)
 
     if current_weapon == "laser":
         _apply_laser_damage(game_delta)
@@ -2468,9 +2596,16 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "boss_active", boss_active)
     cfg.set_value("run", "boss_defeated_pending", boss_defeated_pending)
     cfg.set_value("run", "bounty_completed", bounty_completed_this_route)
-    cfg.set_value("run", "pirate_active", pirate_attack_active)
-    cfg.set_value("run", "pirate_timer", pirate_attack_timer)
-    cfg.set_value("run", "pirate_clock", pirate_attack_clock)
+    cfg.set_value("run", "encounter_active", encounter_active)
+    cfg.set_value("run", "encounter_mode", encounter_mode)
+    cfg.set_value("run", "encounter_faction_id", encounter_faction_id)
+    cfg.set_value("run", "encounter_timer", encounter_timer)
+    cfg.set_value("run", "encounter_clock", encounter_clock)
+    cfg.set_value("run", "encounter_banner_timer", encounter_banner_timer)
+    # Legacy keys remain for pre-Slice-5 compatibility.
+    cfg.set_value("run", "pirate_active", encounter_active and encounter_mode == "pirate")
+    cfg.set_value("run", "pirate_timer", encounter_timer if encounter_mode == "pirate" else 0.0)
+    cfg.set_value("run", "pirate_clock", encounter_clock)
     cfg.set_value("run", "objects", objects)
     cfg.set_value("run", "shots", shots)
     cfg.set_value("run", "enemy_shots", enemy_shots)
@@ -2540,9 +2675,14 @@ func _load_run_snapshot() -> bool:
     boss_active = bool(cfg.get_value("run", "boss_active", false))
     boss_defeated_pending = bool(cfg.get_value("run", "boss_defeated_pending", false))
     bounty_completed_this_route = bool(cfg.get_value("run", "bounty_completed", false))
-    pirate_attack_active = bool(cfg.get_value("run", "pirate_active", false))
-    pirate_attack_timer = float(cfg.get_value("run", "pirate_timer", 0.0))
-    pirate_attack_clock = float(cfg.get_value("run", "pirate_clock", 999.0))
+    var legacy_pirate_active := bool(cfg.get_value("run", "pirate_active", false))
+    encounter_active = bool(cfg.get_value("run", "encounter_active", legacy_pirate_active))
+    encounter_mode = String(cfg.get_value("run", "encounter_mode", "pirate" if legacy_pirate_active else ""))
+    encounter_faction_id = String(cfg.get_value("run", "encounter_faction_id", ""))
+    encounter_timer = float(cfg.get_value("run", "encounter_timer", cfg.get_value("run", "pirate_timer", 0.0)))
+    encounter_clock = float(cfg.get_value("run", "encounter_clock", cfg.get_value("run", "pirate_clock", 999.0)))
+    encounter_banner_timer = float(cfg.get_value("run", "encounter_banner_timer", 0.0))
+    _sync_legacy_pirate_state()
     hub_open = not route_active
     objects.clear()
     for item in cfg.get_value("run", "objects", []):
@@ -2677,15 +2817,27 @@ func _enemy_kind_cap_for_level() -> int:
 func _choose_enemy_kind(hard_lane: bool) -> int:
     var cap := _enemy_kind_cap_for_level()
     var roll := rng.randf()
+
     if route_active:
-        if pirate_attack_active:
-            if route_danger >= 4 and roll < (0.18 if hard_lane else 0.12):
-                return 4
-            if roll < (0.48 if hard_lane else 0.36):
-                return 3
-            cap = mini(cap, 2)
+        if encounter_active:
+            if encounter_mode == "pirate":
+                # Pirate contacts are ships only; pentagons are never pirate traffic.
+                if roll < (0.48 if hard_lane else 0.36):
+                    return 3
+                cap = mini(cap, 2)
+            elif encounter_mode == "police":
+                var heavy := _heavy_enforcement_eligible(encounter_faction_id)
+                if heavy and roll < (0.18 if hard_lane else 0.12):
+                    return 4
+                if roll < (0.52 if hard_lane else 0.40):
+                    return 3
+                cap = mini(cap, 2)
+            else:
+                cap = mini(cap, 2)
         else:
+            # No random hostile ships outside an active territory-authorized contact.
             cap = mini(cap, 2)
+
     if cap <= 0:
         return 0
     if cap == 1:
@@ -2713,6 +2865,7 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
     if roll < (0.74 if hard_lane else 0.66):
         return 1
     return 0
+
 
 func _spawn_circle_bunch(hard_lane: bool, count: int) -> void:
     var bounds := _lane_bounds(hard_lane)
@@ -2900,6 +3053,8 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
     var obstacle_hp := _obstacle_max_hp(kind)
     var owner_faction := _container_owner_for_current_space() if kind == 1 or kind == 2 else ""
     var territory_state := String(_current_flight_political_context().get("state", "UNCONTROLLED")) if kind == 1 or kind == 2 else ""
+    var encounter_role := encounter_mode if kind == 3 or kind == 4 else ""
+    var ship_faction := encounter_faction_id if encounter_role == "police" else ""
     objects.append({
         "id": rng.randi(),
         "type": "hazard",
@@ -2919,7 +3074,9 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         "lane_min": lane_min,
         "lane_max": lane_max,
         "owner_faction": owner_faction,
-        "territory_state": territory_state
+        "territory_state": territory_state,
+        "encounter_role": encounter_role,
+        "encounter_faction_id": ship_faction
     })
 
 func _weapon_interval() -> float:
@@ -3881,8 +4038,10 @@ func _draw_hud() -> void:
 
     if boss_active:
         _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
-    elif pirate_attack_active:
+    elif encounter_active and encounter_mode == "pirate":
         _text("PIRATE CONTACT", Vector2(128, 146), 15, Color("ff8fa6"))
+    elif encounter_active and encounter_mode == "police":
+        _text("FACTION PATROL", Vector2(126, 146), 15, _faction_color(encounter_faction_id))
     elif dash_score_timer > 0.0:
         _text("DASH BONUS", Vector2(143, 146), 16, Color("ffd166"))
     else:
