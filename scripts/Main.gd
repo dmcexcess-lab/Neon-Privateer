@@ -2113,7 +2113,7 @@ func _contract_relation_reward(kind: String, smuggling: bool = false) -> int:
         _:
             return 2
 
-func _make_contract(kind: String, origin: String, profile: Dictionary, commodity: String = "", smuggling: bool = false, issuer_override: String = "__AUTO__") -> Dictionary:
+func _make_contract(kind: String, origin: String, profile: Dictionary, commodity: String = "", smuggling: bool = false, issuer_override: String = "__AUTO__", special_delivery: bool = false) -> Dictionary:
     var destination := String(profile.get("destination", ""))
     if destination.is_empty():
         return {}
@@ -2121,7 +2121,9 @@ func _make_contract(kind: String, origin: String, profile: Dictionary, commodity
     if smuggling:
         issuer_faction = ""
     var reward_data := _contract_reward_breakdown(kind, origin, destination, commodity, smuggling)
-    return {
+    var jump_spec := _jump_route_spec(origin, destination)
+    var hops := int(jump_spec.get("hops", 1))
+    var contract_record := {
         "id": rng.randi(),
         "schema": CONTRACT_SCHEMA_VERSION,
         "type": kind,
@@ -2139,8 +2141,20 @@ func _make_contract(kind: String, origin: String, profile: Dictionary, commodity
         "relation_reward": _contract_relation_reward(kind, smuggling),
         "role": _contract_role(kind, issuer_faction, destination, smuggling),
         "commodity": commodity,
-        "smuggling": smuggling
+        "smuggling": smuggling,
+        "special_delivery": special_delivery,
+        "elapsed_seconds": 0.0,
+        "planned_hops": hops
     }
+    if special_delivery:
+        contract_record["role"] = "SPECIAL DELIVERY"
+        contract_record["time_limit"] = SPECIAL_DELIVERY_BASE_TIME + float(maxi(SPECIAL_DELIVERY_MIN_HOPS, hops)) * SPECIAL_DELIVERY_TIME_PER_HOP
+        contract_record["reward"] = int(round(float(contract_record["reward"]) * 1.35))
+    elif kind == "passenger":
+        contract_record["abandon_after"] = PASSENGER_ABANDON_SECONDS
+    elif kind == "bounty":
+        contract_record["boss_archetype"] = _bounty_archetype_for_difficulty(int(contract_record["difficulty"]))
+    return contract_record
 
 func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> Dictionary:
     var upgraded := contract.duplicate(true)
@@ -2165,6 +2179,16 @@ func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> 
     upgraded["risk_premium"] = int(upgraded.get("risk_premium", 0))
     upgraded["cargo_premium"] = int(upgraded.get("cargo_premium", 0))
     upgraded["political_premium"] = int(upgraded.get("political_premium", 0))
+    upgraded["elapsed_seconds"] = float(upgraded.get("elapsed_seconds", 0.0))
+    upgraded["planned_hops"] = int(upgraded.get("planned_hops", _jump_route_spec(origin, destination).get("hops", 1) if planet_names.has(destination) else 1))
+    upgraded["special_delivery"] = bool(upgraded.get("special_delivery", false))
+    if kind == "delivery" and bool(upgraded.get("special_delivery", false)):
+        upgraded["time_limit"] = float(upgraded.get("time_limit", SPECIAL_DELIVERY_BASE_TIME + float(maxi(SPECIAL_DELIVERY_MIN_HOPS, int(upgraded["planned_hops"]))) * SPECIAL_DELIVERY_TIME_PER_HOP))
+        upgraded["role"] = "SPECIAL DELIVERY"
+    elif kind == "passenger":
+        upgraded["abandon_after"] = float(upgraded.get("abandon_after", PASSENGER_ABANDON_SECONDS))
+    elif kind == "bounty":
+        upgraded["boss_archetype"] = String(upgraded.get("boss_archetype", _bounty_archetype_for_difficulty(int(upgraded.get("difficulty", 1)))))
     return upgraded
 
 func _ensure_contract_schema() -> bool:
@@ -2189,10 +2213,15 @@ func _regenerate_contracts() -> void:
         return
     var issuer_faction := _planet_primary_faction(current_planet)
 
-    var legal_profile := _best_legal_delivery_profile(current_planet, profiles)
-    if not legal_profile.is_empty():
-        contract_board.append(_make_contract("delivery", current_planet, legal_profile, String(legal_profile.get("commodity", "Grain")), false))
+    var special_profile := _best_special_delivery_profile(profiles)
+    if not special_profile.is_empty():
+        contract_board.append(_make_contract("delivery", current_planet, special_profile, String(special_profile.get("commodity", "Grain")), false, "__AUTO__", true))
+    else:
+        var legal_profile := _best_legal_delivery_profile(current_planet, profiles)
+        if not legal_profile.is_empty():
+            contract_board.append(_make_contract("delivery", current_planet, legal_profile, String(legal_profile.get("commodity", "Grain")), false))
 
+    var legal_profile := _best_legal_delivery_profile(current_planet, profiles)
     var passenger_profile := _best_passenger_profile(profiles, issuer_faction)
     if not passenger_profile.is_empty():
         contract_board.append(_make_contract("passenger", current_planet, passenger_profile))
@@ -2226,6 +2255,31 @@ func _accept_contract(index: int) -> bool:
     _play_sfx(buy_sfx, 1.10)
     _save_all_state()
     return true
+
+func _fail_active_contract(reason: String) -> void:
+    if active_contract.is_empty():
+        return
+    if String(active_contract.get("type", "")) == "passenger":
+        passengers = maxi(0, passengers - 1)
+    active_contract.clear()
+    last_trip_summary = reason
+    weapon_banner_text = reason
+    weapon_banner_timer = 2.2
+    _save_privateer_state()
+
+func _update_active_contract_clock(delta: float) -> void:
+    if active_contract.is_empty() or run_paused:
+        return
+    active_contract["elapsed_seconds"] = float(active_contract.get("elapsed_seconds", 0.0)) + maxf(0.0, delta)
+    var kind := String(active_contract.get("type", ""))
+    if kind == "delivery" and bool(active_contract.get("special_delivery", false)):
+        if float(active_contract.get("elapsed_seconds", 0.0)) >= float(active_contract.get("time_limit", INF)):
+            _fail_active_contract("SPECIAL DELIVERY EXPIRED")
+            return
+    if kind == "passenger":
+        var limit := float(active_contract.get("abandon_after", PASSENGER_ABANDON_SECONDS))
+        if float(active_contract.get("elapsed_seconds", 0.0)) >= limit:
+            _fail_active_contract("PASSENGER LEFT — DELAYED TOO LONG")
 
 func _contract_target_matches(destination: String) -> bool:
     return not active_contract.is_empty() and String(active_contract.get("destination", "")) == destination
