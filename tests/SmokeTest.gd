@@ -124,6 +124,9 @@ func _initialize() -> void:
         "_init_privateer_world", "_generate_political_world", "_sync_generated_planets",
         "_planet_display_name", "_planet_type", "_planet_visual_key",
         "_get_political_context_at", "_political_laws_at",
+        "_commodity_legality_at", "_planet_commodity_legality",
+        "_commodity_legality_short", "_planet_law_summary",
+        "_planet_jurisdiction_label", "_ensure_commodity_schema", "_new_market_entry",
         "_route_political_segment_at_progress", "_direct_route_spec",
         "_route_political_percentages", "_market_price", "_simulate_economy",
         "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
@@ -181,6 +184,17 @@ func _initialize() -> void:
         _fail("political world schema is not current")
         return
 
+    if scene.commodity_names.size() != 7 or not scene.commodity_names.has("Arms") or not scene.commodity_names.has("Narcotics"):
+        _fail("Slice 2 commodity catalog is incomplete")
+        return
+    for commodity in scene.commodity_names:
+        if not scene.cargo.has(commodity):
+            _fail("fresh cargo schema missing " + commodity)
+            return
+    if scene._market_sell_rect(6).end.y >= scene.SUBMENU_BACK_RECT.position.y:
+        _fail("seven-row market layout overlaps BACK control")
+        return
+
     var ids: Dictionary = {}
     var names: Dictionary = {}
     var type_counts: Dictionary = {"LUSH": 0, "VOLCANIC": 0, "FROZEN": 0, "INDUSTRIAL": 0}
@@ -205,6 +219,10 @@ func _initialize() -> void:
         if not scene.markets.has(pid):
             _fail("missing market for generated planet " + pid)
             return
+        for commodity in scene.commodity_names:
+            if not scene.markets[pid].has(commodity):
+                _fail("generated market missing %s on %s" % [commodity, pid])
+                return
     for type_id in type_counts.keys():
         if int(type_counts[type_id]) < 2:
             _fail("planet type is not represented multiple times: " + String(type_id))
@@ -226,6 +244,19 @@ func _initialize() -> void:
             return
     if scene._planet_art_region(lush) == scene._planet_art_region(volcanic):
         _fail("generated planet type did not map to distinct archetype art")
+        return
+
+    if scene._market_profile(industrial, "Arms").x <= scene._market_profile(lush, "Arms").x:
+        _fail("INDUSTRIAL worlds should produce more Arms than LUSH worlds")
+        return
+    if scene._market_profile(lush, "Narcotics").x <= scene._market_profile(industrial, "Narcotics").x:
+        _fail("LUSH worlds should produce more Narcotics than INDUSTRIAL worlds")
+        return
+    if scene._commodity_base_price("Arms") <= scene._commodity_base_price("Electronics"):
+        _fail("Arms base value is not integrated into commodity pricing")
+        return
+    if scene._commodity_base_price("Narcotics") <= scene._commodity_base_price("Arms"):
+        _fail("Narcotics base value is not above Arms")
         return
 
     # Superpowers, capitals, laws, and geographic separation.
@@ -256,6 +287,17 @@ func _initialize() -> void:
         if String(capital_context.state) != "CORE":
             _fail("faction capital is not CORE")
             return
+        var arms_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Arms")
+        var narc_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Narcotics")
+        var expected_arms: String = "LEGAL" if bool(laws.arms_legal) else "ILLEGAL"
+        var expected_narc: String = "LEGAL" if bool(laws.narcotics_legal) else "ILLEGAL"
+        if String(arms_legality.status) != expected_arms or String(narc_legality.status) != expected_narc:
+            _fail("capital commodity legality does not match faction law")
+            return
+        var food_legality: Dictionary = scene._planet_commodity_legality(capital_id, "Food")
+        if String(food_legality.status) != "LEGAL" or bool(food_legality.regulated):
+            _fail("ordinary commodities should not use contraband law")
+            return
     if factions.size() > 1 and law_profiles.size() < 2:
         _fail("generated factions have no law variation")
         return
@@ -268,6 +310,8 @@ func _initialize() -> void:
 
     # The generated influence field must actually contain all four political states.
     var states_seen: Dictionary = {}
+    var uncontrolled_sample := Vector2(INF, INF)
+    var contested_sample := Vector2(INF, INF)
     for gy in 17:
         for gx in 23:
             var sample: Vector2 = bounds.position + Vector2(
@@ -276,10 +320,24 @@ func _initialize() -> void:
             )
             var context: Dictionary = scene._get_political_context_at(sample)
             states_seen[String(context.state)] = true
+            if String(context.state) == "UNCONTROLLED" and not is_finite(uncontrolled_sample.x):
+                uncontrolled_sample = sample
+            if String(context.state) == "CONTESTED" and not is_finite(contested_sample.x):
+                contested_sample = sample
     for required_state in ["CORE", "CONTROLLED", "CONTESTED", "UNCONTROLLED"]:
         if not states_seen.has(required_state):
             _fail("generated political field lacks state " + required_state)
             return
+
+    var free_arms: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Arms")
+    var free_narc: Dictionary = scene._commodity_legality_at(uncontrolled_sample, "Narcotics")
+    if String(free_arms.status) != "UNREGULATED" or String(free_narc.status) != "UNREGULATED":
+        _fail("uncontrolled space should report restricted commodities as unregulated")
+        return
+    var contested_arms: Dictionary = scene._commodity_legality_at(contested_sample, "Arms")
+    if not ["LEGAL", "ILLEGAL", "MIXED"].has(String(contested_arms.status)):
+        _fail("contested-space Arms legality returned invalid state")
+        return
 
     # Sparse route graph is unique, connected and segmented.
     var routes: Array = scene.political_world.routes
@@ -403,6 +461,8 @@ func _initialize() -> void:
 
     # Save/reload must reproduce the exact political world.
     var world_before: Dictionary = scene.political_world.duplicate(true)
+    scene.cargo["Arms"] = 1
+    scene.cargo["Narcotics"] = 2
     var signature_before: String = _world_signature(scene.political_world)
     if signature_before.is_empty():
         _fail("political world signature unexpectedly empty")
@@ -417,6 +477,9 @@ func _initialize() -> void:
     scene._load_privateer_state()
     if scene.world_seed != seed_before or scene.current_planet != location_before:
         _fail("political world save/reload changed seed or location")
+        return
+    if int(scene.cargo.get("Arms", 0)) != 1 or int(scene.cargo.get("Narcotics", 0)) != 2:
+        _fail("Arms/Narcotics cargo did not persist")
         return
     var reload_difference: String = _world_difference(world_before, scene.political_world)
     if not reload_difference.is_empty():
@@ -467,6 +530,13 @@ func _initialize() -> void:
     if scene._planet_type(scene.current_planet) != "VOLCANIC":
         _fail("legacy Cinder location did not migrate to VOLCANIC world")
         return
+    if int(scene.cargo.get("Arms", -1)) != 0 or int(scene.cargo.get("Narcotics", -1)) != 0:
+        _fail("legacy five-commodity cargo did not gain zeroed restricted commodities")
+        return
+    for migrated_planet in scene.planet_names:
+        if not scene.markets[migrated_planet].has("Arms") or not scene.markets[migrated_planet].has("Narcotics"):
+            _fail("legacy market migration did not add restricted commodities")
+            return
     var migrated_seed: int = int(scene.world_seed)
     var migrated_world_before: Dictionary = scene.political_world.duplicate(true)
     var migrated_signature: String = _world_signature(scene.political_world)
@@ -476,6 +546,9 @@ func _initialize() -> void:
     var migrated_cfg: ConfigFile = ConfigFile.new()
     if migrated_cfg.load(scene._active_world_path()) != OK or int(migrated_cfg.get_value("political", "schema", 0)) != scene.POLITICAL_WORLD_SCHEMA:
         _fail("legacy migration did not persist new political schema")
+        return
+    if int(migrated_cfg.get_value("world", "economy_schema", 0)) != scene.ECONOMY_SCHEMA_VERSION:
+        _fail("legacy migration did not persist Slice 2 economy schema")
         return
     scene.political_world.clear()
     scene.planet_names.clear()
@@ -520,6 +593,20 @@ func _initialize() -> void:
     if not scene._sell_commodity("Food") or int(scene.cargo.Food) != 0:
         _fail("commodity sell failed")
         return
+
+    scene.current_planet = industrial
+    scene.research_credits = 10000
+    scene.cargo["Arms"] = 0
+    var arms_data: Dictionary = scene.markets[industrial]["Arms"]
+    arms_data.stock = maxf(5.0, float(arms_data.stock))
+    scene.markets[industrial]["Arms"] = arms_data
+    if not scene._buy_commodity("Arms") or int(scene.cargo.Arms) != 1:
+        _fail("could not trade Arms commodity")
+        return
+    if not scene._sell_commodity("Arms") or int(scene.cargo.Arms) != 0:
+        _fail("could not sell Arms commodity")
+        return
+    scene.current_planet = lush
 
     var ore: Dictionary = scene.markets[volcanic]["Ore"]
     ore.stock = 40.0
