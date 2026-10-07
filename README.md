@@ -62,6 +62,21 @@ The contract board regenerates at each arrival and includes:
 - The current first boss implementation is a heavy missile-firing pentagon with health and fire rate scaled by bounty difficulty.
 - The contract pays only after the boss is destroyed.
 
+## Generated Privateer menu art
+
+Docked/privateer-facing screens now use generated sci-fi artwork while the arcade flight layer remains procedural and unchanged.
+
+- **Aster:** lush ocean/jungle world.
+- **Cinder:** volcanic lava world.
+- **Vesper:** frozen ice world.
+- **Helix:** industrial/smog world.
+- **Hub / careers:** orbital passenger-lounge / spaceport interior.
+- **Market:** interstellar trade concourse.
+- **Travel + contracts:** navigation / operations room.
+- **Ship upgrades + starting weapons:** outfitting hangar.
+
+The assets are packed into one optimized **390×1228 WebP atlas** (about 130 KB) for phone/browser loading. Menu hitboxes and gameplay logic are unchanged. The arcade renderer does not reference the atlas.
+
 ## Space travel
 
 The original flight mechanics remain:

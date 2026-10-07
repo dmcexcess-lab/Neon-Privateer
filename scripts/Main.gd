@@ -2,6 +2,18 @@ extends Node2D
 
 const W := 390.0
 const H := 844.0
+const PRIVATEER_UI_ATLAS: Texture2D = preload("res://assets/privateer_ui/privateer_ui_atlas.webp")
+
+# Generated-menu-art atlas regions. These are used only while docked/in menus;
+# the arcade-flight renderer remains fully procedural.
+const ART_BG_HUB := Rect2(0.0, 0.0, 195.0, 422.0)
+const ART_BG_MARKET := Rect2(195.0, 0.0, 195.0, 422.0)
+const ART_BG_OPS := Rect2(0.0, 422.0, 195.0, 422.0)
+const ART_BG_UPGRADES := Rect2(195.0, 422.0, 195.0, 422.0)
+const ART_PLANET_ASTER := Rect2(0.0, 844.0, 192.0, 192.0)
+const ART_PLANET_CINDER := Rect2(192.0, 844.0, 192.0, 192.0)
+const ART_PLANET_VESPER := Rect2(0.0, 1036.0, 192.0, 192.0)
+const ART_PLANET_HELIX := Rect2(192.0, 1036.0, 192.0, 192.0)
 const PLAYER_Y := 680.0
 const LEFT := 32.0
 const RIGHT := 358.0
@@ -3163,44 +3175,45 @@ func _draw_controls() -> void:
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
 func _draw_profile_menu() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("NEON PRIVATEER", Vector2(48, 92), 34, Color("77f7ff"))
-    _text("CAREERS", Vector2(126, 142), 24, Color("bdeef4"))
+    _draw_menu_art(ART_BG_HUB, 0.58)
+    _draw_menu_panel(Rect2(30.0, 35.0, 330.0, 625.0), 0.70)
+    _text_center("NEON PRIVATEER", 92.0, 32, Color("77f7ff"), 30.0, 360.0)
+    _text_center("CAREERS", 142.0, 23, Color("bdeef4"), 30.0, 360.0)
 
     var can_continue := last_career_slot > 0 and _career_slot_exists(last_career_slot)
-    var continue_fill := Color("123544") if can_continue else Color("11161d")
+    var continue_fill := Color(0.05, 0.17, 0.20, 0.93) if can_continue else Color(0.05, 0.07, 0.09, 0.93)
     var continue_border := Color("6bffb0") if can_continue else Color("46515c")
     draw_rect(PROFILE_CONTINUE_RECT, continue_fill, true)
     draw_rect(PROFILE_CONTINUE_RECT, continue_border, false, 3.0)
-    _text("CONTINUE", PROFILE_CONTINUE_RECT.position + Vector2(85, 40), 21, Color("f0fbff") if can_continue else Color("71808a"))
+    _text_center("CONTINUE", PROFILE_CONTINUE_RECT.position.y + 40.0, 21, Color("f0fbff") if can_continue else Color("71808a"), PROFILE_CONTINUE_RECT.position.x, PROFILE_CONTINUE_RECT.end.x)
 
-    draw_rect(PROFILE_NEW_RECT, Color("102633"), true)
+    draw_rect(PROFILE_NEW_RECT, Color(0.04, 0.14, 0.19, 0.93), true)
     draw_rect(PROFILE_NEW_RECT, Color("77f7ff"), false, 3.0)
-    _text("NEW CAREER", PROFILE_NEW_RECT.position + Vector2(69, 40), 21, Color("f0fbff"))
+    _text_center("NEW CAREER", PROFILE_NEW_RECT.position.y + 40.0, 21, Color("f0fbff"), PROFILE_NEW_RECT.position.x, PROFILE_NEW_RECT.end.x)
 
-    draw_rect(PROFILE_LOAD_RECT, Color("102633"), true)
+    draw_rect(PROFILE_LOAD_RECT, Color(0.08, 0.08, 0.18, 0.93), true)
     draw_rect(PROFILE_LOAD_RECT, Color("b56cff"), false, 3.0)
-    _text("LOAD CAREER", PROFILE_LOAD_RECT.position + Vector2(62, 40), 21, Color("f0fbff"))
+    _text_center("LOAD CAREER", PROFILE_LOAD_RECT.position.y + 40.0, 21, Color("f0fbff"), PROFILE_LOAD_RECT.position.x, PROFILE_LOAD_RECT.end.x)
 
     if can_continue:
         var summary := _career_slot_summary(last_career_slot)
         var location := String(summary.planet)
         if bool(summary.in_flight):
             location = "%s > %s" % [String(summary.planet), String(summary.destination)]
-        _text("LAST: SLOT %d   %s" % [last_career_slot, location], Vector2(73, 618), 14, Color("8ea9b8"))
-        _text("%d CR" % int(summary.credits), Vector2(169, 644), 14, Color("ffd166"))
+        _text_center("LAST: SLOT %d   %s" % [last_career_slot, location], 618.0, 14, Color("8ea9b8"), 42.0, 348.0)
+        _text_center("%d CR" % int(summary.credits), 644.0, 14, Color("ffd166"), 42.0, 348.0)
     else:
-        _text("NO CAREER SAVES YET", Vector2(105, 626), 14, Color("8ea9b8"))
+        _text_center("NO CAREER SAVES YET", 626.0, 14, Color("8ea9b8"), 42.0, 348.0)
 
     if active_career_slot > 0:
-        draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+        draw_rect(PROFILE_SLOT_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
         draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
-        _text("BACK TO CAREER", PROFILE_SLOT_BACK_RECT.position + Vector2(63, 37), 19, Color("f0fbff"))
-
+        _text_center("BACK TO CAREER", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 19, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
 func _draw_career_slots_menu() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("NEW CAREER" if career_new_mode else "LOAD CAREER", Vector2(77 if career_new_mode else 72, 78), 30, Color("77f7ff"))
-    _text("3 CAREER SLOTS", Vector2(118, 116), 15, Color("8ea9b8"))
+    _draw_menu_art(ART_BG_HUB, 0.60)
+    _draw_menu_panel(Rect2(24.0, 38.0, 342.0, 615.0), 0.73)
+    _text_center("NEW CAREER" if career_new_mode else "LOAD CAREER", 78.0, 30, Color("77f7ff"), 30.0, 360.0)
+    _text_center("3 CAREER SLOTS", 116.0, 15, Color("8ea9b8"), 30.0, 360.0)
 
     for i in CAREER_SLOT_COUNT:
         var slot := i + 1
@@ -3208,7 +3221,7 @@ func _draw_career_slots_menu() -> void:
         var summary := _career_slot_summary(slot)
         var exists := bool(summary.exists)
         var selected_warning := career_new_mode and exists and pending_overwrite_slot == slot
-        var fill := Color("111c28") if exists else Color("0d141b")
+        var fill := Color(0.04, 0.08, 0.12, 0.92) if exists else Color(0.035, 0.055, 0.075, 0.92)
         var border := Color("ff8fa6") if selected_warning else (Color("77f7ff") if exists else Color("46515c"))
         draw_rect(rect, fill, true)
         draw_rect(rect, border, false, 3.0)
@@ -3235,47 +3248,94 @@ func _draw_career_slots_menu() -> void:
         else:
             _text("LOAD", rect.position + Vector2(257, 62), 14, Color("6bffb0"))
 
-    draw_rect(PROFILE_SLOT_BACK_RECT, Color("123544"), true)
+    draw_rect(PROFILE_SLOT_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(PROFILE_SLOT_BACK_RECT, Color("77f7ff"), false, 2.0)
-    _text("BACK", PROFILE_SLOT_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
+    _text_center("BACK", PROFILE_SLOT_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), PROFILE_SLOT_BACK_RECT.position.x, PROFILE_SLOT_BACK_RECT.end.x)
+func _privateer_art_ready() -> bool:
+    return PRIVATEER_UI_ATLAS != null and PRIVATEER_UI_ATLAS.get_width() == 390 and PRIVATEER_UI_ATLAS.get_height() == 1228
+
+func _planet_art_region(planet: String) -> Rect2:
+    match planet:
+        "Aster":
+            return ART_PLANET_ASTER
+        "Cinder":
+            return ART_PLANET_CINDER
+        "Vesper":
+            return ART_PLANET_VESPER
+        "Helix":
+            return ART_PLANET_HELIX
+    return ART_PLANET_ASTER
+
+func _draw_menu_art(region: Rect2, darken: float = 0.56) -> void:
+    draw_texture_rect_region(
+        PRIVATEER_UI_ATLAS,
+        Rect2(Vector2.ZERO, Vector2(W, H)),
+        region,
+        Color.WHITE
+    )
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(0.01, 0.02, 0.045, darken), true)
+
+func _draw_planet_art(planet: String, rect: Rect2, alpha: float = 1.0) -> void:
+    var region := _planet_art_region(planet)
+    var center := rect.get_center()
+    var radius := minf(rect.size.x, rect.size.y) * 0.54
+    draw_circle(center, radius, Color(0.22, 0.85, 1.0, 0.07 * alpha))
+    draw_texture_rect_region(
+        PRIVATEER_UI_ATLAS,
+        rect,
+        region,
+        Color(1.0, 1.0, 1.0, alpha)
+    )
+
+func _draw_menu_panel(rect: Rect2, alpha: float = 0.82, border: Color = Color(0.30, 0.76, 0.90, 0.28)) -> void:
+    draw_rect(rect, Color(0.018, 0.035, 0.065, alpha), true)
+    draw_rect(rect, border, false, 1.5)
+
+func _text_center(s: String, y: float, size: int, color: Color, left_x: float = 0.0, right_x: float = W) -> void:
+    draw_string(ThemeDB.fallback_font, Vector2(left_x, y), s, HORIZONTAL_ALIGNMENT_CENTER, right_x - left_x, size, color)
 
 func _draw_title() -> void:
-    _text("NEON PRIVATEER", Vector2(48, 82), 34, Color("77f7ff"))
-    _text(current_planet, Vector2(132, 132), 26, Color("f0fbff"))
-    _text("%07d CREDITS" % research_credits, Vector2(92, 170), 20, Color("ffd166"))
-    _text("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], Vector2(76, 206), 15, Color("bdeef4"))
+    _draw_menu_art(ART_BG_HUB, 0.48)
+    _draw_menu_panel(Rect2(24.0, 22.0, 342.0, 360.0), 0.58)
+
+    _text_center("NEON PRIVATEER", 62.0, 30, Color("77f7ff"), 24.0, 366.0)
+    _draw_planet_art(current_planet, Rect2(126.0, 78.0, 138.0, 138.0), 1.0)
+    _text_center(current_planet, 244.0, 25, Color("f0fbff"), 60.0, 330.0)
+    _text_center("%07d CREDITS" % research_credits, 276.0, 18, Color("ffd166"), 55.0, 335.0)
+    _text_center("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], 304.0, 14, Color("bdeef4"), 48.0, 342.0)
 
     if not active_contract.is_empty():
         var ct := String(active_contract.get("type", "")).to_upper()
         var cd := String(active_contract.get("destination", ""))
         var cr := int(active_contract.get("reward", 0))
-        _text("%s > %s  %d CR" % [ct, cd, cr], Vector2(54, 255), 15, Color("6bffb0"))
+        _text_center("%s > %s  %d CR" % [ct, cd, cr], 335.0, 14, Color("6bffb0"), 38.0, 352.0)
     else:
-        _text("NO ACTIVE CONTRACT", Vector2(105, 255), 15, Color("8ea9b8"))
+        _text_center("NO ACTIVE CONTRACT", 335.0, 14, Color("8ea9b8"), 38.0, 352.0)
 
-    _text(last_trip_summary, Vector2(44, 310), 14, Color("8ea9b8"))
-    _text("CAREER %d" % active_career_slot, Vector2(291, 112), 12, Color("8ea9b8"))
+    _text_center(last_trip_summary, 363.0, 13, Color("8ea9b8"), 35.0, 355.0)
+    _text("CAREER %d" % active_career_slot, Vector2(292, 38), 11, Color("8ea9b8"))
 
     var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
     for i in 4:
         var rect := _hub_button_rect(i)
-        draw_rect(rect, Color("102633"), true)
+        draw_rect(rect, Color(0.04, 0.12, 0.17, 0.91), true)
         draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
-        _text(labels[i], rect.position + Vector2(78 if i != 3 else 55, 38), 21, Color("f0fbff"))
+        _text_center(labels[i], rect.position.y + 38.0, 21, Color("f0fbff"), rect.position.x, rect.end.x)
 
-    draw_rect(HUB_CAREERS_RECT, Color("151d2d"), true)
+    draw_rect(HUB_CAREERS_RECT, Color(0.07, 0.08, 0.16, 0.92), true)
     draw_rect(HUB_CAREERS_RECT, Color("b56cff"), false, 3.0)
-    _text("CAREERS", HUB_CAREERS_RECT.position + Vector2(83, 38), 20, Color("f0fbff"))
-
+    _text_center("CAREERS", HUB_CAREERS_RECT.position.y + 38.0, 20, Color("f0fbff"), HUB_CAREERS_RECT.position.x, HUB_CAREERS_RECT.end.x)
 func _draw_submenu_back() -> void:
-    draw_rect(SUBMENU_BACK_RECT, Color("123544"), true)
+    draw_rect(SUBMENU_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
-    _text("BACK", SUBMENU_BACK_RECT.position + Vector2(108, 37), 20, Color("f0fbff"))
-
+    _text_center("BACK", SUBMENU_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), SUBMENU_BACK_RECT.position.x, SUBMENU_BACK_RECT.end.x)
 func _draw_travel_menu() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("STAR ROUTES", Vector2(83, 72), 32, Color("77f7ff"))
-    _text("FROM %s" % current_planet, Vector2(116, 108), 17, Color("bdeef4"))
+    _draw_menu_art(ART_BG_OPS, 0.61)
+    _draw_menu_panel(Rect2(20.0, 18.0, 350.0, 116.0), 0.72)
+    _draw_planet_art(current_planet, Rect2(294.0, 28.0, 76.0, 76.0), 0.96)
+    _text("STAR ROUTES", Vector2(36, 64), 30, Color("77f7ff"))
+    _text("FROM %s" % current_planet, Vector2(38, 103), 16, Color("bdeef4"))
+
     var destinations := _other_planets(current_planet)
     for i in destinations.size():
         var dest := destinations[i]
@@ -3284,19 +3344,21 @@ func _draw_travel_menu() -> void:
         var effective_level := _route_level_for(int(spec.distance), int(spec.danger), contract_diff)
         var duration := _route_duration_for(int(spec.distance), int(spec.danger), contract_diff)
         var rect := _travel_row_rect(i)
-        draw_rect(rect, Color("10202c"), true)
+        draw_rect(rect, Color(0.025, 0.07, 0.10, 0.90), true)
         draw_rect(rect, Color("6bffb0") if _contract_target_matches(dest) else Color("465f72"), false, 2.0)
+        _draw_planet_art(dest, Rect2(rect.end.x - 78.0, rect.position.y + 14.0, 70.0, 70.0), 0.98)
         _text(dest, rect.position + Vector2(14, 28), 21, Color("f0fbff"))
-        _text("DIST %d   DANGER %d   FLIGHT %ds" % [int(spec.distance), int(spec.danger), int(duration)], rect.position + Vector2(14, 56), 14, Color("8ea9b8"))
-        _text("FLIGHT LEVEL %d" % effective_level, rect.position + Vector2(14, 82), 14, Color("ffd166"))
+        _text("DIST %d   DANGER %d" % [int(spec.distance), int(spec.danger)], rect.position + Vector2(14, 55), 13, Color("8ea9b8"))
+        _text("FLIGHT %ds   L%d" % [int(duration), effective_level], rect.position + Vector2(14, 80), 13, Color("ffd166"))
         if _contract_target_matches(dest):
-            _text("CONTRACT", rect.position + Vector2(242, 28), 13, Color("6bffb0"))
+            _text("CONTRACT", rect.position + Vector2(184, 28), 12, Color("6bffb0"))
     _draw_submenu_back()
-
 func _draw_market_menu() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("%s MARKET" % current_planet.to_upper(), Vector2(74, 60), 29, Color("77f7ff"))
-    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(92, 96), 16, Color("ffd166"))
+    _draw_menu_art(ART_BG_MARKET, 0.64)
+    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 108.0), 0.74)
+    _draw_planet_art(current_planet, Rect2(302.0, 20.0, 66.0, 66.0), 0.96)
+    _text("%s MARKET" % current_planet.to_upper(), Vector2(30, 55), 27, Color("77f7ff"))
+    _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(30, 93), 15, Color("ffd166"))
     for i in commodity_names.size():
         var commodity := commodity_names[i]
         var buy_price := _market_buy_price(current_planet, commodity)
@@ -3306,27 +3368,28 @@ func _draw_market_menu() -> void:
         var held := int(cargo.get(commodity, 0))
         var buy_rect := _market_buy_rect(i)
         var sell_rect := _market_sell_rect(i)
-        draw_rect(buy_rect, Color("112b24"), true)
+        draw_rect(buy_rect, Color(0.035, 0.16, 0.12, 0.91), true)
         draw_rect(buy_rect, Color("6bffb0"), false, 2.0)
-        draw_rect(sell_rect, Color("2d1c26"), true)
+        draw_rect(sell_rect, Color(0.16, 0.07, 0.11, 0.91), true)
         draw_rect(sell_rect, Color("ff8fa6"), false, 2.0)
         _text(commodity, buy_rect.position + Vector2(8, 22), 15, Color("f0fbff"))
         _text("BUY %d" % buy_price, buy_rect.position + Vector2(8, 50), 15, Color("6bffb0"))
         _text("SELL %d" % sell_price, sell_rect.position + Vector2(10, 50), 15, Color("ffb0c0"))
         _text("H%d S%d" % [held, stock], sell_rect.position + Vector2(79, 22), 13, Color("8ea9b8"))
     _draw_submenu_back()
-
 func _draw_contracts_menu() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("CONTRACT BOARD", Vector2(58, 58), 29, Color("77f7ff"))
+    _draw_menu_art(ART_BG_OPS, 0.65)
+    _draw_menu_panel(Rect2(18.0, 14.0, 354.0, 108.0), 0.74)
+    _draw_planet_art(current_planet, Rect2(304.0, 20.0, 64.0, 64.0), 0.95)
+    _text("CONTRACT BOARD", Vector2(28, 55), 27, Color("77f7ff"))
     if not active_contract.is_empty():
-        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), String(active_contract.destination)], Vector2(66, 94), 15, Color("6bffb0"))
+        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), String(active_contract.destination)], Vector2(30, 94), 14, Color("6bffb0"))
     else:
-        _text("TAP A JOB TO ACCEPT", Vector2(86, 94), 15, Color("8ea9b8"))
+        _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
     for i in contract_board.size():
         var contract: Dictionary = contract_board[i]
         var rect := _contract_row_rect(i)
-        draw_rect(rect, Color("111c28"), true)
+        draw_rect(rect, Color(0.035, 0.065, 0.10, 0.91), true)
         draw_rect(rect, Color("465f72"), false, 2.0)
         _text(String(contract.type).to_upper(), rect.position + Vector2(12, 25), 17, Color("f0fbff"))
         _text("> %s   D%d" % [String(contract.destination), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
@@ -3338,7 +3401,6 @@ func _draw_contracts_menu() -> void:
         else:
             _text("BOSS", rect.position + Vector2(258, 25), 12, Color("ff8fa6"))
     _draw_submenu_back()
-
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
     var max_lvl := _research_max(track)
@@ -3353,22 +3415,22 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
     _text(cost_text, rect.position + Vector2(244, 35), 15, Color("6bffb0") if at_max else Color("ffd166"))
 
 func _draw_research() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("SHIP UPGRADES", Vector2(57, 74), 32, Color("b56cff"))
-    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
-    _text("PERMANENT SHIP MODS", Vector2(97, 145), 15, Color("8ea9b8"))
+    _draw_menu_art(ART_BG_UPGRADES, 0.68)
+    _draw_menu_panel(Rect2(22.0, 20.0, 346.0, 135.0), 0.76)
+    _text_center("SHIP UPGRADES", 74.0, 31, Color("b56cff"), 26.0, 364.0)
+    _text_center("CREDITS %07d" % research_credits, 112.0, 18, Color("ffd166"), 26.0, 364.0)
+    _text_center("PERMANENT SHIP MODS", 145.0, 15, Color("8ea9b8"), 26.0, 364.0)
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
     _draw_research_button(RESEARCH_HITS_RECT, "hits", "HITS", "+1 starting hit")
     _draw_research_button(RESEARCH_SHIELD_RECT, "shield", "SHIELD", "+1 projectile block/run")
-    draw_rect(RESEARCH_WEAPONS_RECT, Color("231835"), true)
+    draw_rect(RESEARCH_WEAPONS_RECT, Color(0.10, 0.05, 0.18, 0.93), true)
     draw_rect(RESEARCH_WEAPONS_RECT, Color("b56cff"), false, 2.0)
-    _text("STARTING WEAPONS", RESEARCH_WEAPONS_RECT.position + Vector2(61, 37), 18, Color("f1dcff"))
-    draw_rect(RESEARCH_BACK_RECT, Color("123544"), true)
+    _text_center("STARTING WEAPONS", RESEARCH_WEAPONS_RECT.position.y + 37.0, 18, Color("f1dcff"), RESEARCH_WEAPONS_RECT.position.x, RESEARCH_WEAPONS_RECT.end.x)
+    draw_rect(RESEARCH_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(RESEARCH_BACK_RECT, Color("77f7ff"), false, 3.0)
-    _text("BACK", RESEARCH_BACK_RECT.position + Vector2(106, 42), 22, Color("f0fbff"))
-
+    _text_center("BACK", RESEARCH_BACK_RECT.position.y + 42.0, 22, Color("f0fbff"), RESEARCH_BACK_RECT.position.x, RESEARCH_BACK_RECT.end.x)
 func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> void:
     var unlocked := _weapon_start_unlocked(weapon)
     var selected := starting_weapon == weapon
@@ -3386,20 +3448,20 @@ func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> v
     _text(right, rect.position + Vector2(215, 34), 13, Color("6bffb0") if unlocked or selected else Color("ffd166"))
 
 func _draw_weapon_research() -> void:
-    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
-    _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
-    _text("CREDITS %07d" % research_credits, Vector2(91, 112), 18, Color("ffd166"))
-    _text("PERMANENT UNLOCK — 10x RUN PRICE", Vector2(51, 140), 14, Color("8ea9b8"))
+    _draw_menu_art(ART_BG_UPGRADES, 0.70)
+    _draw_menu_panel(Rect2(22.0, 20.0, 346.0, 128.0), 0.77)
+    _text_center("STARTING WEAPONS", 76.0, 29, Color("b56cff"), 25.0, 365.0)
+    _text_center("CREDITS %07d" % research_credits, 112.0, 18, Color("ffd166"), 25.0, 365.0)
+    _text_center("PERMANENT UNLOCK — 10x RUN PRICE", 140.0, 14, Color("8ea9b8"), 25.0, 365.0)
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
     _draw_weapon_unlock_button(WEAPON_LASER_RECT, "laser", "THIN LASER")
     _draw_weapon_unlock_button(WEAPON_CONE_RECT, "cone", "CONE D3x3")
     _draw_weapon_unlock_button(WEAPON_SEEKER_RECT, "seeker", "SEEKER D7")
-    draw_rect(WEAPON_RESEARCH_BACK_RECT, Color("123544"), true)
+    draw_rect(WEAPON_RESEARCH_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(WEAPON_RESEARCH_BACK_RECT, Color("77f7ff"), false, 3.0)
-    _text("BACK", WEAPON_RESEARCH_BACK_RECT.position + Vector2(106, 39), 22, Color("f0fbff"))
-
+    _text_center("BACK", WEAPON_RESEARCH_BACK_RECT.position.y + 39.0, 22, Color("f0fbff"), WEAPON_RESEARCH_BACK_RECT.position.x, WEAPON_RESEARCH_BACK_RECT.end.x)
 func _draw_pause_button() -> void:
     draw_rect(PAUSE_RECT, Color(0.05, 0.08, 0.12, 0.82), true)
     draw_rect(PAUSE_RECT, Color("77f7ff"), false, 2.0)
