@@ -159,6 +159,8 @@ var left_touch_index := -1
 var right_touch_index := -1
 var left_control_held := false
 var right_control_held := false
+var keyboard_left_held := false
+var keyboard_right_held := false
 var dash_score_timer := 0.0
 var near_miss_timer := 0.0
 var near_miss_text := ""
@@ -316,10 +318,13 @@ func _process(delta: float) -> void:
     world_scroll += world_delta * 170.0
     invuln = maxf(0.0, invuln - game_delta)
 
-    if left_control_held and not right_control_held:
-        target_x -= CONTROL_TARGET_SPEED * game_delta
-    elif right_control_held and not left_control_held:
-        target_x += CONTROL_TARGET_SPEED * game_delta
+    var left_held := left_control_held or keyboard_left_held
+    var right_held := right_control_held or keyboard_right_held
+    var control_speed := _lateral_control_speed()
+    if left_held and not right_held:
+        target_x -= control_speed * game_delta
+    elif right_held and not left_held:
+        target_x += control_speed * game_delta
 
     player_x = lerpf(player_x, target_x, minf(1.0, game_delta * 13.0))
     player_x = clampf(player_x, LEFT, RIGHT)
@@ -399,6 +404,10 @@ func _input(event: InputEvent) -> void:
     if event.device == InputEvent.DEVICE_ID_EMULATION:
         return
 
+    if event is InputEventKey:
+        _handle_key_input(event)
+        return
+
     if event is InputEventScreenTouch:
         if event.pressed:
             _handle_tap(event.position, event.index)
@@ -416,6 +425,22 @@ func _input(event: InputEvent) -> void:
         else:
             _release_control_touch(-1)
         return
+
+func _handle_key_input(event: InputEventKey) -> void:
+    if event.echo:
+        return
+    var key := event.physical_keycode if event.physical_keycode != 0 else event.keycode
+    if key == KEY_LEFT or key == KEY_A:
+        keyboard_left_held = event.pressed and playing and not run_paused
+        queue_redraw()
+        return
+    if key == KEY_RIGHT or key == KEY_D:
+        keyboard_right_held = event.pressed and playing and not run_paused
+        queue_redraw()
+        return
+    if (key == KEY_UP or key == KEY_W) and event.pressed and playing and not run_paused:
+        _dash()
+        queue_redraw()
 
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
     if run_paused:
@@ -470,6 +495,8 @@ func _release_control_touch(touch_index: int) -> void:
 func _clear_control_holds() -> void:
     left_control_held = false
     right_control_held = false
+    keyboard_left_held = false
+    keyboard_right_held = false
     left_touch_index = -1
     right_touch_index = -1
     dash_touch_index = -1
@@ -562,6 +589,9 @@ func _start_game() -> void:
 
 func _ship_speed_multiplier() -> float:
     return 0.72 + float(research_ship_speed + run_ship_speed) * 0.04
+
+func _lateral_control_speed() -> float:
+    return CONTROL_TARGET_SPEED * (1.0 + float(research_ship_speed + run_ship_speed) * 0.04)
 
 func _dash_distance() -> float:
     return minf(PLAYER_Y - 45.0, DASH_FORWARD_DISTANCE + float(research_dash + run_dash) * 35.0)
@@ -1606,13 +1636,26 @@ func _move_shots(delta: float) -> void:
             next.append(shot)
     shots = next
 
+func _award_hazard_kill(obj: Dictionary, dash_kill: bool = false) -> void:
+    obj.hp = 0.0
+    var earned := int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
+    score += earned
+    _queue_kill_drop(obj)
+    if dash_kill:
+        near_miss_text = "DASH KILL +%d" % earned
+        near_miss_timer = 0.62
+        cyan_flash = maxf(cyan_flash, 0.10)
+        shake = maxf(shake, 4.5)
+        _burst(Vector2(obj.x, obj.y), 14, Color("77f7ff"))
+        _play_sfx(kill_sfx, rng.randf_range(1.08, 1.16), -2.0)
+    else:
+        _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
+        _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
+
 func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
     obj.hp = maxf(0.0, float(obj.hp) - damage)
     if float(obj.hp) <= 0.0:
-        score += int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
-        _queue_kill_drop(obj)
-        _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
-        _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
+        _award_hazard_kill(obj)
         return true
     if damage >= 1.0:
         _burst(Vector2(obj.x, obj.y), 3, Color("fff4c2"))
@@ -1937,11 +1980,13 @@ func _move_objects(delta: float) -> void:
                 continue
             var hit_dist: float = obj.r + 14.0
             if absf(dy) < hit_dist and dx < hit_dist:
+                if dash_score_timer > 0.0:
+                    _award_hazard_kill(obj, true)
+                    continue
                 if invuln <= 0.0:
                     _take_hit(1)
                     _burst(Vector2(player_x, player_y), 13, Color("ff426f"))
-                # Physical collision hurts only the player. Enemy survives unchanged.
-
+                # Outside a dash, physical collision hurts only the player.
 
             var near_dist: float = obj.r + 40.0
             if obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
@@ -2363,8 +2408,11 @@ func _draw_controls() -> void:
     var held_fill := Color("174759")
     var held_border := Color("77f7ff")
 
-    draw_rect(LEFT_CONTROL_RECT, held_fill if left_control_held else move_fill, true)
-    draw_rect(LEFT_CONTROL_RECT, held_border if left_control_held else move_border, false, 3.0)
+    var left_held := left_control_held or keyboard_left_held
+    var right_held := right_control_held or keyboard_right_held
+
+    draw_rect(LEFT_CONTROL_RECT, held_fill if left_held else move_fill, true)
+    draw_rect(LEFT_CONTROL_RECT, held_border if left_held else move_border, false, 3.0)
     _text("LEFT", LEFT_CONTROL_RECT.position + Vector2(26, 40), 19, Color("f0fbff"))
 
     var ready := dash_cooldown <= 0.0
@@ -2375,8 +2423,8 @@ func _draw_controls() -> void:
     var dash_label := "DASH" if ready else "%.1f" % dash_cooldown
     _text(dash_label, DASH_RECT.position + Vector2(26 if ready else 34, 40), 19, Color("f0fbff") if ready else Color("8ea9b8"))
 
-    draw_rect(RIGHT_CONTROL_RECT, held_fill if right_control_held else move_fill, true)
-    draw_rect(RIGHT_CONTROL_RECT, held_border if right_control_held else move_border, false, 3.0)
+    draw_rect(RIGHT_CONTROL_RECT, held_fill if right_held else move_fill, true)
+    draw_rect(RIGHT_CONTROL_RECT, held_border if right_held else move_border, false, 3.0)
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
 func _draw_title() -> void:
@@ -2416,7 +2464,7 @@ func _draw_research() -> void:
     _text("RESEARCH", Vector2(92, 74), 34, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
     _text("PERMANENT • AUTO-SAVED", Vector2(82, 145), 15, Color("8ea9b8"))
-    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
+    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer, +8% near")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
     _draw_research_button(RESEARCH_HITS_RECT, "hits", "HITS", "+1 starting hit")
@@ -2510,7 +2558,7 @@ func _draw_shop() -> void:
 
     if shop_page == 0:
         _text("RUN UPGRADES", Vector2(122, 203), 15, Color("b56cff"))
-        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll / +8% near")
+        _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll/steer / +8% near")
         _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "+35px / +40 speed")
         _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3% weapon damage")
         _draw_run_upgrade_button(SHOP_RUN_HITS_RECT, "hits", "MAX HITS", "+1 max hit + heal 1")

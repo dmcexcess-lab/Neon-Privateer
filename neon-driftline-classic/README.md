@@ -23,6 +23,7 @@ All score still held when a run ends is banked into persistent Research currency
 Each level adds:
 
 - +4% world/level scroll speed
+- +4% left/right steering speed
 - +8% near-miss score
 
 Because level progress uses world scroll speed, a faster researched ship reaches the end of levels sooner in real time and faces faster incoming geometry.
@@ -166,18 +167,18 @@ Paused runs are snapshotted to `user://neon_run.cfg`. Persistent Research is sto
 
 Player impacts now use a short **0.5 second hit-invulnerability window** so overlapping impacts cannot drain several hits almost simultaneously.
 
-Physical contact between the player and an enemy damages **only the player**. The enemy is not damaged or removed by collision; only player weapons can damage enemies. Station-wall contact remains instant-lethal and ignores ordinary hit invulnerability.
+Physical contact outside a dash damages **only the player**. During the active dash scoring window, contact with a hazard becomes a **DASH KILL** instead: the hazard is destroyed, its normal kill score/drop rules apply, and the player takes no collision hit. Station-wall contact remains instant-lethal and is not converted into a dash kill.
 
 
 ## Controls
 
-Phone steering now uses three fixed bottom buttons:
+Phone steering uses three fixed bottom buttons:
 
 - **LEFT** — hold to steer left.
 - **DASH** — centered; tap to trigger the forward dash when ready.
 - **RIGHT** — hold to steer right.
 
-Swipe/drag steering has been removed. Multi-touch allows steering with one thumb while triggering DASH with another. Desktop mouse input uses the same buttons for testing.
+Keyboard play mirrors those controls: **Left Arrow/A** steers left, **Right Arrow/D** steers right, and **Up Arrow/W** triggers the forward dash. Swipe/drag steering remains removed. Multi-touch allows steering with one thumb while triggering DASH with another. Desktop mouse input can still use the on-screen buttons.
 
 
 ## Split readability tuning
@@ -226,7 +227,7 @@ The research screen highlights the first +1 Hit upgrade as **BEST FIRST**.
 The level-clear store now has two pages:
 
 1. **RUN UPGRADES**
-   - Ship Speed
+   - Ship Speed (scroll speed, left/right steering speed, near-miss bonus)
    - Dash
    - Damage
    - Max Hits

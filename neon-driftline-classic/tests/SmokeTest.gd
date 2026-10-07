@@ -19,8 +19,8 @@ func _initialize() -> void:
     await process_frame
 
     for method_name in [
-        "_start_game", "_dash", "_handle_tap", "_release_control_touch", "_clear_control_holds",
-        "_fire_weapon", "_weapon_interval", "_weapon_damage",
+        "_start_game", "_dash", "_handle_key_input", "_handle_tap", "_release_control_touch", "_clear_control_holds",
+        "_fire_weapon", "_weapon_interval", "_weapon_damage", "_award_hazard_kill",
         "_weapon_label", "_obstacle_max_hp", "_kill_score", "_enemy_kind_cap_for_level",
         "_enemy_body_speed_multiplier", "_hard_lane_background_rect",
         "_spawn_circle_bunch", "_move_shots", "_consume_shot_hit",
@@ -34,7 +34,7 @@ func _initialize() -> void:
         "_station_height_for_level", "_first_split_time", "_level_difficulty", "_spawn_interval",
         "_shop_weapon_cost", "_open_shop", "_buy_repair", "_buy_weapon",
         "_run_upgrade_level", "_run_upgrade_max", "_run_upgrade_cost", "_buy_run_upgrade",
-        "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_dash_distance",
+        "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_lateral_control_speed", "_dash_distance",
         "_dash_speed", "_damage_multiplier", "_near_miss_research_multiplier",
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon",
@@ -167,8 +167,70 @@ func _initialize() -> void:
     scene.dash_timer = 0.0
     scene.dash_cooldown = 0.0
 
+    # Keyboard mirrors the three touch controls: arrows or A/D steer, Up/W dashes.
+    scene.target_x = scene.player_x
+    var key_left_down := InputEventKey.new()
+    key_left_down.device = 0
+    key_left_down.physical_keycode = KEY_LEFT
+    key_left_down.pressed = true
+    scene._input(key_left_down)
+    if not scene.keyboard_left_held:
+        _fail("keyboard LEFT did not enter held steering state")
+        return
+    var keyboard_left_start: float = scene.player_x
+    scene._process(0.20)
+    if scene.player_x >= keyboard_left_start:
+        _fail("held keyboard LEFT did not steer ship left")
+        return
+    var key_left_up := InputEventKey.new()
+    key_left_up.device = 0
+    key_left_up.physical_keycode = KEY_LEFT
+    key_left_up.pressed = false
+    scene._input(key_left_up)
+    if scene.keyboard_left_held:
+        _fail("keyboard LEFT remained held after key release")
+        return
+
+    scene.target_x = scene.player_x
+    var key_d_down := InputEventKey.new()
+    key_d_down.device = 0
+    key_d_down.physical_keycode = KEY_D
+    key_d_down.pressed = true
+    scene._input(key_d_down)
+    if not scene.keyboard_right_held:
+        _fail("keyboard D did not enter held steering state")
+        return
+    var keyboard_right_start: float = scene.player_x
+    scene._process(0.20)
+    if scene.player_x <= keyboard_right_start:
+        _fail("held keyboard D did not steer ship right")
+        return
+    var key_d_up := InputEventKey.new()
+    key_d_up.device = 0
+    key_d_up.physical_keycode = KEY_D
+    key_d_up.pressed = false
+    scene._input(key_d_up)
+    if scene.keyboard_right_held:
+        _fail("keyboard D remained held after key release")
+        return
+
+    scene.dash_timer = 0.0
+    scene.dash_cooldown = 0.0
+    var key_w_down := InputEventKey.new()
+    key_w_down.device = 0
+    key_w_down.physical_keycode = KEY_W
+    key_w_down.pressed = true
+    scene._input(key_w_down)
+    if scene.dash_timer <= 0.0 or scene.dash_cooldown <= 0.0:
+        _fail("keyboard W did not trigger forward dash")
+        return
+    scene.dash_timer = 0.0
+    scene.dash_cooldown = 0.0
+    scene.dash_score_timer = 0.0
+
     # Permanent research modifies the intended systems and uses accumulated banked score.
     var base_ship_speed: float = scene._ship_speed_multiplier()
+    var base_lateral_speed: float = scene._lateral_control_speed()
     var base_dash_distance: float = scene._dash_distance()
     var base_dash_speed: float = scene._dash_speed()
     scene.research_credits = 1000000
@@ -178,8 +240,11 @@ func _initialize() -> void:
     if scene.research_ship_speed != 1 or scene.research_dash != 1 or scene.research_damage != 1 or scene.research_hits != 1 or scene.research_shield != 1:
         _fail("research levels did not increment correctly")
         return
-    if scene._ship_speed_multiplier() <= base_ship_speed or scene._dash_distance() <= base_dash_distance or scene._dash_speed() <= base_dash_speed or scene._damage_multiplier() <= 1.0:
+    if scene._ship_speed_multiplier() <= base_ship_speed or scene._lateral_control_speed() <= base_lateral_speed or scene._dash_distance() <= base_dash_distance or scene._dash_speed() <= base_dash_speed or scene._damage_multiplier() <= 1.0:
         _fail("research effects were not applied")
+        return
+    if absf(scene._lateral_control_speed() - base_lateral_speed * 1.04) > 0.05:
+        _fail("ship-speed research should add 4% lateral steering speed per level")
         return
     if absf((scene._dash_speed() - base_dash_speed) - 40.0) > 0.01:
         _fail("dash speed research should increase speed only slightly")
@@ -914,6 +979,37 @@ func _initialize() -> void:
         _fail("collision did not hurt again after invulnerability expired")
         return
 
+    # During the dash scoring window, body contact becomes a dash kill and causes no hit.
+    scene.objects.clear()
+    scene.pending_drops.clear()
+    scene.hp = 4
+    scene.max_hp = 4
+    scene.invuln = 0.0
+    scene.score = 0
+    scene.dash_score_timer = 0.5
+    scene.objects.append({
+        "id": 990005, "type": "hazard", "kind": 1,
+        "hp": 4.0, "max_hp": 4.0, "hard": false,
+        "x": scene.player_x, "y": scene.player_y, "r": 16.0,
+        "speed": 0.0, "drift": 0.0, "shoot_clock": 999.0,
+        "lane_speed_mult": 1.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+    })
+    scene._move_objects(0.0)
+    if scene.hp != 4:
+        _fail("dash collision damaged the player")
+        return
+    for obj in scene.objects:
+        if obj.type == "hazard" and int(obj.id) == 990005:
+            _fail("dash collision did not destroy the enemy")
+            return
+    if scene.score != scene._kill_score(1):
+        _fail("dash kill did not award the enemy kill score")
+        return
+    if not scene.near_miss_text.begins_with("DASH KILL +"):
+        _fail("dash collision did not register dash-kill feedback")
+        return
+    scene.dash_score_timer = 0.0
+
     scene.objects.clear()
     scene.enemy_shots.clear()
     scene.shots.clear()
@@ -1008,6 +1104,7 @@ func _initialize() -> void:
         _fail("between-level store did not default to run upgrades")
         return
     var base_run_ship_speed: float = scene._ship_speed_multiplier()
+    var base_run_lateral_speed: float = scene._lateral_control_speed()
     var base_run_dash_distance: float = scene._dash_distance()
     var base_run_dash_speed: float = scene._dash_speed()
     var base_run_damage: float = scene._damage_multiplier()
@@ -1017,7 +1114,7 @@ func _initialize() -> void:
     if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
         _fail("run-only upgrade levels did not increment")
         return
-    if scene._ship_speed_multiplier() <= base_run_ship_speed or scene._dash_distance() <= base_run_dash_distance or scene._dash_speed() <= base_run_dash_speed or scene._damage_multiplier() <= base_run_damage:
+    if scene._ship_speed_multiplier() <= base_run_ship_speed or scene._lateral_control_speed() <= base_run_lateral_speed or scene._dash_distance() <= base_run_dash_distance or scene._dash_speed() <= base_run_dash_speed or scene._damage_multiplier() <= base_run_damage:
         _fail("run-only upgrades did not affect active ship")
         return
     if scene.max_hp != 3 or scene.hp != 2 or scene.shield_charges != 1:
