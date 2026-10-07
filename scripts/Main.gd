@@ -1017,28 +1017,106 @@ func _route_pirate_exposure(origin: String, destination: String) -> float:
     var pct := _route_political_percentages(origin, destination)
     return clampf(float(pct.get("CONTESTED", 0.0)) + float(pct.get("UNCONTROLLED", 0.0)), 0.0, 1.0)
 
+func _commodity_category(commodity: String) -> String:
+    return String(COMMODITY_INFO.get(commodity, {}).get("category", "unknown"))
+
+func _commodity_volatility(commodity: String) -> float:
+    return float(COMMODITY_INFO.get(commodity, {}).get("volatility", 0.02))
+
+func _commodity_base_price(commodity: String) -> int:
+    return int(COMMODITY_INFO.get(commodity, {}).get("base", 50))
+
+func _is_grey_commodity(commodity: String) -> bool:
+    return grey_commodity_names.has(commodity)
+
+func _migrate_commodity_id(commodity: String) -> String:
+    return String(LEGACY_COMMODITY_MAP.get(commodity, commodity))
+
 func _new_market_entry(planet: String, commodity: String) -> Dictionary:
     var flow: Vector2 = _market_profile(planet, commodity)
     var starting_stock: float = clampf(58.0 + flow.x * 3.0 - flow.y * 2.0, 18.0, 112.0)
     return {
         "stock": starting_stock,
         "production": flow.x,
-        "consumption": flow.y
+        "consumption": flow.y,
+        "price_factor": 1.0,
+        "volatility": _commodity_volatility(commodity)
     }
 
 func _ensure_commodity_schema() -> bool:
     var changed := false
+
+    # Economy-2 -> economy-3 cargo migration. Existing cargo quantities are
+    # preserved by mapping each retired good into its closest new instrument.
+    for legacy_name in LEGACY_COMMODITY_MAP.keys():
+        if cargo.has(legacy_name):
+            var quantity := int(cargo.get(legacy_name, 0))
+            var replacement := _migrate_commodity_id(String(legacy_name))
+            cargo[replacement] = int(cargo.get(replacement, 0)) + quantity
+            cargo.erase(legacy_name)
+            changed = true
+
     for commodity in commodity_names:
         if not cargo.has(commodity):
             cargo[commodity] = 0
             changed = true
+
     for planet in planet_names:
         var planet_market: Dictionary = markets.get(planet, {})
+        # Preserve legacy stock in the mapped replacement when practical, then
+        # retire all old seven-good keys so active markets contain exactly 24.
+        for legacy_name in LEGACY_COMMODITY_MAP.keys():
+            if planet_market.has(legacy_name):
+                var replacement := _migrate_commodity_id(String(legacy_name))
+                if not planet_market.has(replacement):
+                    var migrated_entry := _new_market_entry(planet, replacement)
+                    var old_entry: Dictionary = planet_market[legacy_name]
+                    migrated_entry["stock"] = clampf(float(old_entry.get("stock", migrated_entry.stock)), 2.0, 140.0)
+                    planet_market[replacement] = migrated_entry
+                planet_market.erase(legacy_name)
+                changed = true
         for commodity in commodity_names:
             if not planet_market.has(commodity):
                 planet_market[commodity] = _new_market_entry(planet, commodity)
                 changed = true
+            else:
+                var entry: Dictionary = planet_market[commodity]
+                if not entry.has("price_factor"):
+                    entry["price_factor"] = 1.0
+                    changed = true
+                if not entry.has("volatility"):
+                    entry["volatility"] = _commodity_volatility(commodity)
+                    changed = true
+                var flow := _market_profile(planet, commodity)
+                entry["production"] = flow.x
+                entry["consumption"] = flow.y
+                planet_market[commodity] = entry
         markets[planet] = planet_market
+    return changed
+
+func _ensure_currency_schema() -> bool:
+    var changed := false
+    var live_ids: Dictionary = {}
+    for faction in political_world.get("factions", []):
+        var faction_id := String(faction.get("id", ""))
+        live_ids[faction_id] = true
+        if not currency_holdings.has(faction_id):
+            currency_holdings[faction_id] = 0
+            changed = true
+        if not currency_markets.has(faction_id):
+            currency_markets[faction_id] = {
+                "price_factor": 1.0,
+                "volatility": 0.018 + float(int(faction.get("level", 1)) - 1) * 0.002
+            }
+            changed = true
+    for faction_id in currency_holdings.keys():
+        if not live_ids.has(String(faction_id)):
+            currency_holdings.erase(faction_id)
+            changed = true
+    for faction_id in currency_markets.keys():
+        if not live_ids.has(String(faction_id)):
+            currency_markets.erase(faction_id)
+            changed = true
     return changed
 
 func _init_privateer_world() -> void:
@@ -1051,66 +1129,53 @@ func _init_privateer_world() -> void:
         current_planet = planet_names[0]
     _ensure_crime_schema()
     _ensure_enforcement_schema()
+    PoliticalWorld.ensure_grey_law_schema(political_world)
     _ensure_commodity_schema()
+    _ensure_currency_schema()
     if contract_board.is_empty():
         _regenerate_contracts()
     if last_trip_summary == "Docked":
         last_trip_summary = "Docked at %s" % _planet_display_name(current_planet)
 
-
 func _market_profile(planet: String, commodity: String) -> Vector2:
+    var category := _commodity_category(commodity)
     match _planet_type(planet):
         "LUSH":
-            match commodity:
-                "Food": return Vector2(8.0, 4.0)
-                "Ore": return Vector2(2.0, 6.0)
-                "Medicine": return Vector2(3.0, 4.0)
-                "Electronics": return Vector2(5.0, 3.0)
-                "Fuel": return Vector2(2.0, 5.0)
-                "Arms": return Vector2(1.0, 5.0)
-                "Narcotics": return Vector2(8.0, 3.0)
+            match category:
+                "food": return Vector2(9.0, 3.0)
+                "metal": return Vector2(2.0, 6.0)
+                "medicine": return Vector2(4.0, 4.0)
+                "weapons": return Vector2(1.0, 6.0)
+                "narcotics": return Vector2(8.0, 3.0)
+                "entertainment": return Vector2(5.0, 4.0)
         "VOLCANIC":
-            match commodity:
-                "Food": return Vector2(1.0, 7.0)
-                "Ore": return Vector2(10.0, 2.0)
-                "Medicine": return Vector2(1.0, 5.0)
-                "Electronics": return Vector2(2.0, 5.0)
-                "Fuel": return Vector2(9.0, 3.0)
-                "Arms": return Vector2(5.0, 4.0)
-                "Narcotics": return Vector2(1.0, 6.0)
+            match category:
+                "food": return Vector2(1.0, 8.0)
+                "metal": return Vector2(10.0, 2.0)
+                "medicine": return Vector2(2.0, 6.0)
+                "weapons": return Vector2(6.0, 4.0)
+                "narcotics": return Vector2(1.0, 6.0)
+                "entertainment": return Vector2(2.0, 5.0)
         "FROZEN":
-            match commodity:
-                "Food": return Vector2(5.0, 5.0)
-                "Ore": return Vector2(2.0, 5.0)
-                "Medicine": return Vector2(9.0, 2.0)
-                "Electronics": return Vector2(2.0, 6.0)
-                "Fuel": return Vector2(3.0, 5.0)
-                "Arms": return Vector2(2.0, 5.0)
-                "Narcotics": return Vector2(4.0, 4.0)
+            match category:
+                "food": return Vector2(4.0, 6.0)
+                "metal": return Vector2(3.0, 5.0)
+                "medicine": return Vector2(9.0, 2.0)
+                "weapons": return Vector2(2.0, 5.0)
+                "narcotics": return Vector2(4.0, 4.0)
+                "entertainment": return Vector2(3.0, 6.0)
         "INDUSTRIAL":
-            match commodity:
-                "Food": return Vector2(2.0, 6.0)
-                "Ore": return Vector2(4.0, 4.0)
-                "Medicine": return Vector2(4.0, 3.0)
-                "Electronics": return Vector2(10.0, 2.0)
-                "Fuel": return Vector2(4.0, 4.0)
-                "Arms": return Vector2(10.0, 2.0)
-                "Narcotics": return Vector2(2.0, 6.0)
+            match category:
+                "food": return Vector2(2.0, 7.0)
+                "metal": return Vector2(8.0, 3.0)
+                "medicine": return Vector2(4.0, 4.0)
+                "weapons": return Vector2(10.0, 2.0)
+                "narcotics": return Vector2(2.0, 6.0)
+                "entertainment": return Vector2(8.0, 3.0)
     return Vector2(4.0, 4.0)
 
-func _commodity_base_price(commodity: String) -> int:
-    match commodity:
-        "Food": return 35
-        "Ore": return 52
-        "Medicine": return 95
-        "Electronics": return 145
-        "Fuel": return 72
-        "Arms": return 260
-        "Narcotics": return 340
-    return 50
-
 func _market_law_multiplier(planet: String, commodity: String) -> float:
-    if not PoliticalWorld.RESTRICTED_COMMODITIES.has(commodity):
+    if not _is_grey_commodity(commodity):
         return 1.0
     var status := String(_planet_commodity_legality(planet, commodity).get("status", "LEGAL"))
     match status:
@@ -1121,26 +1186,35 @@ func _market_law_multiplier(planet: String, commodity: String) -> float:
         _:
             return 1.0
 
+func _market_planet_bias(planet: String, commodity: String) -> float:
+    var category := _commodity_category(commodity)
+    var type_id := _planet_type(planet)
+    if type_id == "LUSH" and category == "food": return 0.88
+    if type_id == "VOLCANIC" and category == "metal": return 0.86
+    if type_id == "FROZEN" and category == "medicine": return 0.86
+    if type_id == "INDUSTRIAL" and category == "weapons": return 0.84
+    if type_id == "LUSH" and category == "narcotics": return 0.86
+    if type_id == "INDUSTRIAL" and category == "entertainment": return 0.90
+    return 1.0
+
 func _market_price(planet: String, commodity: String) -> int:
     if not markets.has(planet) or not markets[planet].has(commodity):
         return maxi(1, int(round(float(_commodity_base_price(commodity)) * _market_law_multiplier(planet, commodity))))
     var data: Dictionary = markets[planet][commodity]
-    var stock := float(data.stock)
-    var production := float(data.production)
-    var consumption := float(data.consumption)
+    var stock := float(data.get("stock", 52.0))
+    var production := float(data.get("production", 4.0))
+    var consumption := float(data.get("consumption", 4.0))
     var target_stock := 52.0 + consumption * 4.5
     var scarcity := clampf((target_stock - stock) / maxf(20.0, target_stock), -0.55, 1.25)
     var flow_pressure := clampf((consumption - production) / 12.0, -0.25, 0.45)
-    var planet_bias := 1.0
-    var type_id := _planet_type(planet)
-    if type_id == "VOLCANIC" and commodity == "Ore": planet_bias = 0.88
-    if type_id == "FROZEN" and commodity == "Medicine": planet_bias = 0.86
-    if type_id == "INDUSTRIAL" and commodity == "Electronics": planet_bias = 0.87
-    if type_id == "LUSH" and commodity == "Food": planet_bias = 0.90
-    if type_id == "INDUSTRIAL" and commodity == "Arms": planet_bias = 0.84
-    if type_id == "LUSH" and commodity == "Narcotics": planet_bias = 0.86
-    var law_multiplier := _market_law_multiplier(planet, commodity)
-    return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * law_multiplier * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
+    var price_factor := clampf(float(data.get("price_factor", 1.0)), 0.62, 1.60)
+    return maxi(1, int(round(
+        float(_commodity_base_price(commodity))
+        * _market_planet_bias(planet, commodity)
+        * _market_law_multiplier(planet, commodity)
+        * price_factor
+        * (1.0 + scarcity * 0.72 + flow_pressure * 0.20)
+    )))
 
 func _market_buy_price(planet: String, commodity: String) -> int:
     return maxi(1, int(ceil(float(_market_price(planet, commodity)) * 1.06)))
@@ -1148,7 +1222,36 @@ func _market_buy_price(planet: String, commodity: String) -> int:
 func _market_sell_price(planet: String, commodity: String) -> int:
     return maxi(1, int(floor(float(_market_price(planet, commodity)) * 0.94)))
 
+func _faction_currency_base_price(faction_id: String) -> float:
+    var faction := PoliticalWorld.faction_record(political_world, faction_id)
+    if faction.is_empty():
+        return 100.0
+    var controlled_worlds := 0
+    var wealth_sum := 0.0
+    for planet_id in planet_names:
+        if _planet_primary_faction(planet_id) == faction_id:
+            controlled_worlds += 1
+            var neighbors := PoliticalWorld.neighbors(political_world, planet_id)
+            for neighbor in neighbors:
+                var route := PoliticalWorld.direct_route(political_world, planet_id, neighbor)
+                wealth_sum += float(route.get("wealth", 1))
+    var level_component := float(_faction_level(faction_id)) * 12.0
+    var territory_component := float(controlled_worlds) * 2.5
+    var traffic_component := minf(22.0, wealth_sum * 0.35)
+    return 55.0 + level_component + territory_component + traffic_component
+
+func _faction_currency_price(faction_id: String) -> int:
+    var market: Dictionary = currency_markets.get(faction_id, {"price_factor": 1.0})
+    return maxi(1, int(round(_faction_currency_base_price(faction_id) * clampf(float(market.get("price_factor", 1.0)), 0.65, 1.55))))
+
+func _currency_buy_price(faction_id: String) -> int:
+    return maxi(1, int(ceil(float(_faction_currency_price(faction_id)) * 1.02)))
+
+func _currency_sell_price(faction_id: String) -> int:
+    return maxi(1, int(floor(float(_faction_currency_price(faction_id)) * 0.98)))
+
 func _simulate_economy(ticks: int) -> void:
+    _ensure_currency_schema()
     for step in maxi(1, ticks):
         economy_tick += 1
         for planet in planet_names:
@@ -1156,9 +1259,19 @@ func _simulate_economy(ticks: int) -> void:
             for commodity in commodity_names:
                 var data: Dictionary = planet_market[commodity]
                 var noise := rng.randf_range(-1.4, 1.4)
-                data.stock = clampf(float(data.stock) + float(data.production) - float(data.consumption) + noise, 2.0, 140.0)
+                data["stock"] = clampf(float(data.get("stock", 52.0)) + float(data.get("production", 4.0)) - float(data.get("consumption", 4.0)) + noise, 2.0, 140.0)
+                var volatility := float(data.get("volatility", _commodity_volatility(commodity)))
+                var factor := float(data.get("price_factor", 1.0))
+                var mean_reversion := (1.0 - factor) * 0.08
+                data["price_factor"] = clampf(factor + mean_reversion + rng.randf_range(-volatility, volatility), 0.62, 1.60)
                 planet_market[commodity] = data
             markets[planet] = planet_market
+        for faction_id in currency_markets.keys():
+            var currency: Dictionary = currency_markets[faction_id]
+            var factor := float(currency.get("price_factor", 1.0))
+            var volatility := float(currency.get("volatility", 0.02))
+            currency["price_factor"] = clampf(factor + (1.0 - factor) * 0.06 + rng.randf_range(-volatility, volatility), 0.68, 1.50)
+            currency_markets[faction_id] = currency
 
 func _cargo_used() -> int:
     var used := 0
@@ -1174,31 +1287,83 @@ func _cargo_capacity() -> int:
 func _passenger_capacity() -> int:
     return PASSENGER_CAPACITY_BASE
 
+func _deposit_all_cash() -> int:
+    var amount := maxi(0, research_credits)
+    if amount <= 0:
+        return 0
+    research_credits = 0
+    bank_balance += amount
+    _play_sfx(buy_sfx, 1.08, -3.0)
+    _save_all_state()
+    return amount
+
+func _withdraw_all_bank() -> int:
+    var amount := maxi(0, bank_balance)
+    if amount <= 0:
+        return 0
+    bank_balance = 0
+    research_credits += amount
+    _play_sfx(buy_sfx, 0.96, -3.0)
+    _save_all_state()
+    return amount
+
+func _apply_bank_interest() -> int:
+    if bank_balance <= 0:
+        bank_last_interest = 0
+        return 0
+    var interest := maxi(0, int(round(float(bank_balance) * BANK_INTEREST_RATE)))
+    bank_balance += interest
+    bank_last_interest = interest
+    bank_interest_cycles += 1
+    return interest
+
+func _buy_currency(faction_id: String) -> bool:
+    if not currency_holdings.has(faction_id):
+        return false
+    var price := _currency_buy_price(faction_id)
+    if research_credits < price:
+        return false
+    research_credits -= price
+    currency_holdings[faction_id] = int(currency_holdings.get(faction_id, 0)) + 1
+    _play_sfx(buy_sfx, 1.04, -3.0)
+    _save_all_state()
+    return true
+
+func _sell_currency(faction_id: String) -> bool:
+    var held := int(currency_holdings.get(faction_id, 0))
+    if held <= 0:
+        return false
+    research_credits += _currency_sell_price(faction_id)
+    currency_holdings[faction_id] = held - 1
+    _play_sfx(buy_sfx, 0.95, -3.0)
+    _save_all_state()
+    return true
+
 func _buy_commodity(commodity: String) -> bool:
-    if _cargo_used() >= _cargo_capacity():
+    if not commodity_names.has(commodity) or _cargo_used() >= _cargo_capacity():
         return false
     var data: Dictionary = markets[current_planet][commodity]
-    if float(data.stock) < 1.0:
+    if float(data.get("stock", 0.0)) < 1.0:
         return false
     var price := _market_buy_price(current_planet, commodity)
     if research_credits < price:
         return false
     research_credits -= price
     cargo[commodity] = int(cargo.get(commodity, 0)) + 1
-    data.stock = maxf(0.0, float(data.stock) - 1.0)
+    data["stock"] = maxf(0.0, float(data.get("stock", 0.0)) - 1.0)
     markets[current_planet][commodity] = data
     _play_sfx(buy_sfx, 1.05, -3.0)
     _save_all_state()
     return true
 
 func _sell_commodity(commodity: String) -> bool:
-    if int(cargo.get(commodity, 0)) <= 0:
+    if not commodity_names.has(commodity) or int(cargo.get(commodity, 0)) <= 0:
         return false
     var price := _market_sell_price(current_planet, commodity)
     cargo[commodity] = int(cargo.get(commodity, 0)) - 1
     research_credits += price
     var data: Dictionary = markets[current_planet][commodity]
-    data.stock = minf(140.0, float(data.stock) + 1.0)
+    data["stock"] = minf(140.0, float(data.get("stock", 0.0)) + 1.0)
     markets[current_planet][commodity] = data
     _play_sfx(buy_sfx, 0.94, -3.0)
     _save_all_state()
