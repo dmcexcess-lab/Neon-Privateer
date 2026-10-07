@@ -3257,9 +3257,11 @@ func _load_privateer_ui_art() -> void:
     privateer_ui_atlas = null
     if not ResourceLoader.exists(PRIVATEER_UI_ATLAS_PATH):
         return
-    var texture := load(PRIVATEER_UI_ATLAS_PATH)
-    if texture is Texture2D:
-        privateer_ui_atlas = texture
+    var art_resource := load(PRIVATEER_UI_ATLAS_PATH)
+    if art_resource is Image:
+        privateer_ui_atlas = ImageTexture.create_from_image(art_resource)
+    elif art_resource is Texture2D:
+        privateer_ui_atlas = art_resource
 
 func _privateer_art_ready() -> bool:
     return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
