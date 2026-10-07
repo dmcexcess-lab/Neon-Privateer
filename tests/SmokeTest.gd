@@ -153,6 +153,7 @@ func _initialize() -> void:
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
         "_encounter_cooldown", "_encounter_duration", "_sync_legacy_pirate_state",
         "_start_route_encounter", "_end_route_encounter", "_update_route_encounter",
+        "_ship_is_hostile", "_player_can_damage_hazard", "_handle_enforcement_kill",
         "_update_pirate_attack", "_begin_bounty_boss", "_handle_route_end",
         "_arrive_at_destination", "_fail_route", "_save_privateer_state",
         "_load_privateer_state", "_save_all_state", "_start_game", "_dash",
@@ -528,7 +529,7 @@ func _initialize() -> void:
         "strongest_faction_id": primary_faction,
         "second_faction_id": ""
     })
-    if not bool(police_controlled.eligible) or String(police_controlled.mode) != "police" or String(police_controlled.faction_id) != primary_faction or bool(police_controlled.heavy):
+    if not bool(police_controlled.eligible) or String(police_controlled.mode) != "police" or String(police_controlled.faction_id) != primary_faction or not bool(police_controlled.hostile) or bool(police_controlled.heavy):
         _fail("criminal player did not produce ordinary police eligibility in CONTROLLED space")
         return
 
@@ -538,8 +539,8 @@ func _initialize() -> void:
         "strongest_faction_id": secondary_faction,
         "second_faction_id": ""
     })
-    if bool(clean_controlled.eligible):
-        _fail("clean player incorrectly produced hostile police in CONTROLLED space")
+    if not bool(clean_controlled.eligible) or String(clean_controlled.mode) != "police" or bool(clean_controlled.hostile) or bool(clean_controlled.heavy):
+        _fail("clean CONTROLLED space did not produce a lawful non-hostile patrol eligibility")
         return
 
     scene._adjust_faction_heat(primary_faction, 30, false)
@@ -549,7 +550,7 @@ func _initialize() -> void:
         "strongest_faction_id": primary_faction,
         "second_faction_id": ""
     })
-    if not bool(heavy_controlled.eligible) or String(heavy_controlled.mode) != "police" or not bool(heavy_controlled.heavy):
+    if not bool(heavy_controlled.eligible) or String(heavy_controlled.mode) != "police" or not bool(heavy_controlled.hostile) or not bool(heavy_controlled.heavy):
         _fail("heavy criminal threshold did not enable CORE heavy enforcement")
         return
     scene._adjust_faction_heat(primary_faction, -30, false)
@@ -560,6 +561,7 @@ func _initialize() -> void:
     scene.encounter_active = true
     scene.encounter_mode = "pirate"
     scene.encounter_faction_id = ""
+    scene.encounter_hostile = true
     scene.rng.seed = 51001
     var pirate_ship_count := 0
     var pirate_pentagon_count := 0
@@ -575,6 +577,7 @@ func _initialize() -> void:
 
     scene.encounter_mode = "police"
     scene.encounter_faction_id = primary_faction
+    scene.encounter_hostile = true
     scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
     scene._adjust_faction_heat(primary_faction, 30, false)
     scene.rng.seed = 51002
@@ -603,6 +606,7 @@ func _initialize() -> void:
     scene.encounter_active = false
     scene.encounter_mode = ""
     scene.encounter_faction_id = ""
+    scene.encounter_hostile = false
     scene.rng.seed = 51004
     for sample_index in 1200:
         if scene._choose_enemy_kind(false) > 2:
@@ -662,17 +666,133 @@ func _initialize() -> void:
         _fail("pirate encounter remained active after entering clean controlled space")
         return
 
-    # Same controlled segment becomes police-eligible only after that faction is criminal.
-    scene._adjust_faction_heat(controlled_faction, 30, false)
+    # Same clean controlled segment can produce a lawful patrol, which is not hostile.
     scene.encounter_clock = 0.0
     scene._update_route_encounter(0.01)
-    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != controlled_faction:
-        _fail("criminal player did not trigger faction patrol on real controlled route segment")
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != controlled_faction or scene.encounter_hostile:
+        _fail("clean controlled route segment did not produce lawful faction patrol")
+        return
+
+    # Crossing the criminal threshold flips the live patrol hostile without replacing the contact.
+    scene._adjust_faction_heat(controlled_faction, 30, false)
+    scene._update_route_encounter(0.01)
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != controlled_faction or not scene.encounter_hostile:
+        _fail("live lawful patrol did not escalate when player became criminal")
         return
     scene._end_route_encounter()
     scene._adjust_faction_heat(controlled_faction, -scene._faction_heat(controlled_faction), false)
     scene._adjust_faction_relation(controlled_faction, old_controlled_relation, false)
     scene._adjust_faction_heat(controlled_faction, old_controlled_heat, false)
+
+    # Slice 6: lawful patrol traffic is non-hostile/non-targetable until criminal state exists.
+    scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, -scene._faction_heat(secondary_faction), false)
+    var neutral_patrol := {
+        "id": 76001, "type": "hazard", "kind": 3,
+        "hp": 4.0, "max_hp": 4.0, "hard": false,
+        "x": 195.0, "y": 120.0, "r": 16.0,
+        "speed": 90.0, "drift": 0.0, "shoot_clock": 0.0,
+        "angle": 0.0, "spin": 0.0,
+        "lane_min": scene.LEFT, "lane_max": scene.RIGHT,
+        "encounter_role": "police",
+        "encounter_faction_id": secondary_faction,
+        "hostile": false
+    }
+    if scene._ship_is_hostile(neutral_patrol) or scene._player_can_damage_hazard(neutral_patrol):
+        _fail("lawful patrol is hostile/targetable while player is clean")
+        return
+
+    scene.objects.clear()
+    scene.objects.append(neutral_patrol)
+    scene.enemy_shots.clear()
+    scene.player_x = 195.0
+    scene.player_y = scene.PLAYER_Y
+    scene.invuln = 0.0
+    var neutral_y_before: float = float(scene.objects[0].y)
+    scene._move_objects(0.10)
+    if not scene.enemy_shots.is_empty():
+        _fail("lawful patrol fired on clean player")
+        return
+    if scene.objects.is_empty() or float(scene.objects[0].y) <= neutral_y_before:
+        _fail("lawful patrol did not pass through as neutral traffic")
+        return
+
+    # Auto-fire projectiles pass through lawful police rather than causing unavoidable crimes.
+    scene.objects[0].y = 160.0
+    scene.objects[0].x = 195.0
+    scene.shots.clear()
+    scene.shots.append({
+        "x": 195.0, "y": 160.0, "vx": 0.0, "vy": -600.0,
+        "r": 4.0, "damage": 3.0, "homing": false
+    })
+    var neutral_hp_before: float = float(scene.objects[0].hp)
+    if scene._consume_shot_hit(scene.objects[0]) or absf(float(scene.objects[0].hp) - neutral_hp_before) > 0.001 or scene.shots.is_empty():
+        _fail("auto-fire damaged/consumed shot on lawful patrol")
+        return
+
+    # Once criminal, the same patrol becomes hostile, targetable, and can shoot.
+    scene._adjust_faction_heat(secondary_faction, 30, false)
+    if not scene._ship_is_hostile(scene.objects[0]) or not scene._player_can_damage_hazard(scene.objects[0]):
+        _fail("patrol did not become hostile/targetable at criminal threshold")
+        return
+    scene.objects[0].shoot_clock = 0.0
+    scene.objects[0].y = 120.0
+    scene.enemy_shots.clear()
+    scene._move_objects(0.01)
+    if scene.enemy_shots.is_empty():
+        _fail("hostile faction patrol did not fire")
+        return
+
+    # Destroying government enforcement worsens that faction's relation/heat.
+    scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, -scene._faction_heat(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, 30, false)
+    var police_kill_fixture := {
+        "id": 76002, "type": "hazard", "kind": 3,
+        "hp": 1.0, "max_hp": 4.0, "hard": false,
+        "x": 180.0, "y": 160.0, "r": 16.0,
+        "encounter_role": "police",
+        "encounter_faction_id": secondary_faction,
+        "hostile": true
+    }
+    var police_rel_before: int = scene._faction_relation(secondary_faction)
+    var police_heat_before: int = scene._faction_heat(secondary_faction)
+    scene._apply_damage_to_hazard(police_kill_fixture, 5.0)
+    if scene._faction_relation(secondary_faction) != police_rel_before - scene.POLICE_SHIP_KILL_RELATION_LOSS:
+        _fail("destroying police ship did not apply relation consequence")
+        return
+    if scene._faction_heat(secondary_faction) != mini(100, police_heat_before + scene.POLICE_SHIP_KILL_HEAT_GAIN):
+        _fail("destroying police ship did not apply heat consequence")
+        return
+    var police_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, secondary_faction)
+    if String(police_record.get("last_offense", "")) != "police_ship_destroyed":
+        _fail("destroying police ship did not record enforcement offense")
+        return
+
+    # Heavy platform kills carry the larger government consequence.
+    scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, -scene._faction_heat(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, 60, false)
+    var heavy_kill_fixture := police_kill_fixture.duplicate(true)
+    heavy_kill_fixture.id = 76003
+    heavy_kill_fixture.kind = 4
+    heavy_kill_fixture.hp = 1.0
+    heavy_kill_fixture.max_hp = 20.0
+    var heavy_rel_before: int = scene._faction_relation(secondary_faction)
+    var heavy_heat_before: int = scene._faction_heat(secondary_faction)
+    scene._apply_damage_to_hazard(heavy_kill_fixture, 25.0)
+    if scene._faction_relation(secondary_faction) != heavy_rel_before - scene.HEAVY_ENFORCEMENT_KILL_RELATION_LOSS:
+        _fail("destroying heavy enforcement did not apply larger relation consequence")
+        return
+    if scene._faction_heat(secondary_faction) != mini(100, heavy_heat_before + scene.HEAVY_ENFORCEMENT_KILL_HEAT_GAIN):
+        _fail("destroying heavy enforcement did not apply larger heat consequence")
+        return
+
+    scene.objects.clear()
+    scene.shots.clear()
+    scene.enemy_shots.clear()
+    scene._adjust_faction_relation(secondary_faction, -scene._faction_relation(secondary_faction), false)
+    scene._adjust_faction_heat(secondary_faction, -scene._faction_heat(secondary_faction), false)
 
     # Restore Slice 3 primary fixture for subsequent tests.
     scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction) - 12, false)
@@ -1271,6 +1391,7 @@ func _initialize() -> void:
     scene.encounter_active = true
     scene.encounter_mode = "police"
     scene.encounter_faction_id = primary_faction
+    scene.encounter_hostile = true
     scene.encounter_timer = 3.25
     scene.encounter_clock = 9.5
     scene._sync_legacy_pirate_state()
@@ -1281,7 +1402,7 @@ func _initialize() -> void:
     if scene.destination_planet != neighbor or scene.route_origin != scene.current_planet or absf(scene.elapsed - 7.5) > 0.01:
         _fail("route snapshot did not preserve generated route identity")
         return
-    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or absf(scene.encounter_timer - 3.25) > 0.01:
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or not scene.encounter_hostile or absf(scene.encounter_timer - 3.25) > 0.01:
         _fail("route snapshot did not preserve Slice 5 encounter context")
         return
     scene._end_route_encounter()
@@ -1292,7 +1413,7 @@ func _initialize() -> void:
         _fail("could not load run snapshot for Slice 5 legacy fixture")
         return
     for encounter_key in [
-        "encounter_active", "encounter_mode", "encounter_faction_id",
+        "encounter_active", "encounter_mode", "encounter_faction_id", "encounter_hostile",
         "encounter_timer", "encounter_clock", "encounter_banner_timer"
     ]:
         legacy_run_cfg.erase_section_key("run", encounter_key)
@@ -1310,7 +1431,7 @@ func _initialize() -> void:
     if not scene._load_run_snapshot():
         _fail("legacy pirate-only run snapshot did not reload")
         return
-    if not scene.encounter_active or scene.encounter_mode != "pirate" or not scene.pirate_attack_active or absf(scene.encounter_timer - 2.75) > 0.01:
+    if not scene.encounter_active or scene.encounter_mode != "pirate" or not scene.encounter_hostile or not scene.pirate_attack_active or absf(scene.encounter_timer - 2.75) > 0.01:
         _fail("legacy pirate-only snapshot did not migrate to generic PIRATE encounter")
         return
     scene._end_route_encounter()
