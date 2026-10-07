@@ -1859,7 +1859,7 @@ func _initialize() -> void:
         return
     var scan_destination := String(smuggling_fixture.destination)
     var scan_commodity := String(smuggling_fixture.commodity)
-    var slice9_scan_faction := scene._planet_primary_faction(scan_destination)
+    var slice9_scan_faction: String = String(scene._planet_primary_faction(scan_destination))
     if slice9_scan_faction.is_empty() or scene.PoliticalWorld.faction_commodity_legal(scene.political_world, slice9_scan_faction, scan_commodity):
         _fail("smuggling fixture has no enforcing destination faction")
         return
@@ -1892,10 +1892,10 @@ func _initialize() -> void:
     var legal_commodity := String(legal_delivery_fixture.commodity)
     var legal_issuer := String(legal_delivery_fixture.get("issuer_faction", ""))
     var stock_before_contract := float(scene.markets[legal_dest][legal_commodity].stock)
-    var relation_before_contract := scene._faction_relation(legal_issuer) if not legal_issuer.is_empty() else 0
+    var relation_before_contract: int = int(scene._faction_relation(legal_issuer)) if not legal_issuer.is_empty() else 0
     scene.current_planet = legal_dest
     scene.active_contract = legal_delivery_fixture.duplicate(true)
-    var completed_reward := scene._complete_contract_if_ready()
+    var completed_reward: int = int(scene._complete_contract_if_ready())
     if completed_reward != int(legal_delivery_fixture.reward):
         _fail("legitimate freight completion lost its reward")
         return
