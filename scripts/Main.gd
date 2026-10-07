@@ -555,16 +555,22 @@ func _career_slot_summary(slot: int) -> Dictionary:
     var meta := ConfigFile.new()
     if meta.load(_career_meta_path(slot)) == OK:
         result.credits = int(meta.get_value("meta", "credits", 0))
-    var world := ConfigFile.new()
-    if world.load(_career_world_path(slot)) == OK:
-        result.planet = String(world.get_value("world", "planet", "Aster"))
+    var world_cfg := ConfigFile.new()
+    var saved_world: Dictionary = {}
+    if world_cfg.load(_career_world_path(slot)) == OK:
+        var saved_id := String(world_cfg.get_value("world", "planet", ""))
+        saved_world = world_cfg.get_value("political", "world", {})
+        result.planet = PoliticalWorld.planet_name(saved_world, saved_id) if not saved_world.is_empty() else saved_id
     var run := ConfigFile.new()
     if run.load(_career_run_path(slot)) == OK and bool(run.get_value("run", "exists", false)):
         result.in_flight = bool(run.get_value("run", "route_active", false))
-        result.destination = String(run.get_value("run", "destination_planet", ""))
+        var destination_id := String(run.get_value("run", "destination_planet", ""))
+        var origin_id := String(run.get_value("run", "route_origin", ""))
+        result.destination = PoliticalWorld.planet_name(saved_world, destination_id) if not saved_world.is_empty() else destination_id
         if bool(result.in_flight):
-            result.planet = String(run.get_value("run", "route_origin", result.planet))
+            result.planet = PoliticalWorld.planet_name(saved_world, origin_id) if not saved_world.is_empty() else origin_id
     return result
+
 
 func _open_profile_menu() -> void:
     if active_career_slot > 0:
@@ -3521,7 +3527,7 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 func _draw_hud() -> void:
     _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
     _text("BONUS %03d CR" % score, Vector2(118, 46), 18, Color("bdeef4"))
-    _text("%s > %s" % [route_origin, destination_planet], Vector2(20, 88), 15, Color("6bffb0"))
+    _text("%s > %s" % [_planet_display_name(route_origin), _planet_display_name(destination_planet)], Vector2(20, 88), 15, Color("6bffb0"))
     _text("D%d R%d" % [route_distance, route_danger], Vector2(302, 88), 16, Color("ffd166"))
 
     if lane_event_active:
@@ -3712,7 +3718,7 @@ func _draw_title() -> void:
 
     _text_center("NEON PRIVATEER", 62.0, 30, Color("77f7ff"), 24.0, 366.0)
     _draw_planet_art(current_planet, Rect2(126.0, 78.0, 138.0, 138.0), 1.0)
-    _text_center(current_planet, 244.0, 25, Color("f0fbff"), 60.0, 330.0)
+    _text_center(_planet_display_name(current_planet), 244.0, 25, Color("f0fbff"), 60.0, 330.0)
     _text_center("%07d CREDITS" % research_credits, 276.0, 18, Color("ffd166"), 55.0, 335.0)
     _text_center("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], 304.0, 14, Color("bdeef4"), 48.0, 342.0)
 
@@ -3720,7 +3726,7 @@ func _draw_title() -> void:
         var ct := String(active_contract.get("type", "")).to_upper()
         var cd := String(active_contract.get("destination", ""))
         var cr := int(active_contract.get("reward", 0))
-        _text_center("%s > %s  %d CR" % [ct, cd, cr], 335.0, 14, Color("6bffb0"), 38.0, 352.0)
+        _text_center("%s > %s  %d CR" % [ct, _planet_display_name(cd), cr], 335.0, 14, Color("6bffb0"), 38.0, 352.0)
     else:
         _text_center("NO ACTIVE CONTRACT", 335.0, 14, Color("8ea9b8"), 38.0, 352.0)
 
@@ -3883,7 +3889,7 @@ func _draw_market_menu() -> void:
     _draw_menu_art(ART_BG_MARKET, 0.64)
     _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 108.0), 0.74)
     _draw_planet_art(current_planet, Rect2(302.0, 20.0, 66.0, 66.0), 0.96)
-    _text("%s MARKET" % current_planet.to_upper(), Vector2(30, 55), 27, Color("77f7ff"))
+    _text("%s MARKET" % _planet_display_name(current_planet).to_upper(), Vector2(30, 55), 27, Color("77f7ff"))
     _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(30, 93), 15, Color("ffd166"))
     for i in commodity_names.size():
         var commodity := commodity_names[i]
@@ -3909,7 +3915,7 @@ func _draw_contracts_menu() -> void:
     _draw_planet_art(current_planet, Rect2(304.0, 20.0, 64.0, 64.0), 0.95)
     _text("CONTRACT BOARD", Vector2(28, 55), 27, Color("77f7ff"))
     if not active_contract.is_empty():
-        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), String(active_contract.destination)], Vector2(30, 94), 14, Color("6bffb0"))
+        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), _planet_display_name(String(active_contract.destination))], Vector2(30, 94), 14, Color("6bffb0"))
     else:
         _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
     for i in contract_board.size():
@@ -3918,7 +3924,7 @@ func _draw_contracts_menu() -> void:
         draw_rect(rect, Color(0.035, 0.065, 0.10, 0.91), true)
         draw_rect(rect, Color("465f72"), false, 2.0)
         _text(String(contract.type).to_upper(), rect.position + Vector2(12, 25), 17, Color("f0fbff"))
-        _text("> %s   D%d" % [String(contract.destination), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
+        _text("> %s   D%d" % [_planet_display_name(String(contract.destination)), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
         _text("%d CR" % int(contract.reward), rect.position + Vector2(244, 51), 15, Color("ffd166"))
         if String(contract.type) == "delivery":
             _text("1 CARGO", rect.position + Vector2(242, 25), 12, Color("bdeef4"))
