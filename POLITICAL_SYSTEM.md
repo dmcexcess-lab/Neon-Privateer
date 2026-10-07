@@ -175,6 +175,34 @@ No faction reaches the minimum influence threshold.
 
 The same query is used by map rendering, route analysis, and later encounter/crime systems.
 
+## Slice 4 object ownership and salvage contract
+
+Slice 4 gives the arcade shapes semantic world roles:
+
+- circle / kind 0 = asteroid
+- square / kind 1 = basic cargo container
+- diamond / kind 2 = reinforced cargo container
+- trapezoid / kind 3 = ship
+- pentagon / kind 4 = heavy ship/platform role reserved for later enforcement work
+
+Container ownership is derived from the authoritative political context at the route position where the container spawns:
+
+- **CORE / CONTROLLED:** owned by the controlling faction.
+- **CONTESTED:** owned by one of the two claimant factions.
+- **UNCONTROLLED:** unowned.
+
+Container records persist their `owner_faction` and `territory_state` in the in-flight object snapshot. They do not recalculate ownership after spawning.
+
+Destroying an owned basic container records `container_theft` and costs 4 faction relation. Destroying an owned reinforced container records `reinforced_container_theft` and costs 8 relation. Slice 4 intentionally adds **zero heat** for these events; later law/enforcement slices can revise the heat consequence without changing ownership authority.
+
+Unowned containers carry no faction penalty.
+
+Loot is released as in-flight cargo pickups rather than being inserted directly into the hold. Cargo pickup collection respects normal cargo capacity and persists through the ordinary Privateer world save.
+
+Asteroids no longer award kill credits. They retain the existing near-miss/dash-near-miss credit behavior and have a 12% chance to release one unit of Ore when destroyed.
+
+Basic and reinforced containers award no kill credits and no near-miss credits.
+
 ## Route graph
 
 The 32 planets are not a complete graph.
@@ -364,3 +392,21 @@ Existing relation values are preserved and clamped. The upgraded schema is persi
 The market, career hub, and selected-world map card expose faction reputation/heat compactly. In contested space both claimant factions remain independent; uncontrolled space has no faction criminal record.
 
 Police/pirate spawning, scans, fines, confiscation, and actual hostility remain deferred.
+
+
+## Slice 4 cargo-container loot
+
+Basic square containers are stationary laterally, use the normal commodity catalog, and release one small 1–2 unit bundle.
+
+Reinforced diamond containers are also stationary laterally, remain materially tougher/rarer, and release two 2–3 unit bundles from a higher-value table:
+
+- Electronics
+- Arms
+- Medicine
+- Narcotics
+- Fuel
+- Ore
+
+The player's forward travel still makes containers scroll through the arcade field; "stationary" means they have no self-propelled lateral pursuit/drift.
+
+Only asteroids qualify for normal and dash near-miss scoring after Slice 4.
