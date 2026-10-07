@@ -1373,6 +1373,7 @@ func _initialize() -> void:
         return
 
     # Store weapons overlay the permanent default for one level only.
+    scene.research_start_single = true
     scene.starting_weapon = "single"
     scene.current_weapon = scene._valid_starting_weapon()
     scene.store_weapon_rental = ""
