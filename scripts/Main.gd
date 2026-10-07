@@ -2649,27 +2649,50 @@ func _begin_bounty_boss() -> void:
     _end_route_encounter()
     objects.clear()
     enemy_shots.clear()
+    pending_drops.clear()
     var difficulty := int(active_contract.get("difficulty", 1))
-    var boss_hp := 34.0 + float(difficulty) * 18.0
+    var archetype := String(active_contract.get("boss_archetype", _bounty_archetype_for_difficulty(difficulty)))
+    var kind := 3
+    var boss_hp := 22.0 + float(difficulty) * 10.0
+    var radius := 22.0
+    var speed := 72.0
+    var shoot_clock := maxf(0.55, 1.55 - float(difficulty) * 0.11)
+
+    if archetype == "pentagon":
+        kind = 4
+        boss_hp = 38.0 + float(difficulty) * 17.0
+        radius = 31.0
+        speed = 0.0
+        shoot_clock = maxf(0.55, 1.45 - float(difficulty) * 0.10)
+    elif archetype == "octagon":
+        kind = 5
+        boss_hp = 105.0 + float(difficulty) * 34.0
+        radius = 42.0
+        speed = 0.0
+        shoot_clock = maxf(0.38, 1.05 - float(difficulty) * 0.07)
+
     objects.append({
         "id": rng.randi(),
         "type": "hazard",
-        "kind": 4,
+        "kind": kind,
         "boss": true,
+        "boss_archetype": archetype,
         "hp": boss_hp,
         "max_hp": boss_hp,
         "hard": false,
         "x": W * 0.5,
         "y": 150.0,
-        "r": 30.0,
-        "speed": 0.0,
+        "r": radius,
+        "speed": speed,
         "drift": 0.0,
-        "shoot_clock": maxf(0.45, 1.25 - float(difficulty) * 0.10),
+        "shoot_clock": shoot_clock,
+        "aux_shoot_clock": 1.35,
+        "boss_phase": 0.0,
         "lane_speed_mult": 1.0,
         "lane_min": LEFT,
         "lane_max": RIGHT
     })
-    weapon_banner_text = "BOUNTY TARGET"
+    weapon_banner_text = "BOUNTY: %s" % archetype.to_upper()
     weapon_banner_timer = 2.4
     shake = 4.0
 
@@ -2940,6 +2963,8 @@ func _save_all_state() -> void:
     _save_privateer_state()
 
 func _process(delta: float) -> void:
+    if not run_paused:
+        _update_active_contract_clock(delta)
     if not playing and market_open and not run_paused:
         docked_market_clock += delta
         if docked_market_clock >= DOCKED_MARKET_TICK_SECONDS:
@@ -2964,8 +2989,9 @@ func _process(delta: float) -> void:
 
     var game_delta := delta * (0.52 if slowmo_timer > 0.0 else 1.0)
     var world_delta := game_delta * _ship_speed_multiplier()
-    elapsed += world_delta
-    world_scroll += world_delta * 170.0
+    var travel_delta := 0.0 if boss_active else world_delta
+    elapsed += travel_delta
+    world_scroll += travel_delta * 170.0
     invuln = maxf(0.0, invuln - game_delta)
 
     if left_control_held and not right_control_held:
@@ -2983,12 +3009,12 @@ func _process(delta: float) -> void:
     else:
         player_y = lerpf(player_y, PLAYER_Y, minf(1.0, game_delta * DASH_RETURN_RATE))
 
-    neutral_spawn_clock -= world_delta
-    pickup_clock -= world_delta
+    neutral_spawn_clock -= travel_delta
+    pickup_clock -= travel_delta
     fire_clock -= game_delta
     repair_clock -= game_delta
     var difficulty := _level_difficulty()
-    _update_route_encounter(world_delta)
+    _update_route_encounter(travel_delta)
 
     if current_weapon == "laser":
         _apply_laser_damage(game_delta)
@@ -2996,14 +3022,14 @@ func _process(delta: float) -> void:
         _fire_weapon()
         fire_clock = _weapon_interval()
 
-    if repair_clock <= 0.0:
+    if not boss_active and repair_clock <= 0.0:
         if hp < max_hp and rng.randf() < FIELD_REPAIR_CHANCE:
             _spawn_repair()
         repair_clock = rng.randf_range(REPAIR_INTERVAL_MIN, REPAIR_INTERVAL_MAX) if hp < max_hp else REPAIR_RETRY_FULL
 
     if boss_active:
         _move_shots(game_delta)
-        _move_objects(world_delta)
+        _move_objects(game_delta)
         _move_enemy_shots(game_delta)
         _move_particles(delta)
         if boss_defeated_pending:
