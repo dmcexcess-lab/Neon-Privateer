@@ -216,7 +216,15 @@ var weapon_pickup_sfx: AudioStreamWAV
 var buy_sfx: AudioStreamWAV
 var level_clear_sfx: AudioStreamWAV
 var death_sfx: AudioStreamWAV
+var dash_low_sfx: AudioStreamWAV
+var weapon_click_sfx: AudioStreamWAV
+var impact_sfx: AudioStreamWAV
+var explosion_sfx: AudioStreamWAV
+var pickup_chime_sfx: AudioStreamWAV
+var warning_sfx: AudioStreamWAV
+var ambient_pulse_sfx: AudioStreamWAV
 var laser_sfx_clock := 0.0
+var ambient_audio_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
@@ -234,31 +242,42 @@ func _notification(what: int) -> void:
         _save_meta()
 
 func _setup_audio() -> void:
-    for i in 10:
+    # Extra voices let body/transient/tail layers overlap without cutting each other off.
+    for i in 16:
         var player := AudioStreamPlayer.new()
         player.bus = "Master"
         add_child(player)
         sfx_players.append(player)
 
-    near_sfx = _make_sweep(760.0, 1160.0, 0.085, 0.16)
-    dash_sfx = _make_sweep(180.0, 520.0, 0.11, 0.22)
-    finale_sfx = _make_sweep(480.0, 820.0, 0.18, 0.17)
-    shot_sfx = _make_sweep(760.0, 510.0, 0.045, 0.09)
-    dual_sfx = _make_sweep(690.0, 430.0, 0.055, 0.085)
-    cone_sfx = _make_sweep(330.0, 170.0, 0.10, 0.14, 0.10)
-    seeker_sfx = _make_sweep(250.0, 420.0, 0.13, 0.14, 0.06)
-    laser_sfx = _make_sweep(1280.0, 1040.0, 0.055, 0.055)
-    enemy_shot_sfx = _make_sweep(390.0, 270.0, 0.07, 0.08)
-    missile_sfx = _make_sweep(150.0, 250.0, 0.18, 0.13, 0.12)
-    hit_sfx = _make_sweep(150.0, 75.0, 0.16, 0.22, 0.22)
-    shield_sfx = _make_sweep(920.0, 1460.0, 0.12, 0.16)
-    kill_sfx = _make_sweep(520.0, 180.0, 0.11, 0.11, 0.18)
-    energy_sfx = _make_sweep(720.0, 1180.0, 0.10, 0.13)
-    repair_sfx = _make_sweep(520.0, 960.0, 0.16, 0.13)
-    weapon_pickup_sfx = _make_sweep(410.0, 780.0, 0.15, 0.13)
-    buy_sfx = _make_sweep(620.0, 840.0, 0.07, 0.09)
-    level_clear_sfx = _make_sweep(430.0, 980.0, 0.24, 0.16)
-    death_sfx = _make_sweep(210.0, 55.0, 0.34, 0.20, 0.24)
+    near_sfx = _make_rich_sweep(760.0, 1240.0, 0.11, 0.15, 0.02, 0.02, 0.28, 0.08)
+    dash_sfx = _make_rich_sweep(170.0, 610.0, 0.16, 0.20, 0.04, 0.22, 0.18, 0.14)
+    finale_sfx = _make_rich_sweep(430.0, 980.0, 0.30, 0.16, 0.01, 0.10, 0.30, 0.04)
+    shot_sfx = _make_rich_sweep(980.0, 470.0, 0.060, 0.080, 0.02, 0.02, 0.34, 0.28)
+    dual_sfx = _make_rich_sweep(820.0, 360.0, 0.075, 0.090, 0.03, 0.08, 0.30, 0.24)
+    cone_sfx = _make_rich_sweep(410.0, 120.0, 0.14, 0.13, 0.10, 0.24, 0.20, 0.22)
+    seeker_sfx = _make_rich_sweep(220.0, 510.0, 0.18, 0.12, 0.04, 0.18, 0.26, 0.10)
+    laser_sfx = _make_rich_sweep(1450.0, 970.0, 0.070, 0.050, 0.01, 0.00, 0.40, 0.04)
+    enemy_shot_sfx = _make_rich_sweep(430.0, 230.0, 0.085, 0.075, 0.07, 0.10, 0.24, 0.16)
+    missile_sfx = _make_rich_sweep(130.0, 290.0, 0.24, 0.13, 0.10, 0.34, 0.14, 0.10)
+    hit_sfx = _make_rich_sweep(165.0, 54.0, 0.22, 0.19, 0.30, 0.42, 0.08, 0.34)
+    shield_sfx = _make_rich_sweep(870.0, 1710.0, 0.17, 0.14, 0.01, 0.08, 0.38, 0.06)
+    kill_sfx = _make_rich_sweep(600.0, 125.0, 0.16, 0.13, 0.18, 0.28, 0.18, 0.20)
+    energy_sfx = _make_rich_sweep(690.0, 1360.0, 0.16, 0.11, 0.01, 0.04, 0.38, 0.05)
+    repair_sfx = _make_rich_sweep(420.0, 1080.0, 0.22, 0.11, 0.01, 0.08, 0.32, 0.04)
+    weapon_pickup_sfx = _make_rich_sweep(360.0, 920.0, 0.22, 0.12, 0.02, 0.12, 0.34, 0.06)
+    buy_sfx = _make_rich_sweep(570.0, 940.0, 0.10, 0.085, 0.01, 0.04, 0.32, 0.10)
+    level_clear_sfx = _make_rich_sweep(390.0, 1220.0, 0.38, 0.15, 0.01, 0.16, 0.32, 0.04)
+    death_sfx = _make_rich_sweep(220.0, 42.0, 0.48, 0.19, 0.34, 0.46, 0.10, 0.18)
+
+    # Supporting layers reused beneath event bodies.
+    dash_low_sfx = _make_rich_sweep(92.0, 155.0, 0.22, 0.13, 0.02, 0.52, 0.08, 0.02)
+    weapon_click_sfx = _make_rich_sweep(2100.0, 920.0, 0.028, 0.055, 0.36, 0.00, 0.16, 0.72)
+    impact_sfx = _make_rich_sweep(105.0, 52.0, 0.13, 0.11, 0.46, 0.40, 0.04, 0.58)
+    explosion_sfx = _make_rich_sweep(135.0, 48.0, 0.22, 0.12, 0.52, 0.48, 0.06, 0.26)
+    pickup_chime_sfx = _make_rich_sweep(1040.0, 1680.0, 0.13, 0.075, 0.00, 0.00, 0.48, 0.03)
+    warning_sfx = _make_rich_sweep(250.0, 185.0, 0.20, 0.095, 0.04, 0.26, 0.18, 0.06)
+    ambient_pulse_sfx = _make_rich_sweep(74.0, 92.0, 0.52, 0.045, 0.01, 0.54, 0.12, 0.00)
+
 
 func _make_tone(freq: float, duration: float, volume: float) -> AudioStreamWAV:
     return _make_sweep(freq, freq, duration, volume)
@@ -287,6 +306,49 @@ func _make_sweep(start_freq: float, end_freq: float, duration: float, volume: fl
     wav.stereo = false
     wav.data = data
     return wav
+func _make_rich_sweep(start_freq: float, end_freq: float, duration: float, volume: float, noise_mix: float = 0.0, sub_mix: float = 0.0, harmonic_mix: float = 0.0, click_mix: float = 0.0) -> AudioStreamWAV:
+    var rate := 22050
+    var sample_count := maxi(1, int(rate * duration))
+    var data := PackedByteArray()
+    data.resize(sample_count * 2)
+    var phase := 0.0
+    var sub_phase := 0.0
+    var local_rng := RandomNumberGenerator.new()
+    local_rng.seed = int(start_freq * 43.0 + end_freq * 29.0 + duration * 17000.0)
+    for i in sample_count:
+        var u := float(i) / float(sample_count)
+        var freq := lerpf(start_freq, end_freq, u)
+        phase += TAU * freq / float(rate)
+        sub_phase += TAU * freq * 0.5 / float(rate)
+        var envelope := pow(1.0 - u, 1.42)
+        var fundamental := sin(phase)
+        var harmonic := sin(phase * 2.0 + 0.35) * harmonic_mix
+        var sub := sin(sub_phase) * sub_mix
+        var noise := local_rng.randf_range(-1.0, 1.0)
+        var click_env := pow(1.0 - u, 16.0)
+        var transient := noise * click_mix * click_env
+        var bed_noise := noise * noise_mix * (0.35 + 0.65 * envelope)
+        var tonal_weight := maxf(0.25, 1.0 - noise_mix * 0.45)
+        var mixed := (fundamental * tonal_weight + harmonic + sub + bed_noise + transient) / maxf(1.0, tonal_weight + harmonic_mix + sub_mix + noise_mix * 0.65 + click_mix * 0.35)
+        var sample := int(clampf(mixed * volume * envelope, -1.0, 1.0) * 32767.0)
+        data.encode_s16(i * 2, sample)
+    var wav := AudioStreamWAV.new()
+    wav.format = AudioStreamWAV.FORMAT_16_BITS
+    wav.mix_rate = rate
+    wav.stereo = false
+    wav.data = data
+    return wav
+
+func _play_sfx_pair(primary: AudioStreamWAV, secondary: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.0, secondary_pitch: float = 1.0, secondary_volume_db: float = -7.0) -> void:
+    _play_sfx(primary, pitch, volume_db)
+    _play_sfx(secondary, secondary_pitch, secondary_volume_db)
+
+func _play_ambient_pulse() -> void:
+    if ambient_pulse_sfx == null:
+        return
+    var level_pitch := clampf(0.92 + float(level - 1) * 0.012, 0.92, 1.12)
+    _play_sfx(ambient_pulse_sfx, level_pitch, -13.0)
+
 
 func _play_sfx(stream: AudioStreamWAV, pitch: float = 1.0, volume_db: float = 0.0) -> void:
     if stream == null or sfx_players.is_empty():
@@ -315,6 +377,10 @@ func _process(delta: float) -> void:
     dash_score_timer = maxf(0.0, dash_score_timer - delta)
     slowmo_timer = maxf(0.0, slowmo_timer - delta)
     laser_sfx_clock = maxf(0.0, laser_sfx_clock - delta)
+    ambient_audio_clock = maxf(0.0, ambient_audio_clock - delta)
+    if ambient_audio_clock <= 0.0:
+        _play_ambient_pulse()
+        ambient_audio_clock = rng.randf_range(1.85, 2.45)
 
     var game_delta := delta * (0.52 if slowmo_timer > 0.0 else 1.0)
     var world_delta := game_delta * _ship_speed_multiplier()
@@ -528,7 +594,7 @@ func _dash() -> void:
     _burst(Vector2(player_x, player_y), 10, Color("77f7ff"))
     _spawn_feedback_popup(dash_pos, "DASH", Color("77f7ff"), 0.42, -48.0, 17)
     _spawn_feedback_ring(Vector2(player_x, player_y), Color("b56cff"), 0.34, 20.0, 54.0)
-    _play_sfx(dash_sfx)
+    _play_sfx_pair(dash_sfx, dash_low_sfx, rng.randf_range(0.98, 1.03), -1.0, rng.randf_range(0.96, 1.02), -5.5)
 
 func _start_game() -> void:
     _clear_control_holds()
@@ -709,7 +775,7 @@ func _open_shop() -> void:
     lane_event_timer = 0.0
     station_locked_side = ""
     station_top = -station_height - 40.0
-    _play_sfx(level_clear_sfx)
+    _play_sfx_pair(level_clear_sfx, pickup_chime_sfx, 1.0, -1.0, 0.82, -6.0)
     _save_run_snapshot()
     queue_redraw()
 
@@ -895,7 +961,10 @@ func _finish(success: bool) -> void:
     won = success
     if result_reason.is_empty():
         result_reason = "RUN ENDED"
-    _play_sfx(level_clear_sfx if success else death_sfx)
+    if success:
+        _play_sfx_pair(level_clear_sfx, finale_sfx, 1.04, -1.0, 1.0, -6.0)
+    else:
+        _play_sfx_pair(death_sfx, explosion_sfx, 0.96, -1.0, 0.76, -5.0)
     _bank_run_score()
     _clear_run_snapshot()
     queue_redraw()
@@ -1687,19 +1756,19 @@ func _fire_weapon() -> void:
             pass
         "single":
             _spawn_shot(player_x, player_y - 22.0, 0.0, -690.0, SINGLE_DAMAGE * _damage_multiplier())
-            _play_sfx(shot_sfx, rng.randf_range(0.97, 1.03), -5.0)
+            _play_sfx_pair(shot_sfx, weapon_click_sfx, rng.randf_range(0.97, 1.03), -5.0, rng.randf_range(0.98, 1.05), -11.0)
         "dual":
             _spawn_shot(player_x - 10.0, player_y - 20.0, 0.0, -650.0, DUAL_DAMAGE * _damage_multiplier())
             _spawn_shot(player_x + 10.0, player_y - 20.0, 0.0, -650.0, DUAL_DAMAGE * _damage_multiplier())
-            _play_sfx(dual_sfx, rng.randf_range(0.98, 1.04), -5.0)
+            _play_sfx_pair(dual_sfx, weapon_click_sfx, rng.randf_range(0.98, 1.04), -4.5, rng.randf_range(0.94, 1.03), -10.0)
         "cone":
             _spawn_shot(player_x, player_y - 22.0, -145.0, -520.0, CONE_DAMAGE * _damage_multiplier())
             _spawn_shot(player_x, player_y - 24.0, 0.0, -560.0, CONE_DAMAGE * _damage_multiplier())
             _spawn_shot(player_x, player_y - 22.0, 145.0, -520.0, CONE_DAMAGE * _damage_multiplier())
-            _play_sfx(cone_sfx, rng.randf_range(0.96, 1.02), -3.0)
+            _play_sfx_pair(cone_sfx, impact_sfx, rng.randf_range(0.96, 1.02), -3.0, 0.92, -9.0)
         "seeker":
             _spawn_shot(player_x, player_y - 24.0, 0.0, -370.0, SEEKER_DAMAGE * _damage_multiplier(), true)
-            _play_sfx(seeker_sfx, rng.randf_range(0.97, 1.03), -3.0)
+            _play_sfx_pair(seeker_sfx, dash_low_sfx, rng.randf_range(0.97, 1.03), -3.0, 1.10, -11.0)
         "laser":
             pass
 
@@ -1753,10 +1822,10 @@ func _award_hazard_kill(obj: Dictionary, dash_kill: bool = false) -> void:
         cyan_flash = maxf(cyan_flash, 0.10)
         shake = maxf(shake, 4.5)
         _burst(Vector2(obj.x, obj.y), 14, Color("77f7ff"))
-        _play_sfx(kill_sfx, rng.randf_range(1.08, 1.16), -2.0)
+        _play_sfx_pair(kill_sfx, explosion_sfx, rng.randf_range(1.08, 1.16), -2.0, 1.08, -6.0)
     else:
         _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
-        _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
+        _play_sfx_pair(kill_sfx, explosion_sfx, rng.randf_range(0.92, 1.08), -3.0, rng.randf_range(0.94, 1.04), -8.0)
 
 func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
     obj.hp = maxf(0.0, float(obj.hp) - damage)
@@ -1840,7 +1909,7 @@ func _fire_enemy_shot(obj: Dictionary) -> void:
         "damage": 1,
         "homing": false
     })
-    _play_sfx(enemy_shot_sfx, rng.randf_range(0.94, 1.06), -7.0)
+    _play_sfx_pair(enemy_shot_sfx, weapon_click_sfx, rng.randf_range(0.94, 1.06), -7.0, 0.72, -15.0)
 
 func _fire_enemy_missile(obj: Dictionary) -> void:
     var from_pos := Vector2(float(obj.x), float(obj.y) + float(obj.r))
@@ -1858,7 +1927,7 @@ func _fire_enemy_missile(obj: Dictionary) -> void:
         "damage": ENEMY_MISSILE_DAMAGE,
         "homing": true
     })
-    _play_sfx(missile_sfx, rng.randf_range(0.96, 1.04), -4.0)
+    _play_sfx_pair(missile_sfx, warning_sfx, rng.randf_range(0.96, 1.04), -4.0, rng.randf_range(0.95, 1.02), -9.0)
 
 func _move_enemy_shots(delta: float) -> void:
     var next: Array[Dictionary] = []
@@ -1890,7 +1959,7 @@ func _move_enemy_shots(delta: float) -> void:
                 # Any enemy projectile, including a 2-hit missile, consumes only one shield charge.
                 shield_charges -= 1
                 _burst(Vector2(shot.x, shot.y), 12, Color("77f7ff"))
-                _play_sfx(shield_sfx, 1.0, -2.0)
+                _play_sfx_pair(shield_sfx, pickup_chime_sfx, 1.0, -2.0, 1.18, -9.0)
             elif invuln <= 0.0:
                 _take_hit(int(shot.get("damage", 1)))
                 _burst(Vector2(shot.x, shot.y), 8 if bool(shot.get("homing", false)) else 6, Color("ff8f5b") if bool(shot.get("homing", false)) else Color("d48cff"))
@@ -2119,7 +2188,7 @@ func _move_objects(delta: float) -> void:
                 else:
                     _spawn_feedback_popup(pickup_pos, "+%d" % awarded, Color("6bffb0"), 0.56, -52.0, 18)
                     _spawn_feedback_ring(pickup_pos, Color("6bffb0"), 0.38, 9.0, 32.0)
-                _play_sfx(energy_sfx, 1.06 if dash_pickup else 1.0, -3.0)
+                _play_sfx_pair(energy_sfx, pickup_chime_sfx, 1.06 if dash_pickup else 1.0, -3.0, 1.16 if dash_pickup else 1.0, -7.0)
                 continue
         elif obj.type == "repair":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
@@ -2127,7 +2196,7 @@ func _move_objects(delta: float) -> void:
                     hp += 1
                     score += 0
                     _burst(Vector2(obj.x, obj.y), 12, Color("e8fff3"))
-                    _play_sfx(repair_sfx, 1.0, -2.0)
+                    _play_sfx_pair(repair_sfx, pickup_chime_sfx, 1.0, -2.0, 0.88, -9.0)
                 continue
         elif obj.type == "weapon":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
@@ -2138,7 +2207,7 @@ func _move_objects(delta: float) -> void:
                 weapon_banner_timer = 1.35
                 score += 0
                 _burst(Vector2(obj.x, obj.y), 12, Color("a882ff"))
-                _play_sfx(weapon_pickup_sfx, 1.0, -2.0)
+                _play_sfx_pair(weapon_pickup_sfx, pickup_chime_sfx, 1.0, -2.0, 1.24, -8.0)
                 continue
         elif obj.type == "extraction":
             if absf(dy) < 19.0:
@@ -2167,7 +2236,10 @@ func _register_near_miss(kind: int, hard_lane: bool = false, event_y: float = -I
     shake = maxf(shake, 2.8)
     dash_cooldown = maxf(0.0, dash_cooldown - 0.2)
     _burst(Vector2(player_x, player_y), 10, Color("77f7ff"))
-    _play_sfx(near_sfx)
+    if dash_near:
+        _play_sfx_pair(near_sfx, pickup_chime_sfx, 1.10, -2.0, 1.20, -10.0)
+    else:
+        _play_sfx(near_sfx, rng.randf_range(0.98, 1.04), -3.0)
 
 func _take_hit(amount: int = 1) -> void:
     hp -= maxi(1, amount)
@@ -2175,7 +2247,7 @@ func _take_hit(amount: int = 1) -> void:
     invuln = HIT_INVULN_TIME
     flash = 0.22
     shake = 7.0
-    _play_sfx(hit_sfx, 0.92 if amount > 1 else 1.0, -1.0)
+    _play_sfx_pair(hit_sfx, impact_sfx, 0.92 if amount > 1 else 1.0, -1.0, 0.82 if amount > 1 else 1.0, -4.5)
     if hp <= 0:
         _finish(false)
 

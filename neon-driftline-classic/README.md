@@ -182,6 +182,10 @@ Player impacts now use a short **0.5 second hit-invulnerability window** so over
 Physical contact outside a dash damages **only the player**. During the active forward dash, contact with a hazard becomes a **DASH KILL** instead: the hazard is destroyed, its normal kill score/drop rules apply, and the player takes no collision hit. Station-wall contact remains instant-lethal and is not converted into a dash kill.
 
 
+## Procedural audio
+
+Audio is generated entirely in code. A 16-voice pool, richer multi-oscillator synthesis, layered transients/sub-bass/chimes, event-specific pitch variation, and a restrained periodic flight pulse give weapons, dash, impacts, pickups, warnings, shields, kills, and level transitions more distinct audio identities without external assets.
+
 ## Menu presentation
 
 Menus use compact labels and retained actionable state only. Layout now uses shared centered/right-aligned text helpers so costs, statuses, headers, and button copy stay aligned as values change.

@@ -40,21 +40,23 @@ func _initialize() -> void:
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
         "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon", "_unlocked_start_weapon_options", "_cycle_starting_weapon",
         "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
-        "_load_run_snapshot", "_clear_run_snapshot", "_spawn_feedback_popup", "_spawn_feedback_ring", "_move_feedback", "_make_tone", "_make_sweep", "_play_sfx"
+        "_load_run_snapshot", "_clear_run_snapshot", "_spawn_feedback_popup", "_spawn_feedback_ring", "_move_feedback", "_make_tone", "_make_sweep", "_make_rich_sweep", "_play_sfx", "_play_sfx_pair", "_play_ambient_pulse"
     ]:
         if not scene.has_method(method_name):
             _fail("missing gameplay method " + method_name)
             return
 
     # Procedural SFX bank is self-contained and polyphonic.
-    if scene.sfx_players.size() < 8:
-        _fail("SFX pool is not polyphonic enough")
+    if scene.sfx_players.size() < 16:
+        _fail("expanded SFX pool is not polyphonic enough")
         return
     for stream_name in [
         "shot_sfx", "dual_sfx", "cone_sfx", "seeker_sfx", "laser_sfx",
         "enemy_shot_sfx", "missile_sfx", "hit_sfx", "shield_sfx", "kill_sfx",
         "energy_sfx", "repair_sfx", "weapon_pickup_sfx", "buy_sfx",
-        "level_clear_sfx", "death_sfx", "near_sfx", "dash_sfx"
+        "level_clear_sfx", "death_sfx", "near_sfx", "dash_sfx",
+        "dash_low_sfx", "weapon_click_sfx", "impact_sfx", "explosion_sfx",
+        "pickup_chime_sfx", "warning_sfx", "ambient_pulse_sfx"
     ]:
         var stream = scene.get(stream_name)
         if stream == null or stream.data.size() <= 0:
@@ -65,6 +67,17 @@ func _initialize() -> void:
     scene._play_sfx(scene.energy_sfx)
     if scene.sfx_cursor == cursor_before_sfx:
         _fail("SFX pool cursor did not advance")
+        return
+    var cursor_before_pair: int = scene.sfx_cursor
+    scene._play_sfx_pair(scene.dash_sfx, scene.dash_low_sfx)
+    var pair_advance: int = (scene.sfx_cursor - cursor_before_pair + scene.sfx_players.size()) % scene.sfx_players.size()
+    if pair_advance != 2:
+        _fail("layered SFX did not consume two independent voices")
+        return
+    var ambient_before: int = scene.sfx_cursor
+    scene._play_ambient_pulse()
+    if scene.sfx_cursor == ambient_before:
+        _fail("ambient pulse did not play through SFX pool")
         return
 
     # Title loadout selector is part of the actual run-start input path and
@@ -87,6 +100,9 @@ func _initialize() -> void:
         return
     if scene.current_weapon != "none":
         _fail("new run should start unarmed")
+        return
+    if scene.ambient_audio_clock <= 0.0:
+        _fail("run did not initialize ambient audio pulse timing")
         return
     if scene._level_duration() != 18.0:
         _fail("level 1 should be the shortest at 18 seconds")
