@@ -22,7 +22,9 @@ The initial playable network has four planets:
 - **Vesper**
 - **Helix**
 
-Routes have independent distance and danger values. Longer and more dangerous routes produce longer flights and higher flight difficulty. Contract difficulty is added on top, so a high-risk bounty can make the same physical route substantially harder.
+Travel now uses a real **spatial system map** rather than a destination list. Aster, Cinder, Vesper, and Helix occupy fixed map positions around the system primary; all six playable interplanetary routes are drawn between them and use the same distance/danger data that drives actual flights. Route color communicates danger, the current world is marked, active-contract destinations are highlighted, and tapping a planet selects it before the player presses **FLY**.
+
+The selected-route card shows distance, danger, flight duration, and effective flight level. Longer and more dangerous routes still produce longer flights and higher flight difficulty. Contract difficulty is added on top, so a high-risk bounty can make the same physical route substantially harder.
 
 ## Economy
 
