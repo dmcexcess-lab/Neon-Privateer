@@ -150,6 +150,9 @@ func _initialize() -> void:
         "_route_political_percentages", "_market_price", "_simulate_economy",
         "_buy_commodity", "_sell_commodity", "_route_spec", "_regenerate_contracts",
         "_accept_contract", "_route_level_for", "_route_duration_for", "_start_route",
+        "_encounter_eligibility_for_context", "_current_encounter_eligibility",
+        "_encounter_cooldown", "_encounter_duration", "_sync_legacy_pirate_state",
+        "_start_route_encounter", "_end_route_encounter", "_update_route_encounter",
         "_update_pirate_attack", "_begin_bounty_boss", "_handle_route_end",
         "_arrive_at_destination", "_fail_route", "_save_privateer_state",
         "_load_privateer_state", "_save_all_state", "_start_game", "_dash",
@@ -497,6 +500,187 @@ func _initialize() -> void:
         _fail("too many ordinary worlds have excessive route degree")
         return
 
+    # Slice 5: territory and criminal state are authoritative for hostile encounters.
+    var pirate_uncontrolled: Dictionary = scene._encounter_eligibility_for_context({
+        "state": "UNCONTROLLED",
+        "faction_id": "",
+        "strongest_faction_id": "",
+        "second_faction_id": ""
+    })
+    if not bool(pirate_uncontrolled.eligible) or String(pirate_uncontrolled.mode) != "pirate":
+        _fail("UNCONTROLLED space is not pirate-eligible")
+        return
+
+    var pirate_contested: Dictionary = scene._encounter_eligibility_for_context({
+        "state": "CONTESTED",
+        "faction_id": "",
+        "strongest_faction_id": primary_faction,
+        "second_faction_id": secondary_faction
+    })
+    if not bool(pirate_contested.eligible) or String(pirate_contested.mode) != "pirate":
+        _fail("CONTESTED space is not pirate-eligible")
+        return
+
+    # Heat 30 from the Slice 3 fixture makes primary faction ordinary-police eligible.
+    var police_controlled: Dictionary = scene._encounter_eligibility_for_context({
+        "state": "CONTROLLED",
+        "faction_id": primary_faction,
+        "strongest_faction_id": primary_faction,
+        "second_faction_id": ""
+    })
+    if not bool(police_controlled.eligible) or String(police_controlled.mode) != "police" or String(police_controlled.faction_id) != primary_faction or bool(police_controlled.heavy):
+        _fail("criminal player did not produce ordinary police eligibility in CONTROLLED space")
+        return
+
+    var clean_controlled: Dictionary = scene._encounter_eligibility_for_context({
+        "state": "CONTROLLED",
+        "faction_id": secondary_faction,
+        "strongest_faction_id": secondary_faction,
+        "second_faction_id": ""
+    })
+    if bool(clean_controlled.eligible):
+        _fail("clean player incorrectly produced hostile police in CONTROLLED space")
+        return
+
+    scene._adjust_faction_heat(primary_faction, 30, false)
+    var heavy_controlled: Dictionary = scene._encounter_eligibility_for_context({
+        "state": "CORE",
+        "faction_id": primary_faction,
+        "strongest_faction_id": primary_faction,
+        "second_faction_id": ""
+    })
+    if not bool(heavy_controlled.eligible) or String(heavy_controlled.mode) != "police" or not bool(heavy_controlled.heavy):
+        _fail("heavy criminal threshold did not enable CORE heavy enforcement")
+        return
+    scene._adjust_faction_heat(primary_faction, -30, false)
+
+    # Ship/platform kind selection obeys encounter role.
+    scene.route_active = true
+    scene.level = 10
+    scene.encounter_active = true
+    scene.encounter_mode = "pirate"
+    scene.encounter_faction_id = ""
+    scene.rng.seed = 51001
+    var pirate_ship_count := 0
+    var pirate_pentagon_count := 0
+    for sample_index in 1800:
+        var kind_pirate: int = scene._choose_enemy_kind(false)
+        if kind_pirate == 3:
+            pirate_ship_count += 1
+        elif kind_pirate == 4:
+            pirate_pentagon_count += 1
+    if pirate_ship_count <= 0 or pirate_pentagon_count != 0:
+        _fail("pirate encounter did not produce trapezoids-only hostile ships")
+        return
+
+    scene.encounter_mode = "police"
+    scene.encounter_faction_id = primary_faction
+    scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction), false)
+    scene._adjust_faction_heat(primary_faction, 30, false)
+    scene.rng.seed = 51002
+    var patrol_ship_count := 0
+    var ordinary_pentagon_count := 0
+    for sample_index in 1800:
+        var kind_patrol: int = scene._choose_enemy_kind(false)
+        if kind_patrol == 3:
+            patrol_ship_count += 1
+        elif kind_patrol == 4:
+            ordinary_pentagon_count += 1
+    if patrol_ship_count <= 0 or ordinary_pentagon_count != 0:
+        _fail("ordinary police encounter spawned a pentagon or no patrol ships")
+        return
+
+    scene._adjust_faction_heat(primary_faction, 30, false)
+    scene.rng.seed = 51003
+    var heavy_pentagon_count := 0
+    for sample_index in 1800:
+        if scene._choose_enemy_kind(false) == 4:
+            heavy_pentagon_count += 1
+    if heavy_pentagon_count <= 0:
+        _fail("heavy police encounter never spawned pentagon enforcement")
+        return
+
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
+    scene.rng.seed = 51004
+    for sample_index in 1200:
+        if scene._choose_enemy_kind(false) > 2:
+            _fail("hostile ship spawned outside active territory-authorized encounter")
+            return
+
+    # Find real lane segments to prove current-route position controls the director.
+    var pirate_route: Dictionary = {}
+    var pirate_segment: Dictionary = {}
+    var controlled_route: Dictionary = {}
+    var controlled_segment: Dictionary = {}
+    for route in routes:
+        for segment in route.segments:
+            var segment_state := String(segment.state)
+            if pirate_route.is_empty() and (segment_state == "CONTESTED" or segment_state == "UNCONTROLLED"):
+                pirate_route = route
+                pirate_segment = segment
+            if controlled_route.is_empty() and (segment_state == "CORE" or segment_state == "CONTROLLED"):
+                var segment_faction := String(segment.get("faction_id", segment.get("strongest_faction_id", "")))
+                if not segment_faction.is_empty():
+                    controlled_route = route
+                    controlled_segment = segment
+        if not pirate_route.is_empty() and not controlled_route.is_empty():
+            break
+    if pirate_route.is_empty() or controlled_route.is_empty():
+        _fail("generated lanes lack segments needed for encounter-director verification")
+        return
+
+    # Pirate segment: clock expiry starts pirate contact regardless of route danger.
+    scene.route_origin = String(pirate_route.a)
+    scene.destination_planet = String(pirate_route.b)
+    scene.route_duration = 100.0
+    scene.elapsed = (float(pirate_segment.start_t) + float(pirate_segment.end_t)) * 50.0
+    scene.route_active = true
+    scene.boss_active = false
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
+    scene.encounter_clock = 0.0
+    scene._update_route_encounter(0.01)
+    if not scene.encounter_active or scene.encounter_mode != "pirate":
+        _fail("real contested/uncontrolled route segment did not start pirate encounter")
+        return
+
+    # Crossing into a clean controlled segment immediately ends the pirate window.
+    var controlled_faction := String(controlled_segment.get("faction_id", controlled_segment.get("strongest_faction_id", "")))
+    var old_controlled_relation: int = scene._faction_relation(controlled_faction)
+    var old_controlled_heat: int = scene._faction_heat(controlled_faction)
+    scene._adjust_faction_relation(controlled_faction, -old_controlled_relation, false)
+    scene._adjust_faction_heat(controlled_faction, -old_controlled_heat, false)
+    scene.route_origin = String(controlled_route.a)
+    scene.destination_planet = String(controlled_route.b)
+    scene.elapsed = (float(controlled_segment.start_t) + float(controlled_segment.end_t)) * 50.0
+    scene._update_route_encounter(0.01)
+    if scene.encounter_active:
+        _fail("pirate encounter remained active after entering clean controlled space")
+        return
+
+    # Same controlled segment becomes police-eligible only after that faction is criminal.
+    scene._adjust_faction_heat(controlled_faction, 30, false)
+    scene.encounter_clock = 0.0
+    scene._update_route_encounter(0.01)
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != controlled_faction:
+        _fail("criminal player did not trigger faction patrol on real controlled route segment")
+        return
+    scene._end_route_encounter()
+    scene._adjust_faction_heat(controlled_faction, -scene._faction_heat(controlled_faction), false)
+    scene._adjust_faction_relation(controlled_faction, old_controlled_relation, false)
+    scene._adjust_faction_heat(controlled_faction, old_controlled_heat, false)
+
+    # Restore Slice 3 primary fixture for subsequent tests.
+    scene._adjust_faction_relation(primary_faction, -scene._faction_relation(primary_faction) - 12, false)
+    scene._adjust_faction_heat(primary_faction, -scene._faction_heat(primary_faction) + 30, false)
+    scene.route_active = false
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
+
     # Initial map view fits all world centers and each hit target covers its node.
     scene._reset_system_map_view()
     for pid in scene.planet_names:
@@ -802,6 +986,9 @@ func _initialize() -> void:
 
     # Reinforced containers are materially rarer than basic containers at the same route cap.
     scene.route_active = true
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
     scene.pirate_attack_active = false
     scene.level = 5
     scene.rng.seed = 81173
@@ -1077,9 +1264,15 @@ func _initialize() -> void:
         _fail("generated direct lane did not enter flight mode")
         return
 
-    # Active route snapshot preserves generated IDs.
+    # Active route snapshot preserves generated IDs and Slice 5 encounter context.
     scene.elapsed = 7.5
     scene.score = 4
+    scene.encounter_active = true
+    scene.encounter_mode = "police"
+    scene.encounter_faction_id = primary_faction
+    scene.encounter_timer = 3.25
+    scene.encounter_clock = 9.5
+    scene._sync_legacy_pirate_state()
     scene._pause_run()
     if not scene._load_run_snapshot():
         _fail("generated route snapshot could not reload")
@@ -1087,6 +1280,10 @@ func _initialize() -> void:
     if scene.destination_planet != neighbor or scene.route_origin != scene.current_planet or absf(scene.elapsed - 7.5) > 0.01:
         _fail("route snapshot did not preserve generated route identity")
         return
+    if not scene.encounter_active or scene.encounter_mode != "police" or scene.encounter_faction_id != primary_faction or absf(scene.encounter_timer - 3.25) > 0.01:
+        _fail("route snapshot did not preserve Slice 5 encounter context")
+        return
+    scene._end_route_encounter()
 
     # Arrival still banks flight score and advances to the generated destination.
     scene.run_paused = false
