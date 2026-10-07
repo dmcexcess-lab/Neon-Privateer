@@ -32,6 +32,65 @@ func _world_signature(world: Dictionary) -> String:
             ])
     return "\n".join(parts)
 
+func _world_difference(a: Dictionary, b: Dictionary) -> String:
+    if int(a.get("schema", 0)) != int(b.get("schema", 0)):
+        return "schema"
+    if int(a.get("seed", 0)) != int(b.get("seed", 0)):
+        return "seed"
+    var ap: Array = a.get("planets", [])
+    var bp: Array = b.get("planets", [])
+    if ap.size() != bp.size():
+        return "planet count"
+    for i in ap.size():
+        for key in ["id", "name", "type"]:
+            if String(ap[i].get(key, "")) != String(bp[i].get(key, "")):
+                return "planet %d %s" % [i, key]
+        if Vector2(ap[i].pos).distance_to(Vector2(bp[i].pos)) > 0.001:
+            return "planet %d position" % i
+
+    var af: Array = a.get("factions", [])
+    var bf: Array = b.get("factions", [])
+    if af.size() != bf.size():
+        return "faction count"
+    for i in af.size():
+        for key in ["id", "name", "capital_id"]:
+            if String(af[i].get(key, "")) != String(bf[i].get(key, "")):
+                return "faction %d %s" % [i, key]
+        if absf(float(af[i].radius) - float(bf[i].radius)) > 0.001:
+            return "faction %d radius" % i
+        if absf(float(af[i].strength) - float(bf[i].strength)) > 0.0001:
+            return "faction %d strength" % i
+        if Color(af[i].color) != Color(bf[i].color):
+            return "faction %d color" % i
+        var al: Dictionary = af[i].laws
+        var bl: Dictionary = bf[i].laws
+        if bool(al.arms_legal) != bool(bl.arms_legal) or bool(al.narcotics_legal) != bool(bl.narcotics_legal):
+            return "faction %d laws" % i
+
+    var ar: Array = a.get("routes", [])
+    var br: Array = b.get("routes", [])
+    if ar.size() != br.size():
+        return "route count"
+    for i in ar.size():
+        for key in ["id", "a", "b"]:
+            if String(ar[i].get(key, "")) != String(br[i].get(key, "")):
+                return "route %d %s" % [i, key]
+        if int(ar[i].distance) != int(br[i].distance) or int(ar[i].danger) != int(br[i].danger):
+            return "route %d rating" % i
+        if absf(float(ar[i].length) - float(br[i].length)) > 0.001:
+            return "route %d length" % i
+        var aseg: Array = ar[i].segments
+        var bseg: Array = br[i].segments
+        if aseg.size() != bseg.size():
+            return "route %d segment count" % i
+        for j in aseg.size():
+            for key in ["state", "faction_id", "strongest_faction_id", "second_faction_id"]:
+                if String(aseg[j].get(key, "")) != String(bseg[j].get(key, "")):
+                    return "route %d segment %d %s" % [i, j, key]
+            if absf(float(aseg[j].start_t) - float(bseg[j].start_t)) > 0.0001 or absf(float(aseg[j].end_t) - float(bseg[j].end_t)) > 0.0001:
+                return "route %d segment %d span" % [i, j]
+    return ""
+
 func _reachable_planets(scene, start_id: String) -> Dictionary:
     var seen: Dictionary = {start_id: true}
     var queue: Array[String] = [start_id]
@@ -330,7 +389,11 @@ func _initialize() -> void:
     scene.active_contract = {}
 
     # Save/reload must reproduce the exact political world.
+    var world_before: Dictionary = scene.political_world.duplicate(true)
     var signature_before: String = _world_signature(scene.political_world)
+    if signature_before.is_empty():
+        _fail("political world signature unexpectedly empty")
+        return
     var seed_before: int = int(scene.world_seed)
     var location_before: String = String(scene.current_planet)
     scene._save_all_state()
@@ -342,8 +405,9 @@ func _initialize() -> void:
     if scene.world_seed != seed_before or scene.current_planet != location_before:
         _fail("political world save/reload changed seed or location")
         return
-    if _world_signature(scene.political_world) != signature_before:
-        _fail("political world save/reload rerolled generated state")
+    var reload_difference: String = _world_difference(world_before, scene.political_world)
+    if not reload_difference.is_empty():
+        _fail("political world save/reload changed " + reload_difference)
         return
 
     # Career slots remain isolated under generated worlds.
@@ -391,7 +455,11 @@ func _initialize() -> void:
         _fail("legacy Cinder location did not migrate to VOLCANIC world")
         return
     var migrated_seed: int = int(scene.world_seed)
+    var migrated_world_before: Dictionary = scene.political_world.duplicate(true)
     var migrated_signature: String = _world_signature(scene.political_world)
+    if migrated_signature.is_empty():
+        _fail("migrated world signature unexpectedly empty")
+        return
     var migrated_cfg: ConfigFile = ConfigFile.new()
     if migrated_cfg.load(scene._active_world_path()) != OK or int(migrated_cfg.get_value("political", "schema", 0)) != scene.POLITICAL_WORLD_SCHEMA:
         _fail("legacy migration did not persist new political schema")
@@ -401,8 +469,12 @@ func _initialize() -> void:
     scene.markets.clear()
     scene.current_planet = ""
     scene._load_privateer_state()
-    if scene.world_seed != migrated_seed or _world_signature(scene.political_world) != migrated_signature:
-        _fail("migrated legacy career rerolled on reload")
+    if scene.world_seed != migrated_seed:
+        _fail("migrated legacy career changed seed on reload")
+        return
+    var migration_difference: String = _world_difference(migrated_world_before, scene.political_world)
+    if not migration_difference.is_empty():
+        _fail("migrated legacy career changed " + migration_difference)
         return
 
     # Return to a clean generated career for economy/contract/flight regression.
