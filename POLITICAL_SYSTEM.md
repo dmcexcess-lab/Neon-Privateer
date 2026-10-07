@@ -48,6 +48,7 @@ Each superpower has:
 - `capital_id`
 - `radius`
 - `strength`
+- generated influence `radius`
 - player `relation`
 - `laws`
 
@@ -68,7 +69,14 @@ Faction influence is radial from its capital:
 
 `influence = strength * (1 - distance / radius)^1.35`
 
-Influence is zero outside the faction radius.
+Influence is zero outside the faction radius. Radius generation is informed by distance to the nearest rival capital so neighboring powers reliably form a real frontier rather than isolated bubbles.
+
+Each generated world then calibrates and persists two geography thresholds from a deterministic sample of that influence field:
+
+- `control_threshold` keeps the lowest-influence portion of the system politically uncontrolled;
+- `contest_ratio` is derived from the strongest actual faction overlap so a meaningful contested frontier exists.
+
+This calibration is still influence-driven; it does not paint manual territory polygons. It prevents random careers from accidentally generating no uncontrolled space or no contested border.
 
 The authoritative query is:
 
