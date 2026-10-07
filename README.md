@@ -123,26 +123,33 @@ The atlas remains menu-only; the arcade renderer does not reference it.
 
 ## Space travel
 
-The original flight mechanics remain:
+The arcade renderer now uses shape as object identity rather than a generic difficulty ladder:
 
-- LEFT / DASH / RIGHT phone controls.
-- Asteroids and ordinary drones.
-- Smart diamond drones.
-- Station splits with a red hard side.
-- Green energy pickups.
-- Weapons, shields, hit points, near misses, dash near misses, and procedural sound effects.
+- **Circles — asteroids.** They retain environmental movement and are the only objects that award normal/dash near-miss credits. Destroying an asteroid gives no kill credits and has a rare 12% chance to release one unit of Ore salvage.
+- **Squares — basic cargo containers.** They are stationary laterally, low durability, and release one small random 1–2 unit commodity bundle when broken.
+- **Diamonds — reinforced cargo containers.** They are stationary laterally, tougher and substantially rarer, and release two larger 2–3 unit bundles from a higher-value commodity table.
+- **Trapezoids / pentagons** remain the existing ship/platform behavior until their dedicated enforcement/encounter slices.
 
-During normal Privateer routes, trapezoids and pentagons do **not** appear as routine traffic. They represent pirate contacts. Pirate windows occur during riskier routes; trapezoids and pentagons are introduced during those windows.
+Cargo containers never award near-miss or kill credits.
+
+Container ownership comes from the political territory at spawn. CORE/CONTROLLED containers belong to that superpower, CONTESTED containers belong to one of the claimant powers, and UNCONTROLLED containers are unowned. Breaking an owned square costs 4 relation with its owner; breaking an owned reinforced container costs 8. The offense is recorded, but Slice 4 intentionally adds no heat yet.
+
+Container loot and asteroid salvage appear as in-flight cargo pickups. Flying through a pickup loads as much as the ship's remaining cargo capacity allows.
+
+The original LEFT / DASH / RIGHT controls, station splits, green energy pickups, weapons, shields, hit points, and procedural sound effects remain.
+
+Pirate/police eligibility is still not territory-driven in this slice; encounter-director changes come later.
 
 ## Flight bonus credits
 
-Arcade score is now a small travel bonus rather than the primary economy.
+Arcade score is a small travel bonus rather than the primary economy.
 
 - Green energy ball: 2 bonus credits.
 - Green energy during dash: 6 base bonus credits.
-- Normal near miss: roughly 1–3 bonus credits.
-- Dash near miss: only a few credits more.
-- Enemy kills remain small single-digit bonuses.
+- **Asteroid** normal near miss: roughly 1–3 bonus credits.
+- **Asteroid** dash near miss: only a few credits more.
+- Asteroid and cargo-container destruction: **0 kill credits**.
+- Existing ship/platform kill scoring remains in place until their later role-specific slices.
 
 Flight bonus score is converted to credits on successful arrival. Destroying the ship loses the unbanked flight bonus. Manual quit still banks the accumulated flight bonus before returning to the origin and failing the active contract.
 
@@ -181,7 +188,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, route scaling, contract classes, pirate gating, bounty boss flow, arrival payouts, delivery/passenger capacity, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, route scaling, contract classes, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
