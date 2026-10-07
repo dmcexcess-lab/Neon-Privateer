@@ -1285,6 +1285,35 @@ func _initialize() -> void:
         return
     scene._end_route_encounter()
 
+    # Pre-Slice-5 pirate-only run snapshots migrate into generic encounter state.
+    var legacy_run_cfg: ConfigFile = ConfigFile.new()
+    if legacy_run_cfg.load(scene._active_run_path()) != OK:
+        _fail("could not load run snapshot for Slice 5 legacy fixture")
+        return
+    for encounter_key in [
+        "encounter_active", "encounter_mode", "encounter_faction_id",
+        "encounter_timer", "encounter_clock", "encounter_banner_timer"
+    ]:
+        legacy_run_cfg.erase_section_key("run", encounter_key)
+    legacy_run_cfg.set_value("run", "pirate_active", true)
+    legacy_run_cfg.set_value("run", "pirate_timer", 2.75)
+    legacy_run_cfg.set_value("run", "pirate_clock", 8.25)
+    if legacy_run_cfg.save(scene._active_run_path()) != OK:
+        _fail("could not write Slice 5 legacy run fixture")
+        return
+    scene.encounter_active = false
+    scene.encounter_mode = ""
+    scene.encounter_faction_id = ""
+    scene.encounter_timer = 0.0
+    scene.encounter_clock = 999.0
+    if not scene._load_run_snapshot():
+        _fail("legacy pirate-only run snapshot did not reload")
+        return
+    if not scene.encounter_active or scene.encounter_mode != "pirate" or not scene.pirate_attack_active or absf(scene.encounter_timer - 2.75) > 0.01:
+        _fail("legacy pirate-only snapshot did not migrate to generic PIRATE encounter")
+        return
+    scene._end_route_encounter()
+
     # Arrival still banks flight score and advances to the generated destination.
     scene.run_paused = false
     scene.playing = true
