@@ -67,6 +67,7 @@ jobs:
           set -e
           if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|PRIVATEER SMOKE FAIL' "$LOG"; then exit 1; fi
+          grep -q 'NEON PRIVATEER PRODUCTION CLOSURE OK' "$LOG"
           grep -q 'NEON PRIVATEER SMOKE OK' "$LOG"
 
       - name: Run Classic Neon Driftline smoke test
