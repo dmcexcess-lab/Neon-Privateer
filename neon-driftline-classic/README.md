@@ -74,7 +74,7 @@ Each starting-weapon unlock costs exactly **50× its normal one-level run-shop r
 - Cone Cannon D3x3: **250,000**
 - Heat Seeker D7: **500,000**
 
-Unlocked starting weapons can be selected from the Research menu before a run. **NONE** is always selectable, so an unlocked weapon never forces a loadout.
+Unlocked starting weapons become selectable directly on the **run-start screen**. The selected weapon is the run's permanent **default loadout** and bypasses the one-level rental rule. **NONE** is always selectable, so an unlocked weapon never forces a loadout.
 
 Normal in-run weapon prices remain:
 
@@ -254,6 +254,6 @@ The level-clear store now has two pages:
 
 Run upgrades use the current run's score, stack on top of permanent research, persist through later levels and durable pause/reload, and reset when a brand-new run begins.
 
-Weapons bought on the **WEAPONS / REPAIR** page are different: they are **one-level rentals**. A purchased weapon equips for the immediately following level only, survives pause/reload during that level, then expires when that level clears. The ship returns to its selected permanent starting weapon (or NONE). Field weapon pickups are not tagged as store rentals.
+Weapons bought on the **WEAPONS / REPAIR** page are different: they are **one-level rentals layered on top of the permanent default**. A purchased weapon equips for the immediately following level only, survives pause/reload during that level, then expires when that level clears. The selected permanent starting weapon immediately returns and remains the default for subsequent levels unless another rental temporarily replaces it. Field weapon pickups are not tagged as store rentals.
 
 Permanent research remains permanent; non-weapon run upgrades remain run-only.

@@ -38,7 +38,7 @@ func _initialize() -> void:
         "_start_next_level", "_handle_shop_tap", "_ship_speed_multiplier", "_lateral_control_speed", "_dash_distance",
         "_dash_speed", "_damage_multiplier", "_ship_speed_score_multiplier", "_dash_speed_score_multiplier", "_enemy_event_score",
         "_research_cost", "_buy_research", "_weapon_research_cost", "_weapon_start_unlocked",
-        "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon",
+        "_buy_start_weapon_research", "_select_start_weapon", "_valid_starting_weapon", "_unlocked_start_weapon_options", "_cycle_starting_weapon",
         "_pause_run", "_resume_run", "_quit_run_with_score", "_bank_run_score", "_autosave_permanent_progress", "_save_meta", "_load_meta", "_save_run_snapshot",
         "_load_run_snapshot", "_clear_run_snapshot", "_make_tone", "_make_sweep", "_play_sfx"
     ]:
@@ -66,6 +66,16 @@ func _initialize() -> void:
     if scene.sfx_cursor == cursor_before_sfx:
         _fail("SFX pool cursor did not advance")
         return
+
+    # Title loadout selector is part of the actual run-start input path.
+    scene.playing = false
+    scene.game_over = false
+    scene.starting_weapon = "none"
+    scene._handle_tap(scene.MAIN_LOADOUT_RECT.get_center())
+    if scene.starting_weapon != "single":
+        _fail("title-screen loadout button did not select an unlocked permanent weapon")
+        return
+    scene.starting_weapon = "none"
 
     scene._start_game()
     await process_frame
@@ -308,6 +318,20 @@ func _initialize() -> void:
         _fail("researched starting weapon could not be selected")
         return
 
+    # Unlocked permanent starters are selectable directly from the run-start screen.
+    scene.starting_weapon = "none"
+    scene._cycle_starting_weapon()
+    if scene.starting_weapon != "single":
+        _fail("run-start selector did not cycle to first unlocked permanent weapon")
+        return
+    scene._cycle_starting_weapon()
+    if scene.starting_weapon != "dual":
+        _fail("run-start selector did not cycle through unlocked permanent weapons")
+        return
+    if not scene._select_start_weapon("single"):
+        _fail("could not restore single as permanent default after title selector test")
+        return
+
     # Permanent progression is autosaved immediately and survives a fresh in-memory reset.
     var saved_credits: int = scene.research_credits
     var saved_ship: int = scene.research_ship_speed
@@ -332,8 +356,8 @@ func _initialize() -> void:
         return
 
     scene._start_game()
-    if scene.current_weapon != "single":
-        _fail("selected researched weapon did not equip at run start")
+    if scene.current_weapon != "single" or not scene.store_weapon_rental.is_empty():
+        _fail("selected permanent weapon did not equip as non-rental run default")
         return
     scene.neutral_spawn_clock = 999.0
     scene.easy_spawn_clock = 999.0
@@ -1345,25 +1369,21 @@ func _initialize() -> void:
         _fail("shop repair purchase failed")
         return
 
-    # First shop can turn the unarmed ship into the weak single auto.
+    # Store weapons overlay the permanent default for one level only.
+    scene.starting_weapon = "single"
+    scene.current_weapon = scene._valid_starting_weapon()
+    scene.store_weapon_rental = ""
     var before_single: int = scene.score
-    if not scene._buy_weapon("single"):
-        _fail("first shop could not buy single auto from unarmed state")
-        return
-    if scene.current_weapon != "single" or scene.store_weapon_rental != "single" or scene.score != before_single - scene.SHOP_SINGLE_COST:
-        _fail("single auto shop rental cost/state is incorrect")
-        return
     if scene._buy_weapon("single"):
-        _fail("shop should not charge for currently equipped weapon")
+        _fail("shop should not charge to rent the already-equipped permanent default")
         return
 
-    # Higher weapons remain available as later purchases.
     var before_weapon: int = scene.score
     if not scene._buy_weapon("dual"):
-        _fail("shop dual purchase failed")
+        _fail("shop dual rental purchase failed")
         return
     if scene.current_weapon != "dual" or scene.store_weapon_rental != "dual" or scene.score != before_weapon - scene.SHOP_DUAL_COST:
-        _fail("dual shop rental cost/state is incorrect")
+        _fail("dual shop rental did not overlay permanent default")
         return
 
     # Insufficient score blocks a purchase.
@@ -1406,8 +1426,8 @@ func _initialize() -> void:
     if not scene.shop_open or scene.game_over or scene.level != 2:
         _fail("level timer did not transition into shop")
         return
-    if not scene.store_weapon_rental.is_empty() or scene.current_weapon != scene._valid_starting_weapon():
-        _fail("store weapon did not expire after its single purchased level")
+    if not scene.store_weapon_rental.is_empty() or scene.current_weapon != "single" or scene.current_weapon != scene._valid_starting_weapon():
+        _fail("store weapon did not expire back to permanent default after one level")
         return
 
     # A brand-new run wipes store upgrades while permanent research remains separate.

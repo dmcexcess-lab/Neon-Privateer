@@ -41,6 +41,7 @@ const SHOP_RUN_DASH_RECT := Rect2(35.0, 286.0, 320.0, 54.0)
 const SHOP_RUN_DAMAGE_RECT := Rect2(35.0, 352.0, 320.0, 54.0)
 const SHOP_RUN_HITS_RECT := Rect2(35.0, 418.0, 320.0, 54.0)
 const SHOP_RUN_SHIELD_RECT := Rect2(35.0, 484.0, 320.0, 54.0)
+const MAIN_LOADOUT_RECT := Rect2(54.0, 486.0, 282.0, 54.0)
 const MAIN_START_RECT := Rect2(54.0, 560.0, 282.0, 64.0)
 const MAIN_RESEARCH_RECT := Rect2(54.0, 640.0, 282.0, 64.0)
 const RESEARCH_SHIP_RECT := Rect2(35.0, 188.0, 320.0, 64.0)
@@ -465,7 +466,9 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         _handle_shop_tap(pos)
         return
     if not playing:
-        if MAIN_START_RECT.has_point(pos):
+        if MAIN_LOADOUT_RECT.has_point(pos):
+            _cycle_starting_weapon()
+        elif MAIN_START_RECT.has_point(pos):
             _start_game()
         elif MAIN_RESEARCH_RECT.has_point(pos):
             research_open = true
@@ -971,6 +974,27 @@ func _weapon_start_unlocked(weapon: String) -> bool:
 
 func _valid_starting_weapon() -> String:
     return starting_weapon if _weapon_start_unlocked(starting_weapon) else "none"
+
+func _unlocked_start_weapon_options() -> Array[String]:
+    var options: Array[String] = ["none"]
+    for weapon in ["single", "dual", "laser", "cone", "seeker"]:
+        if _weapon_start_unlocked(weapon):
+            options.append(weapon)
+    return options
+
+func _cycle_starting_weapon() -> void:
+    var options := _unlocked_start_weapon_options()
+    if options.is_empty():
+        starting_weapon = "none"
+        return
+    var current := _valid_starting_weapon()
+    var index := options.find(current)
+    if index < 0:
+        index = 0
+    starting_weapon = options[(index + 1) % options.size()]
+    _play_sfx(buy_sfx, 1.12, -4.0)
+    _autosave_permanent_progress()
+    queue_redraw()
 
 func _buy_start_weapon_research(weapon: String) -> bool:
     if weapon == "none" or _weapon_start_unlocked(weapon):
@@ -2505,9 +2529,12 @@ func _draw_title() -> void:
     _text("NEON", Vector2(102, 180), 52, Color("77f7ff"))
     _text("DRIFTLINE", Vector2(54, 236), 47, Color("f0fbff"))
     _text("RESEARCH %07d" % research_credits, Vector2(82, 300), 21, Color("ffd166"))
-    _text("START: %s" % _weapon_label(_valid_starting_weapon()), Vector2(88, 348), 16, Color("bdeef4"))
+    _text("PERMANENT DEFAULT: %s" % _weapon_label(_valid_starting_weapon()), Vector2(56, 348), 15, Color("bdeef4"))
     _text("SHIP SPEED BOOSTS NEAR • DASH SPEED BOOSTS DASH", Vector2(25, 382), 12, Color("6bffb0"))
     _text("L1: LAZY CIRCLES / 1 SHORT SPLIT", Vector2(54, 420), 15, Color("8ea9b8"))
+    draw_rect(MAIN_LOADOUT_RECT, Color("17243a"), true)
+    draw_rect(MAIN_LOADOUT_RECT, Color("b56cff"), false, 2.0)
+    _text("START WEAPON: %s  >" % _weapon_label(_valid_starting_weapon()), MAIN_LOADOUT_RECT.position + Vector2(15, 34), 15, Color("f1dcff"))
     draw_rect(MAIN_START_RECT, Color("123544"), true)
     draw_rect(MAIN_START_RECT, Color("77f7ff"), false, 3.0)
     _text("START RUN", MAIN_START_RECT.position + Vector2(73, 42), 24, Color("f0fbff"))
@@ -2570,7 +2597,7 @@ func _draw_weapon_research() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _text("STARTING WEAPONS", Vector2(55, 76), 30, Color("b56cff"))
     _text("BANK %07d" % research_credits, Vector2(108, 112), 18, Color("ffd166"))
-    _text("PERMANENT UNLOCK — 25x RUN PRICE", Vector2(43, 140), 14, Color("8ea9b8"))
+    _text("PERMANENT UNLOCK — 50x 1-LVL RENTAL", Vector2(39, 140), 13, Color("8ea9b8"))
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
@@ -2629,6 +2656,7 @@ func _draw_shop() -> void:
     _text("+%d CLEAR BONUS" % last_level_bonus, Vector2(112, 102), 16, Color("6bffb0"))
     _text("RUN SCORE %06d" % score, Vector2(102, 138), 20, Color("ffd166"))
     _text("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], Vector2(62, 171), 16, Color("bdeef4"))
+    _text("DEFAULT: %s" % _weapon_label(_valid_starting_weapon()), Vector2(126, 194), 12, Color("8ea9b8"))
 
     if shop_page == 0:
         _text("RUN UPGRADES", Vector2(122, 203), 15, Color("b56cff"))
