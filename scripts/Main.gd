@@ -7,6 +7,7 @@ const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 2
 const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
+const CONTRACT_SCHEMA_VERSION := 1
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -911,8 +912,7 @@ func _direct_route_spec(origin: String, destination: String) -> Dictionary:
         "hops": 1
     }
 
-func _route_political_percentages(origin: String, destination: String) -> Dictionary:
-    var spec := _route_spec(origin, destination)
+func _route_political_percentages_for_spec(spec: Dictionary) -> Dictionary:
     var totals := {"CORE": 0.0, "CONTROLLED": 0.0, "CONTESTED": 0.0, "UNCONTROLLED": 0.0}
     var path: Array = spec.get("path", [])
     var total_weight := 0.0
@@ -928,6 +928,13 @@ func _route_political_percentages(origin: String, destination: String) -> Dictio
         for state in totals.keys():
             totals[state] = float(totals[state]) / total_weight
     return totals
+
+func _route_political_percentages(origin: String, destination: String) -> Dictionary:
+    return _route_political_percentages_for_spec(_route_spec(origin, destination))
+
+func _route_pirate_exposure(origin: String, destination: String) -> float:
+    var pct := _route_political_percentages(origin, destination)
+    return clampf(float(pct.get("CONTESTED", 0.0)) + float(pct.get("UNCONTROLLED", 0.0)), 0.0, 1.0)
 
 func _new_market_entry(planet: String, commodity: String) -> Dictionary:
     var flow: Vector2 = _market_profile(planet, commodity)
@@ -1021,9 +1028,21 @@ func _commodity_base_price(commodity: String) -> int:
         "Narcotics": return 340
     return 50
 
+func _market_law_multiplier(planet: String, commodity: String) -> float:
+    if not PoliticalWorld.RESTRICTED_COMMODITIES.has(commodity):
+        return 1.0
+    var status := String(_planet_commodity_legality(planet, commodity).get("status", "LEGAL"))
+    match status:
+        "ILLEGAL":
+            return 1.30
+        "MIXED":
+            return 1.14
+        _:
+            return 1.0
+
 func _market_price(planet: String, commodity: String) -> int:
     if not markets.has(planet) or not markets[planet].has(commodity):
-        return _commodity_base_price(commodity)
+        return maxi(1, int(round(float(_commodity_base_price(commodity)) * _market_law_multiplier(planet, commodity))))
     var data: Dictionary = markets[planet][commodity]
     var stock := float(data.stock)
     var production := float(data.production)
@@ -1039,7 +1058,8 @@ func _market_price(planet: String, commodity: String) -> int:
     if type_id == "LUSH" and commodity == "Food": planet_bias = 0.90
     if type_id == "INDUSTRIAL" and commodity == "Arms": planet_bias = 0.84
     if type_id == "LUSH" and commodity == "Narcotics": planet_bias = 0.86
-    return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
+    var law_multiplier := _market_law_multiplier(planet, commodity)
+    return maxi(1, int(round(float(_commodity_base_price(commodity)) * planet_bias * law_multiplier * (1.0 + scarcity * 0.72 + flow_pressure * 0.20))))
 
 func _market_buy_price(planet: String, commodity: String) -> int:
     return maxi(1, int(ceil(float(_market_price(planet, commodity)) * 1.06)))
@@ -1113,34 +1133,287 @@ func _other_planets(origin: String) -> Array[String]:
             result.append(planet)
     return result
 
+func _planet_primary_faction(planet_id: String) -> String:
+    if planet_id.is_empty() or not planet_names.has(planet_id):
+        return ""
+    var context := _get_political_context_at(_system_planet_world_position(planet_id))
+    var state := String(context.get("state", "UNCONTROLLED"))
+    if state == "UNCONTROLLED":
+        return ""
+    if state == "CONTESTED":
+        return String(context.get("strongest_faction_id", ""))
+    return String(context.get("faction_id", context.get("strongest_faction_id", "")))
+
+func _contract_issuer_name(faction_id: String, smuggling: bool = false) -> String:
+    if smuggling:
+        return "UNDERWORLD"
+    if faction_id.is_empty():
+        return "LOCAL"
+    return String(PoliticalWorld.faction_record(political_world, faction_id).get("name", "LOCAL"))
+
+func _contract_destination_profiles(origin: String) -> Array:
+    var profiles: Array = []
+    for destination in _other_planets(origin):
+        var spec := _route_spec(origin, destination)
+        if spec.get("path", []).is_empty():
+            continue
+        var pct := _route_political_percentages_for_spec(spec)
+        profiles.append({
+            "destination": destination,
+            "spec": spec,
+            "pirate_exposure": clampf(float(pct.get("CONTESTED", 0.0)) + float(pct.get("UNCONTROLLED", 0.0)), 0.0, 1.0),
+            "destination_faction": _planet_primary_faction(destination),
+            "destination_state": String(_get_political_context_at(_system_planet_world_position(destination)).get("state", "UNCONTROLLED"))
+        })
+    return profiles
+
+func _best_legal_delivery_profile(origin: String, profiles: Array) -> Dictionary:
+    var best: Dictionary = {}
+    var best_score := -INF
+    for profile_variant in profiles:
+        var profile: Dictionary = profile_variant
+        var destination := String(profile.destination)
+        var commodity := ""
+        var commodity_score := -INF
+        for candidate in commodity_names:
+            var legality := String(_planet_commodity_legality(destination, candidate).get("status", "LEGAL"))
+            if legality == "ILLEGAL":
+                continue
+            var spread := float(_market_sell_price(destination, candidate) - _market_buy_price(origin, candidate))
+            var demand := float(_market_profile(destination, candidate).y - _market_profile(destination, candidate).x) * 5.0
+            var score := spread + demand + float(_commodity_base_price(candidate)) * 0.08
+            if score > commodity_score:
+                commodity_score = score
+                commodity = candidate
+        if commodity.is_empty():
+            continue
+        var total_score := commodity_score + float(profile.get("pirate_exposure", 0.0)) * 45.0 + rng.randf_range(0.0, 18.0)
+        if total_score > best_score:
+            best_score = total_score
+            best = profile.duplicate(true)
+            best["commodity"] = commodity
+    return best
+
+func _best_smuggling_profile(origin: String, profiles: Array) -> Dictionary:
+    var best: Dictionary = {}
+    var best_score := -INF
+    for profile_variant in profiles:
+        var profile: Dictionary = profile_variant
+        var destination := String(profile.destination)
+        for commodity in PoliticalWorld.RESTRICTED_COMMODITIES:
+            if String(_planet_commodity_legality(destination, commodity).get("status", "LEGAL")) != "ILLEGAL":
+                continue
+            var score := float(_commodity_base_price(commodity))
+            score += float(_market_sell_price(destination, commodity) - _market_buy_price(origin, commodity))
+            score += float(profile.get("pirate_exposure", 0.0)) * 80.0
+            score += rng.randf_range(0.0, 22.0)
+            if score > best_score:
+                best_score = score
+                best = profile.duplicate(true)
+                best["commodity"] = commodity
+    return best
+
+func _best_passenger_profile(profiles: Array, issuer_faction: String) -> Dictionary:
+    var best: Dictionary = {}
+    var best_score := -INF
+    for profile_variant in profiles:
+        var profile: Dictionary = profile_variant
+        var destination_faction := String(profile.get("destination_faction", ""))
+        var destination_state := String(profile.get("destination_state", "UNCONTROLLED"))
+        var political_value := 0.0
+        if destination_state == "CONTESTED":
+            political_value += 80.0
+        elif destination_faction != issuer_faction:
+            political_value += 60.0
+        if destination_state == "UNCONTROLLED":
+            political_value += 30.0
+        var spec: Dictionary = profile.spec
+        var score := political_value + float(spec.get("distance", 1)) * 8.0 + rng.randf_range(0.0, 35.0)
+        if score > best_score:
+            best_score = score
+            best = profile.duplicate(true)
+    return best
+
+func _best_bounty_profiles(profiles: Array, count: int) -> Array:
+    var ranked: Array = []
+    for profile_variant in profiles:
+        var profile: Dictionary = profile_variant.duplicate(true)
+        var spec: Dictionary = profile.spec
+        profile["bounty_score"] = float(profile.get("pirate_exposure", 0.0)) * 1000.0 + float(spec.get("danger", 1)) * 40.0 + rng.randf_range(0.0, 25.0)
+        ranked.append(profile)
+    ranked.sort_custom(func(a, b): return float(a.get("bounty_score", 0.0)) > float(b.get("bounty_score", 0.0)))
+    var result: Array = []
+    for profile in ranked:
+        if float(profile.get("pirate_exposure", 0.0)) <= 0.0 and not result.is_empty():
+            continue
+        result.append(profile)
+        if result.size() >= count:
+            break
+    return result
+
+func _contract_reward_breakdown(kind: String, origin: String, destination: String, commodity: String = "", smuggling: bool = false) -> Dictionary:
+    var spec := _route_spec(origin, destination)
+    var danger := int(spec.get("danger", 1))
+    var distance := int(spec.get("distance", 1))
+    var pirate_exposure := _route_pirate_exposure(origin, destination)
+    var difficulty := clampi(danger + int(round(pirate_exposure * 2.0)) + (1 if smuggling else 0), 1, 5)
+    var base_reward := 0
+    match kind:
+        "delivery":
+            base_reward = 160 + distance * 90 + difficulty * 70
+        "passenger":
+            base_reward = 220 + distance * 100 + difficulty * 80
+        _:
+            base_reward = 420 + distance * 150 + difficulty * 180
+    var risk_factor := 0.35 if kind == "delivery" else (0.45 if kind == "passenger" else 0.70)
+    var risk_premium := int(round(float(base_reward) * pirate_exposure * risk_factor))
+    var cargo_premium := 0
+    if kind == "delivery" and not commodity.is_empty():
+        var market_opportunity := maxi(0, _market_sell_price(destination, commodity) - _market_buy_price(origin, commodity))
+        cargo_premium += market_opportunity * 2
+        if smuggling:
+            cargo_premium += int(round(float(_commodity_base_price(commodity)) * 1.10 + float(base_reward) * 0.28))
+    var origin_faction := _planet_primary_faction(origin)
+    var destination_faction := _planet_primary_faction(destination)
+    var political_premium := 0
+    if kind == "passenger" and origin_faction != destination_faction:
+        political_premium = int(round(float(base_reward) * 0.14))
+    var reward := base_reward + risk_premium + cargo_premium + political_premium
+    return {
+        "difficulty": difficulty,
+        "base_reward": base_reward,
+        "risk_premium": risk_premium,
+        "cargo_premium": cargo_premium,
+        "political_premium": political_premium,
+        "pirate_exposure": pirate_exposure,
+        "reward": reward
+    }
+
+func _contract_role(kind: String, issuer_faction: String, destination: String, smuggling: bool = false) -> String:
+    if smuggling:
+        return "SMUGGLE"
+    if kind == "bounty":
+        return "PIRATE BOUNTY"
+    if kind == "passenger":
+        var destination_faction := _planet_primary_faction(destination)
+        var destination_state := String(_get_political_context_at(_system_planet_world_position(destination)).get("state", "UNCONTROLLED"))
+        if destination_state == "CONTESTED":
+            return "FRONTIER PAX"
+        if not issuer_faction.is_empty() and destination_faction != issuer_faction:
+            return "ENVOY"
+        return "PASSENGER"
+    return "FREIGHT"
+
+func _contract_relation_reward(kind: String, smuggling: bool = false) -> int:
+    if smuggling:
+        return 0
+    match kind:
+        "bounty":
+            return 5
+        "passenger":
+            return 3
+        _:
+            return 2
+
+func _make_contract(kind: String, origin: String, profile: Dictionary, commodity: String = "", smuggling: bool = false, issuer_override: String = "__AUTO__") -> Dictionary:
+    var destination := String(profile.get("destination", ""))
+    if destination.is_empty():
+        return {}
+    var issuer_faction := _planet_primary_faction(origin) if issuer_override == "__AUTO__" else issuer_override
+    if smuggling:
+        issuer_faction = ""
+    var reward_data := _contract_reward_breakdown(kind, origin, destination, commodity, smuggling)
+    return {
+        "id": rng.randi(),
+        "schema": CONTRACT_SCHEMA_VERSION,
+        "type": kind,
+        "origin": origin,
+        "destination": destination,
+        "difficulty": int(reward_data.difficulty),
+        "reward": int(reward_data.reward),
+        "base_reward": int(reward_data.base_reward),
+        "risk_premium": int(reward_data.risk_premium),
+        "cargo_premium": int(reward_data.cargo_premium),
+        "political_premium": int(reward_data.political_premium),
+        "pirate_exposure": float(reward_data.pirate_exposure),
+        "issuer_faction": issuer_faction,
+        "issuer_name": _contract_issuer_name(issuer_faction, smuggling),
+        "relation_reward": _contract_relation_reward(kind, smuggling),
+        "role": _contract_role(kind, issuer_faction, destination, smuggling),
+        "commodity": commodity,
+        "smuggling": smuggling
+    }
+
+func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> Dictionary:
+    var upgraded := contract.duplicate(true)
+    var kind := String(upgraded.get("type", "delivery"))
+    var origin := String(upgraded.get("origin", fallback_origin))
+    var destination := String(upgraded.get("destination", ""))
+    var smuggling := bool(upgraded.get("smuggling", false))
+    var commodity := String(upgraded.get("commodity", "Food" if kind == "delivery" else ""))
+    var issuer_faction := String(upgraded.get("issuer_faction", _planet_primary_faction(origin)))
+    if smuggling:
+        issuer_faction = ""
+    upgraded["schema"] = CONTRACT_SCHEMA_VERSION
+    upgraded["origin"] = origin
+    upgraded["commodity"] = commodity
+    upgraded["smuggling"] = smuggling
+    upgraded["issuer_faction"] = issuer_faction
+    upgraded["issuer_name"] = String(upgraded.get("issuer_name", _contract_issuer_name(issuer_faction, smuggling)))
+    upgraded["relation_reward"] = int(upgraded.get("relation_reward", _contract_relation_reward(kind, smuggling)))
+    upgraded["role"] = String(upgraded.get("role", _contract_role(kind, issuer_faction, destination, smuggling)))
+    upgraded["pirate_exposure"] = float(upgraded.get("pirate_exposure", _route_pirate_exposure(origin, destination) if planet_names.has(destination) else 0.0))
+    upgraded["base_reward"] = int(upgraded.get("base_reward", upgraded.get("reward", 0)))
+    upgraded["risk_premium"] = int(upgraded.get("risk_premium", 0))
+    upgraded["cargo_premium"] = int(upgraded.get("cargo_premium", 0))
+    upgraded["political_premium"] = int(upgraded.get("political_premium", 0))
+    return upgraded
+
+func _ensure_contract_schema() -> bool:
+    var changed := false
+    for i in contract_board.size():
+        var original: Dictionary = contract_board[i]
+        var upgraded := _upgrade_contract_record(original, current_planet)
+        if int(original.get("schema", 0)) < CONTRACT_SCHEMA_VERSION:
+            changed = true
+        contract_board[i] = upgraded
+    if not active_contract.is_empty():
+        var active_before := active_contract.duplicate(true)
+        active_contract = _upgrade_contract_record(active_contract, current_planet)
+        if int(active_before.get("schema", 0)) < CONTRACT_SCHEMA_VERSION:
+            changed = true
+    return changed
+
 func _regenerate_contracts() -> void:
     contract_board.clear()
-    var destinations := _other_planets(current_planet)
-    var kinds: Array[String] = ["delivery", "passenger", "bounty", "delivery", "bounty"]
-    for i in kinds.size():
-        var kind := kinds[i]
-        var dest := destinations[rng.randi_range(0, destinations.size() - 1)]
-        var spec := _route_spec(current_planet, dest)
-        var difficulty := clampi(int(spec.danger) + rng.randi_range(0, 2), 1, 5)
-        var reward := 0
-        if kind == "delivery":
-            reward = 160 + int(spec.distance) * 90 + difficulty * 70
-        elif kind == "passenger":
-            reward = 220 + int(spec.distance) * 100 + difficulty * 80
-        else:
-            reward = 420 + int(spec.distance) * 150 + difficulty * 180
-        contract_board.append({
-            "id": rng.randi(),
-            "type": kind,
-            "destination": dest,
-            "difficulty": difficulty,
-            "reward": reward
-        })
+    var profiles := _contract_destination_profiles(current_planet)
+    if profiles.is_empty():
+        return
+    var issuer_faction := _planet_primary_faction(current_planet)
+
+    var legal_profile := _best_legal_delivery_profile(current_planet, profiles)
+    if not legal_profile.is_empty():
+        contract_board.append(_make_contract("delivery", current_planet, legal_profile, String(legal_profile.get("commodity", "Food")), false))
+
+    var passenger_profile := _best_passenger_profile(profiles, issuer_faction)
+    if not passenger_profile.is_empty():
+        contract_board.append(_make_contract("passenger", current_planet, passenger_profile))
+
+    for bounty_profile in _best_bounty_profiles(profiles, 2):
+        contract_board.append(_make_contract("bounty", current_planet, bounty_profile))
+
+    var smuggling_profile := _best_smuggling_profile(current_planet, profiles)
+    if not smuggling_profile.is_empty():
+        contract_board.append(_make_contract("delivery", current_planet, smuggling_profile, String(smuggling_profile.get("commodity", "Arms")), true))
+    elif not legal_profile.is_empty():
+        var alternate := _best_legal_delivery_profile(current_planet, profiles)
+        if not alternate.is_empty():
+            contract_board.append(_make_contract("delivery", current_planet, alternate, String(alternate.get("commodity", "Food")), false))
 
 func _accept_contract(index: int) -> bool:
     if not active_contract.is_empty() or index < 0 or index >= contract_board.size():
         return false
-    var contract: Dictionary = contract_board[index]
+    var contract: Dictionary = _upgrade_contract_record(contract_board[index], current_planet)
     var kind := String(contract.type)
     if kind == "delivery" and _cargo_used() >= _cargo_capacity():
         return false
@@ -1308,6 +1581,16 @@ func _illegal_cargo_for_faction(faction_id: String) -> Dictionary:
             illegal[commodity] = quantity
     return illegal
 
+func _active_delivery_contraband_for_faction(faction_id: String) -> String:
+    if active_contract.is_empty() or String(active_contract.get("type", "")) != "delivery":
+        return ""
+    var commodity := String(active_contract.get("commodity", ""))
+    if not PoliticalWorld.RESTRICTED_COMMODITIES.has(commodity):
+        return ""
+    if PoliticalWorld.faction_commodity_legal(political_world, faction_id, commodity):
+        return ""
+    return commodity
+
 func _begin_police_scan(faction_id: String, duration_override: float = -1.0) -> bool:
     if faction_id.is_empty() or encounter_mode != "police" or encounter_hostile:
         return false
@@ -1346,14 +1629,15 @@ func _complete_police_scan() -> Dictionary:
         return {}
     var faction_id := police_scan_faction_id
     var illegal := _illegal_cargo_for_faction(faction_id)
+    var contract_contraband := _active_delivery_contraband_for_faction(faction_id)
     police_scan_active = false
     police_scan_timer = 0.0
 
-    if illegal.is_empty():
+    if illegal.is_empty() and contract_contraband.is_empty():
         police_scan_result_text = "SCAN CLEAR"
         police_scan_result_timer = 2.0
         police_scan_faction_id = ""
-        return {"clear": true, "units": 0, "fine": 0}
+        return {"clear": true, "units": 0, "fine": 0, "contract_confiscated": false}
 
     var total_units := 0
     var total_value := 0
@@ -1362,6 +1646,14 @@ func _complete_police_scan() -> Dictionary:
         total_units += quantity
         total_value += quantity * _commodity_base_price(String(commodity))
         cargo[commodity] = maxi(0, int(cargo.get(commodity, 0)) - quantity)
+
+    var contract_confiscated := not contract_contraband.is_empty()
+    if contract_confiscated:
+        total_units += 1
+        total_value += _commodity_base_price(contract_contraband)
+        active_contract.clear()
+        loot_banner_text = "CONTRACT CARGO CONFISCATED"
+        loot_banner_timer = 2.4
 
     var fine := POLICE_SCAN_FINE_BASE + int(round(float(total_value) * POLICE_SCAN_FINE_VALUE_FACTOR))
     var paid := mini(research_credits, fine)
@@ -1376,7 +1668,7 @@ func _complete_police_scan() -> Dictionary:
     weapon_banner_text = "CONTRABAND FOUND"
     weapon_banner_timer = 1.8
     _save_privateer_state()
-    return {"clear": false, "units": total_units, "fine": paid}
+    return {"clear": false, "units": total_units, "fine": paid, "contract_confiscated": contract_confiscated}
 
 func _update_police_scan(delta: float) -> void:
     police_scan_result_timer = maxf(0.0, police_scan_result_timer - delta)
@@ -1532,9 +1824,21 @@ func _complete_contract_if_ready() -> int:
         return 0
     if String(active_contract.get("type", "")) == "bounty" and not bounty_completed_this_route:
         return 0
-    var reward := int(active_contract.get("reward", 0))
-    if String(active_contract.get("type", "")) == "passenger":
+    var completed := _upgrade_contract_record(active_contract, current_planet)
+    var reward := int(completed.get("reward", 0))
+    var kind := String(completed.get("type", ""))
+    if kind == "passenger":
         passengers = maxi(0, passengers - 1)
+    elif kind == "delivery":
+        var commodity := String(completed.get("commodity", ""))
+        if not commodity.is_empty() and markets.has(current_planet) and markets[current_planet].has(commodity):
+            var data: Dictionary = markets[current_planet][commodity]
+            data.stock = minf(140.0, float(data.stock) + 1.0)
+            markets[current_planet][commodity] = data
+    var issuer_faction := String(completed.get("issuer_faction", ""))
+    var relation_reward := int(completed.get("relation_reward", 0))
+    if not issuer_faction.is_empty() and relation_reward > 0:
+        _adjust_faction_relation(issuer_faction, relation_reward, false)
     active_contract.clear()
     return reward
 
@@ -1604,6 +1908,7 @@ func _save_privateer_state() -> void:
     cfg.set_value("world", "economy_schema", ECONOMY_SCHEMA_VERSION)
     cfg.set_value("world", "crime_schema", CRIME_SCHEMA_VERSION)
     cfg.set_value("world", "enforcement_schema", ENFORCEMENT_SCHEMA_VERSION)
+    cfg.set_value("world", "contract_schema", CONTRACT_SCHEMA_VERSION)
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
@@ -1682,6 +1987,7 @@ func _load_privateer_state() -> void:
                 political_world,
                 PoliticalWorld.legacy_type_for_name(old_active_dest)
             )
+    var contract_schema_changed := _ensure_contract_schema()
     passengers = int(cfg.get_value("world", "passengers", 0))
     economy_tick = int(cfg.get_value("world", "economy_tick", 0))
     last_trip_summary = String(cfg.get_value("world", "summary", "Docked at %s" % _planet_display_name(current_planet)))
@@ -1691,7 +1997,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or commodity_schema_changed or contract_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION or int(cfg.get_value("world", "contract_schema", 0)) < CONTRACT_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -4985,7 +5291,8 @@ func _draw_contracts_menu() -> void:
     _draw_planet_art(current_planet, Rect2(304.0, 20.0, 64.0, 64.0), 0.95)
     _text("CONTRACT BOARD", Vector2(28, 55), 27, Color("77f7ff"))
     if not active_contract.is_empty():
-        _text("ACTIVE: %s > %s" % [String(active_contract.type).to_upper(), _planet_display_name(String(active_contract.destination))], Vector2(30, 94), 14, Color("6bffb0"))
+        var active_label := "SMUGGLE" if bool(active_contract.get("smuggling", false)) else String(active_contract.get("type", "")).to_upper()
+        _text("ACTIVE: %s > %s" % [active_label, _planet_display_name(String(active_contract.destination))], Vector2(30, 94), 14, Color("6bffb0"))
     else:
         _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
     for i in contract_board.size():
@@ -4993,15 +5300,22 @@ func _draw_contracts_menu() -> void:
         var rect := _contract_row_rect(i)
         draw_rect(rect, Color(0.035, 0.065, 0.10, 0.91), true)
         draw_rect(rect, Color("465f72"), false, 2.0)
-        _text(String(contract.type).to_upper(), rect.position + Vector2(12, 25), 17, Color("f0fbff"))
-        _text("> %s   D%d" % [_planet_display_name(String(contract.destination)), int(contract.difficulty)], rect.position + Vector2(12, 51), 14, Color("8ea9b8"))
-        _text("%d CR" % int(contract.reward), rect.position + Vector2(244, 51), 15, Color("ffd166"))
+        var smuggling := bool(contract.get("smuggling", false))
+        var role := String(contract.get("role", String(contract.type).to_upper()))
+        _text(role, rect.position + Vector2(12, 23), 15, Color("ffb347") if smuggling else Color("f0fbff"))
+        _text("> %s   D%d" % [_planet_display_name(String(contract.destination)), int(contract.difficulty)], rect.position + Vector2(12, 47), 12, Color("8ea9b8"))
+        _text("%d CR" % int(contract.reward), rect.position + Vector2(244, 47), 14, Color("ffd166"))
+        var exposure := int(round(float(contract.get("pirate_exposure", 0.0)) * 100.0))
+        var issuer := _short_map_label(String(contract.get("issuer_name", "LOCAL")).to_upper(), 14)
+        var relation_gain := int(contract.get("relation_reward", 0))
+        _text("%s  PIR %d%%  REP +%d" % [issuer, exposure, relation_gain], rect.position + Vector2(12, 73), 9, Color("bdeef4"))
         if String(contract.type) == "delivery":
-            _text("1 CARGO", rect.position + Vector2(242, 25), 12, Color("bdeef4"))
+            var cargo_label := String(contract.get("commodity", "CARGO")).to_upper()
+            _text(cargo_label, rect.position + Vector2(254, 23), 10, Color("ff8fa6") if smuggling else Color("bdeef4"))
         elif String(contract.type) == "passenger":
-            _text("1 PAX", rect.position + Vector2(252, 25), 12, Color("bdeef4"))
+            _text("1 PAX", rect.position + Vector2(252, 23), 10, Color("bdeef4"))
         else:
-            _text("BOSS", rect.position + Vector2(258, 25), 12, Color("ff8fa6"))
+            _text("BOSS", rect.position + Vector2(258, 23), 10, Color("ff8fa6"))
     _draw_submenu_back()
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
