@@ -124,6 +124,9 @@ const ENERGY_ORB_BASE_SCORE := 2
 const ENERGY_ORB_DASH_MULT := 3.0
 const KILL_ORB_DROP_CHANCE := 0.08
 const KILL_REPAIR_DROP_CHANCE := 0.02
+const ASTEROID_ORE_DROP_CHANCE := 0.12
+const BASIC_CONTAINER_RELATION_LOSS := 4
+const REINFORCED_CONTAINER_RELATION_LOSS := 8
 const ENEMY_SHOT_SPEED := 255.0
 const ENEMY_SHOT_RADIUS := 5.0
 const ENEMY_MISSILE_SPEED := 190.0
@@ -248,6 +251,8 @@ var repair_clock := 0.0
 var current_weapon := "none"
 var weapon_banner_timer := 0.0
 var weapon_banner_text := ""
+var loot_banner_timer := 0.0
+var loot_banner_text := ""
 var station_height := STATION_HEIGHT_BASE
 var station_top := -STATION_HEIGHT_BASE - 40.0
 var station_locked_side := ""
@@ -1311,6 +1316,7 @@ func _process(delta: float) -> void:
 
     near_miss_timer = maxf(0.0, near_miss_timer - delta)
     weapon_banner_timer = maxf(0.0, weapon_banner_timer - delta)
+    loot_banner_timer = maxf(0.0, loot_banner_timer - delta)
     lane_choice_banner_timer = maxf(0.0, lane_choice_banner_timer - delta)
     finale_banner_timer = maxf(0.0, finale_banner_timer - delta)
     flash = maxf(0.0, flash - delta)
@@ -1919,6 +1925,8 @@ func _start_game() -> void:
     current_weapon = _valid_starting_weapon()
     weapon_banner_timer = 0.0
     weapon_banner_text = ""
+    loot_banner_timer = 0.0
+    loot_banner_text = ""
     dash_cooldown = 0.0
     dash_timer = 0.0
     dash_score_timer = 0.0
@@ -2681,11 +2689,11 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
     if cap <= 0:
         return 0
     if cap == 1:
-        return 1 if roll < (0.42 if hard_lane else 0.30) else 0
+        return 1 if roll < (0.34 if hard_lane else 0.26) else 0
     if cap == 2:
-        if roll < (0.22 if hard_lane else 0.14):
+        if roll < (0.08 if hard_lane else 0.05):
             return 2
-        if roll < (0.62 if hard_lane else 0.52):
+        if roll < (0.42 if hard_lane else 0.34):
             return 1
         return 0
     if cap == 3:
@@ -2733,6 +2741,120 @@ func _spawn_circle_bunch(hard_lane: bool, count: int) -> void:
             "lane_max": bounds.y
         })
 
+func _route_progress_fraction() -> float:
+    if not route_active or route_duration <= 0.0:
+        return 0.0
+    return clampf(elapsed / route_duration, 0.0, 1.0)
+
+func _current_flight_political_context() -> Dictionary:
+    if route_active and not route_origin.is_empty() and not destination_planet.is_empty():
+        var segment := _route_political_segment_at_progress(route_origin, destination_planet, _route_progress_fraction())
+        if not segment.is_empty():
+            return {
+                "state": String(segment.get("state", "UNCONTROLLED")),
+                "faction_id": String(segment.get("faction_id", "")),
+                "strongest_faction_id": String(segment.get("strongest_faction_id", "")),
+                "second_faction_id": String(segment.get("second_faction_id", ""))
+            }
+    if not current_planet.is_empty():
+        return _get_political_context_at(_system_planet_world_position(current_planet))
+    return {"state": "UNCONTROLLED", "faction_id": "", "strongest_faction_id": "", "second_faction_id": ""}
+
+func _container_owner_for_context(context: Dictionary) -> String:
+    var state := String(context.get("state", "UNCONTROLLED"))
+    if state == "UNCONTROLLED":
+        return ""
+    if state == "CONTESTED":
+        var first := String(context.get("strongest_faction_id", ""))
+        var second := String(context.get("second_faction_id", ""))
+        if first.is_empty():
+            return second
+        if second.is_empty():
+            return first
+        return first if rng.randf() < 0.5 else second
+    var owner := String(context.get("faction_id", ""))
+    if owner.is_empty():
+        owner = String(context.get("strongest_faction_id", ""))
+    return owner
+
+func _container_owner_for_current_space() -> String:
+    return _container_owner_for_context(_current_flight_political_context())
+
+func _make_cargo_pickup(commodity: String, quantity: int, x: float, y: float, hard: bool = false) -> Dictionary:
+    var bounds := _lane_bounds(hard) if lane_event_active else Vector2(LEFT, RIGHT)
+    return {
+        "id": rng.randi(),
+        "type": "cargo",
+        "commodity": commodity,
+        "quantity": maxi(1, quantity),
+        "hard": hard and lane_event_active,
+        "x": clampf(x, bounds.x + 16.0, bounds.y - 16.0),
+        "y": y,
+        "r": 13.0,
+        "speed": rng.randf_range(195.0, 225.0),
+        "drift": 0.0,
+        "lane_min": bounds.x,
+        "lane_max": bounds.y
+    }
+
+func _queue_asteroid_ore_drop(obj: Dictionary, roll: float = -1.0) -> bool:
+    var use_roll := rng.randf() if roll < 0.0 else roll
+    if use_roll >= ASTEROID_ORE_DROP_CHANCE:
+        return false
+    pending_drops.append(_make_cargo_pickup("Ore", 1, float(obj.x), float(obj.y), bool(obj.get("hard", false))))
+    return true
+
+func _basic_container_commodity() -> String:
+    return commodity_names[rng.randi_range(0, commodity_names.size() - 1)]
+
+func _reinforced_container_commodity() -> String:
+    var premium := ["Electronics", "Arms", "Medicine", "Narcotics", "Fuel", "Ore"]
+    return String(premium[rng.randi_range(0, premium.size() - 1)])
+
+func _queue_container_loot(obj: Dictionary) -> int:
+    var kind := int(obj.get("kind", 1))
+    var bundles := 2 if kind == 2 else 1
+    var total_units := 0
+    for bundle_index in bundles:
+        var commodity := _reinforced_container_commodity() if kind == 2 else _basic_container_commodity()
+        var quantity := rng.randi_range(1, 2) if kind == 1 else rng.randi_range(2, 3)
+        total_units += quantity
+        var spread := float(bundle_index) * 18.0 - float(bundles - 1) * 9.0
+        pending_drops.append(_make_cargo_pickup(
+            commodity,
+            quantity,
+            float(obj.x) + spread,
+            float(obj.y),
+            bool(obj.get("hard", false))
+        ))
+    return total_units
+
+func _handle_container_break(obj: Dictionary) -> void:
+    _queue_container_loot(obj)
+    var owner := String(obj.get("owner_faction", ""))
+    if not owner.is_empty():
+        var loss := REINFORCED_CONTAINER_RELATION_LOSS if int(obj.get("kind", 1)) == 2 else BASIC_CONTAINER_RELATION_LOSS
+        _record_faction_crime(owner, loss, 0, "reinforced_container_theft" if int(obj.get("kind", 1)) == 2 else "container_theft", false)
+        _save_privateer_state()
+
+func _collect_cargo_pickup(obj: Dictionary) -> int:
+    var free := maxi(0, _cargo_capacity() - _cargo_used())
+    if free <= 0:
+        loot_banner_text = "CARGO FULL"
+        loot_banner_timer = 0.9
+        return 0
+    var commodity := String(obj.get("commodity", "Ore"))
+    if not cargo.has(commodity):
+        cargo[commodity] = 0
+    var available := maxi(1, int(obj.get("quantity", 1)))
+    var taken := mini(free, available)
+    cargo[commodity] = int(cargo.get(commodity, 0)) + taken
+    obj["quantity"] = available - taken
+    loot_banner_text = "%s +%d" % [commodity.to_upper(), taken]
+    loot_banner_timer = 1.1
+    _save_privateer_state()
+    return taken
+
 func _enemy_body_speed_multiplier(kind: int) -> float:
     if kind == 1:
         return 1.04
@@ -2759,12 +2881,11 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
 
     if kind == 1:
         radius = rng.randf_range(15.0, 19.0)
-        speed *= _enemy_body_speed_multiplier(kind)
         drift = 0.0
     elif kind == 2:
-        radius = rng.randf_range(13.0, 17.0)
-        speed += 55.0
-        drift = rng.randf_range(-18.0, 18.0)
+        radius = rng.randf_range(15.0, 18.0)
+        speed *= 0.96
+        drift = 0.0
     elif kind == 3:
         radius = rng.randf_range(14.0, 18.0)
         speed *= 0.58
@@ -2777,6 +2898,8 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         shoot_clock = rng.randf_range(0.9, 1.4)
 
     var obstacle_hp := _obstacle_max_hp(kind)
+    var owner_faction := _container_owner_for_current_space() if kind == 1 or kind == 2 else ""
+    var territory_state := String(_current_flight_political_context().get("state", "UNCONTROLLED")) if kind == 1 or kind == 2 else ""
     objects.append({
         "id": rng.randi(),
         "type": "hazard",
@@ -2794,7 +2917,9 @@ func _spawn_hazard(difficulty: float, hard_lane: bool, lane_mode: bool = true) -
         "spin": rng.randf_range(-0.18, 0.18) if kind == 0 else 0.0,
         "lane_speed_mult": lane_speed_mult,
         "lane_min": lane_min,
-        "lane_max": lane_max
+        "lane_max": lane_max,
+        "owner_faction": owner_faction,
+        "territory_state": territory_state
     })
 
 func _weapon_interval() -> float:
@@ -2877,17 +3002,12 @@ func _obstacle_max_hp(kind: int) -> float:
 
 func _kill_score(kind: int) -> int:
     match kind:
-        0:
-            return 1
-        1:
-            return 2
-        2:
-            return 5
         3:
             return 4
         4:
             return 7
-    return 1
+    return 0
+
 
 func _spawn_shot(x: float, y: float, vx: float, vy: float, damage: float, homing: bool = false) -> void:
     shots.append({
@@ -2965,17 +3085,27 @@ func _move_shots(delta: float) -> void:
 func _apply_damage_to_hazard(obj: Dictionary, damage: float) -> bool:
     obj.hp = maxf(0.0, float(obj.hp) - damage)
     if float(obj.hp) <= 0.0:
-        score += int(round(float(_kill_score(int(obj.kind))) * _lane_score_multiplier()))
-        if bool(obj.get("boss", false)):
+        var kind := int(obj.kind)
+        var kill_value := _kill_score(kind)
+        if kill_value > 0:
+            score += int(round(float(kill_value) * _lane_score_multiplier()))
+
+        if kind == 0:
+            _queue_asteroid_ore_drop(obj)
+        elif kind == 1 or kind == 2:
+            _handle_container_break(obj)
+        elif bool(obj.get("boss", false)):
             boss_defeated_pending = true
         else:
             _queue_kill_drop(obj)
+
         _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
         _play_sfx(kill_sfx, rng.randf_range(0.92, 1.08), -3.0)
         return true
     if damage >= 1.0:
         _burst(Vector2(obj.x, obj.y), 3, Color("fff4c2"))
     return false
+
 
 func _consume_shot_hit(obj: Dictionary) -> bool:
     for i in range(shots.size() - 1, -1, -1):
@@ -3238,14 +3368,9 @@ func _move_objects(delta: float) -> void:
             if kind == 0:
                 obj.drift = lerpf(float(obj.drift), 0.0, minf(1.0, delta * 0.20))
 
-            elif kind == 1:
-                var square_target := clampf((player_x - float(obj.x)) * 0.19, -28.0, 28.0)
-                obj.drift = lerpf(float(obj.drift), square_target, minf(1.0, delta * 1.0))
-
-            elif kind == 2:
-                var predicted_x := lerpf(player_x, target_x, 0.55)
-                var diamond_target := clampf((predicted_x - float(obj.x)) * 0.72, -82.0, 82.0)
-                obj.drift = lerpf(float(obj.drift), diamond_target, minf(1.0, delta * 2.2))
+            elif kind == 1 or kind == 2:
+                # Cargo containers have no self-propelled lateral movement.
+                obj.drift = 0.0
 
             elif kind == 3:
                 var dodge_dir := _incoming_shot_dodge_direction(obj)
@@ -3307,7 +3432,7 @@ func _move_objects(delta: float) -> void:
 
 
             var near_dist: float = obj.r + 40.0
-            if obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
+            if kind == 0 and obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
                 last_near_ids[obj.id] = true
                 if dx < near_dist:
                     _register_near_miss()
@@ -3342,6 +3467,13 @@ func _move_objects(delta: float) -> void:
                 _burst(Vector2(obj.x, obj.y), 12, Color("a882ff"))
                 _play_sfx(weapon_pickup_sfx, 1.0, -2.0)
                 continue
+        elif obj.type == "cargo":
+            if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
+                var taken := _collect_cargo_pickup(obj)
+                if taken > 0:
+                    _burst(Vector2(obj.x, obj.y), 10, Color("ffd166"))
+                    if int(obj.get("quantity", 0)) <= 0:
+                        continue
         elif obj.type == "extraction":
             if absf(dy) < 19.0:
                 if dx <= obj.half_width - 10.0:
@@ -3503,6 +3635,10 @@ func _draw() -> void:
         var pulse := 0.78 + sin(Time.get_ticks_msec() * 0.035) * 0.12
         _text(near_miss_text, Vector2(92, 608), 26, Color(0.47, 0.97, 1.0, pulse))
 
+    if loot_banner_timer > 0.0:
+        draw_rect(Rect2(Vector2(92, 570), Vector2(206, 30)), Color(0.10, 0.075, 0.025, 0.82), true)
+        _text_center(loot_banner_text, 592.0, 14, Color("ffd166"), 92.0, 298.0)
+
     if finale_banner_timer > 0.0:
         var label := "EXTRACTION INBOUND"
         if extraction_spawned:
@@ -3615,6 +3751,18 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_rect(Rect2(Vector2(p.x - half_width, p.y - 18.0), Vector2(half_width * 2.0, 36.0)), Color(0.3, 0.95, 1.0, 0.08), true)
         return
 
+    if obj.type == "cargo":
+        var cargo_r := float(obj.r)
+        draw_circle(p, cargo_r + 6.0, Color(1.0, 0.75, 0.25, 0.13))
+        draw_rect(Rect2(p - Vector2(cargo_r, cargo_r * 0.72), Vector2(cargo_r * 2.0, cargo_r * 1.44)), Color("9b6a2f"), true)
+        draw_rect(Rect2(p - Vector2(cargo_r - 3.0, cargo_r * 0.72 - 3.0), Vector2((cargo_r - 3.0) * 2.0, cargo_r * 1.44 - 6.0)), Color("2f261c"), true)
+        draw_line(p + Vector2(-cargo_r, 0), p + Vector2(cargo_r, 0), Color("ffd166"), 2.0)
+        _text(String(obj.get("commodity", "Ore")).substr(0, 1).to_upper(), p + Vector2(-4, 5), 12, Color("fff4c2"))
+        var qty := int(obj.get("quantity", 1))
+        if qty > 1:
+            _text("x%d" % qty, p + Vector2(10, 16), 9, Color("ffd166"))
+        return
+
     if obj.type == "weapon":
         draw_circle(p, obj.r + 8.0, Color(0.66, 0.45, 1.0, 0.18))
         draw_circle(p, obj.r, Color("a882ff"))
@@ -3706,6 +3854,10 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_colored_polygon(inner, Color("271719"))
         draw_circle(p, 5.0, Color("ff9b68"))
         draw_line(p + Vector2(0, 2), p + Vector2(0, r4 + 9.0), Color("ffb27c"), 4.0)
+
+    if (kind == 1 or kind == 2) and not String(obj.get("owner_faction", "")).is_empty():
+        var owner_color := _faction_color(String(obj.owner_faction))
+        draw_arc(p, float(obj.r) + 7.0, 0.0, TAU, 24, owner_color, 2.0, true)
 
     if obj.has("hp") and float(obj.hp) < float(obj.max_hp):
         var bw := maxf(18.0, float(obj.r) * 1.8)
