@@ -3421,6 +3421,7 @@ func _move_objects(delta: float) -> void:
         var dx: float = absf(obj.x - player_x)
 
         if obj.type == "hazard":
+            var collision_kind := int(obj.kind)
             if _consume_shot_hit(obj):
                 continue
             var hit_dist: float = obj.r + 14.0
@@ -3432,7 +3433,7 @@ func _move_objects(delta: float) -> void:
 
 
             var near_dist: float = obj.r + 40.0
-            if kind == 0 and obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
+            if collision_kind == 0 and obj.y > player_y + obj.r and not last_near_ids.has(obj.id):
                 last_near_ids[obj.id] = true
                 if dx < near_dist:
                     _register_near_miss()
