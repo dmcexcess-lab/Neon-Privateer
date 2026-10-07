@@ -49,11 +49,12 @@ jobs:
           mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
           cp -R /tmp/templates/templates/. "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/"
 
-      - name: Import Privateer generated art
+      - name: Build native Privateer menu texture
         shell: bash
         run: |
           set -euxo pipefail
-          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --editor --path . --quit
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --script res://tools/BuildPrivateerArt.gd
+          test -s assets/privateer_ui/privateer_ui_atlas.res
 
       - name: Run Privateer smoke test
         shell: bash
@@ -100,7 +101,7 @@ jobs:
           test -f "build/web/${BASENAME}.pck"
 
           # Assert the reconstructed/generated atlas is inside the Web PCK.
-          grep -a -q "privateer_ui_atlas.jpg" "build/web/${BASENAME}.pck"
+          grep -a -q "privateer_ui_atlas.res" "build/web/${BASENAME}.pck"
 
           CLASSIC_BASENAME="neon-driftline-classic-${SHORT_SHA}"
           CLASSIC_LOG=/tmp/classic-export.log
