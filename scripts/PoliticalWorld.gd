@@ -92,7 +92,7 @@ static func _generate_planets(rng: RandomNumberGenerator) -> Array:
         pos.x = clampf(pos.x, WORLD_BOUNDS.position.x + 42.0, WORLD_BOUNDS.end.x - 42.0)
         pos.y = clampf(pos.y, WORLD_BOUNDS.position.y + 42.0, WORLD_BOUNDS.end.y - 42.0)
 
-        var planet_type := PLANET_TYPES[i % PLANET_TYPES.size()] if i < 8 else PLANET_TYPES[rng.randi_range(0, PLANET_TYPES.size() - 1)]
+        var planet_type: String = String(PLANET_TYPES[i % PLANET_TYPES.size()] if i < 8 else PLANET_TYPES[rng.randi_range(0, PLANET_TYPES.size() - 1)])
         var display_name := _unique_planet_name(rng, used_names, i)
         used_names[display_name] = true
         planets.append({
@@ -105,7 +105,7 @@ static func _generate_planets(rng: RandomNumberGenerator) -> Array:
 
 static func _unique_planet_name(rng: RandomNumberGenerator, used: Dictionary, index: int) -> String:
     for attempt in 128:
-        var name := NAME_PREFIX[rng.randi_range(0, NAME_PREFIX.size() - 1)] + NAME_SUFFIX[rng.randi_range(0, NAME_SUFFIX.size() - 1)]
+        var name: String = String(NAME_PREFIX[rng.randi_range(0, NAME_PREFIX.size() - 1)]) + String(NAME_SUFFIX[rng.randi_range(0, NAME_SUFFIX.size() - 1)])
         if not used.has(name):
             return name
     return "World %02d" % (index + 1)
@@ -204,8 +204,8 @@ static func political_context_at(world: Dictionary, pos: Vector2) -> Dictionary:
         })
     ranked.sort_custom(func(a, b): return float(a.value) > float(b.value))
 
-    var strongest := ranked[0] if not ranked.is_empty() else {"id": "", "value": 0.0, "capital_distance": INF, "radius": 1.0}
-    var second := ranked[1] if ranked.size() > 1 else {"id": "", "value": 0.0}
+    var strongest: Dictionary = ranked[0] if not ranked.is_empty() else {"id": "", "value": 0.0, "capital_distance": INF, "radius": 1.0}
+    var second: Dictionary = ranked[1] if ranked.size() > 1 else {"id": "", "value": 0.0}
     var strongest_value := float(strongest.value)
     var second_value := float(second.value)
     var state := STATE_UNCONTROLLED
