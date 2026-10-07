@@ -2364,7 +2364,13 @@ func _initialize() -> void:
 
     # Slice 10 terminal save/load regression: close from a live route, reload
     # the career, and require the exact generated world + active route to resume.
-    var closure_world_signature := _world_signature(scene.political_world)
+    scene._save_all_state()
+    var closure_world_cfg := ConfigFile.new()
+    if closure_world_cfg.load(scene._active_world_path()) != OK:
+        _fail("production closure could not read saved world")
+        return
+    var closure_saved_world: Dictionary = closure_world_cfg.get_value("political", "world", {}).duplicate(true)
+    var closure_world_signature := _world_signature(closure_saved_world)
     var closure_destination := String(scene.destination_planet)
     var closure_origin := String(scene.route_origin)
     var closure_route_wealth := int(scene.route_wealth)
@@ -2377,7 +2383,7 @@ func _initialize() -> void:
         _fail("production closure could not reload active career")
         return
     if _world_signature(scene.political_world) != closure_world_signature:
-        _fail("production save/load changed generated world")
+        _fail("production save/load changed " + _world_difference(closure_saved_world, scene.political_world))
         return
     if not scene.run_paused or not scene.route_active or String(scene.destination_planet) != closure_destination or String(scene.route_origin) != closure_origin:
         _fail("production save/load did not restore active route")
