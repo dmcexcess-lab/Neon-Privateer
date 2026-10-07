@@ -62,7 +62,7 @@ jobs:
           set -euxo pipefail
           LOG=/tmp/privateer-smoke.log
           set +e
-          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --script res://tests/SmokeTest.gd 2>&1 | tee "$LOG"
+          timeout 180s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --script res://tests/SmokeTest.gd 2>&1 | tee "$LOG"
           GODOT_EXIT=${PIPESTATUS[0]}
           set -e
           if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
