@@ -2362,6 +2362,8 @@ func _initialize() -> void:
         return
 
     scene.current_planet = slice9_origin
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    scene.ship_fuel = scene.FUEL_CAPACITY
     var slice9_profiles: Array = scene._contract_destination_profiles(slice9_origin)
     var smuggling_profile: Dictionary = scene._best_smuggling_profile(slice9_origin, slice9_profiles)
     if smuggling_profile.is_empty():
@@ -2523,6 +2525,134 @@ func _initialize() -> void:
     if slice9_saved.load(scene._active_world_path()) != OK or int(slice9_saved.get_value("world", "contract_schema", 0)) != scene.CONTRACT_SCHEMA_VERSION:
         _fail("Slice 9 contract schema did not persist")
         return
+
+    # Special deliveries are timed multi-jump jobs; passengers are multi-jump
+    # and untimed for normal play but abandon after an extreme delay.
+    scene.current_planet = lush
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    var contract_profiles: Array = scene._contract_destination_profiles(lush)
+    var special_profile: Dictionary = scene._best_special_delivery_profile(contract_profiles)
+    if special_profile.is_empty():
+        _fail("max-range world produced no multi-jump special-delivery target")
+        return
+    var special_contract: Dictionary = scene._make_contract(
+        "delivery", lush, special_profile, String(special_profile.get("commodity", "Grain")), false, "__AUTO__", true
+    )
+    if not bool(special_contract.get("special_delivery", false)) or int(special_contract.get("planned_hops", 0)) < 2:
+        _fail("special delivery is not a timed multi-jump contract")
+        return
+    if float(special_contract.get("time_limit", 0.0)) <= 0.0:
+        _fail("special delivery has no deadline")
+        return
+    scene.active_contract = special_contract.duplicate(true)
+    scene._update_active_contract_clock(float(special_contract.time_limit) + 0.1)
+    if not scene.active_contract.is_empty():
+        _fail("expired special delivery remained active")
+        return
+
+    var passenger_profile: Dictionary = scene._best_passenger_profile(contract_profiles, scene._planet_primary_faction(lush))
+    if passenger_profile.is_empty():
+        _fail("max-range world produced no multi-jump passenger target")
+        return
+    var passenger_contract: Dictionary = scene._make_contract("passenger", lush, passenger_profile)
+    if int(passenger_contract.get("planned_hops", 0)) < 2 or float(passenger_contract.get("abandon_after", 0.0)) < 600.0:
+        _fail("passenger contract is not multi-jump with long patience")
+        return
+    scene.active_contract = passenger_contract.duplicate(true)
+    scene.passengers = 1
+    scene._update_active_contract_clock(float(passenger_contract.abandon_after) + 0.1)
+    if not scene.active_contract.is_empty() or scene.passengers != 0:
+        _fail("extremely delayed passenger did not leave")
+        return
+
+    # Bounty target is reached through normal distance-based travel, then the
+    # final arrival becomes a no-forward-scroll boss arena.
+    var bounty_profiles: Array = scene._best_bounty_profiles(contract_profiles, 1)
+    if bounty_profiles.is_empty():
+        _fail("max-range world produced no reachable bounty target")
+        return
+    var bounty_profile: Dictionary = bounty_profiles[0]
+    var boss_kind_by_name := {"trapezoid": 3, "pentagon": 4, "octagon": 5}
+    var boss_hp_by_name: Dictionary = {}
+    for archetype in ["trapezoid", "pentagon", "octagon"]:
+        scene.active_contract = scene._make_contract("bounty", lush, bounty_profile)
+        scene.active_contract["boss_archetype"] = archetype
+        scene.active_contract["difficulty"] = 5
+        scene.destination_planet = String(bounty_profile.destination)
+        scene.route_origin = lush
+        scene.route_active = true
+        scene.playing = true
+        scene.boss_active = false
+        scene.boss_defeated_pending = false
+        scene.objects.clear()
+        scene.enemy_shots.clear()
+        scene._begin_bounty_boss()
+        if not scene.boss_active or scene.objects.size() != 1:
+            _fail("bounty boss arena did not start for " + archetype)
+            return
+        var boss_obj: Dictionary = scene.objects[0]
+        if int(boss_obj.kind) != int(boss_kind_by_name[archetype]):
+            _fail("wrong bounty target geometry for " + archetype)
+            return
+        boss_hp_by_name[archetype] = float(boss_obj.max_hp)
+        if archetype == "pentagon" and absf(float(boss_obj.speed)) > 0.001:
+            _fail("pentagon bounty platform is not stationary")
+            return
+        if archetype == "octagon" and not boss_obj.has("aux_shoot_clock"):
+            _fail("octagon flagship is missing its secondary weapon")
+            return
+        scene.boss_active = false
+        scene.objects.clear()
+        scene.enemy_shots.clear()
+
+    if float(boss_hp_by_name["octagon"]) <= float(boss_hp_by_name["pentagon"]) or float(boss_hp_by_name["pentagon"]) <= float(boss_hp_by_name["trapezoid"]):
+        _fail("bounty boss HP hierarchy is not trapezoid < pentagon < octagon")
+        return
+
+    scene.active_contract = scene._make_contract("bounty", lush, bounty_profile)
+    scene.active_contract["boss_archetype"] = "octagon"
+    scene.active_contract["difficulty"] = 5
+    scene.destination_planet = String(bounty_profile.destination)
+    scene.route_origin = lush
+    scene.route_active = true
+    scene.playing = true
+    scene.boss_active = false
+    scene.bounty_completed_this_route = false
+    scene.objects.clear()
+    scene.enemy_shots.clear()
+    scene._handle_route_end()
+    if not scene.boss_active or scene.current_planet == scene.destination_planet:
+        _fail("final bounty arrival did not stop before landing for boss fight")
+        return
+    scene.elapsed = scene.route_duration
+    scene.world_scroll = 321.0
+    scene.neutral_spawn_clock = -1.0
+    scene.pickup_clock = -1.0
+    scene.repair_clock = -1.0
+    scene.current_weapon = "none"
+    scene.dash_cooldown = 0.0
+    scene.dash_timer = 0.0
+    scene.player_y = scene.PLAYER_Y
+    var boss_elapsed_before := float(scene.elapsed)
+    var boss_scroll_before := float(scene.world_scroll)
+    scene._dash()
+    scene._process(0.05)
+    if absf(scene.elapsed - boss_elapsed_before) > 0.0001 or absf(scene.world_scroll - boss_scroll_before) > 0.0001:
+        _fail("bounty arena still advances forward travel")
+        return
+    if scene.player_y >= scene.PLAYER_Y:
+        _fail("dash stopped working in bounty arena")
+        return
+    if scene.objects.size() != 1:
+        _fail("ordinary spawning continued during bounty arena")
+        return
+    scene.boss_active = false
+    scene.route_active = false
+    scene.playing = false
+    scene.active_contract.clear()
+    scene.objects.clear()
+    scene.enemy_shots.clear()
+    scene.current_weapon = "none"
 
     # Jump logistics: route length drives time, every baseline flight stays
     # under 30s before ship-speed acceleration, and ±7% route variance matters.
@@ -2722,6 +2852,8 @@ func _initialize() -> void:
         return
     var delivery_reward: int = int(scene.active_contract.reward)
     var credits_before_delivery: int = int(scene.research_credits)
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    scene.ship_fuel = scene.FUEL_CAPACITY
     if not scene._start_route(delivery_dest):
         _fail("could not launch direct delivery route")
         return
@@ -2761,8 +2893,15 @@ func _initialize() -> void:
     scene.active_contract.clear()
     scene._fail_route("TEST RESET")
     scene.current_planet = scene.planet_names[0]
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    scene.ship_fuel = scene.FUEL_CAPACITY
     var dash_neighbor: Array[String] = scene.PoliticalWorld.neighbors(scene.political_world, scene.current_planet)
-    if not scene._start_route(dash_neighbor[0]):
+    var dash_target := ""
+    for dash_candidate in dash_neighbor:
+        if int(scene.PoliticalWorld.direct_route(scene.political_world, scene.current_planet, dash_candidate).get("distance", 999)) <= scene._jump_range():
+            dash_target = dash_candidate
+            break
+    if dash_target.is_empty() or not scene._start_route(dash_target):
         _fail("could not start route for arcade regression")
         return
     scene.dash_cooldown = 0.0
