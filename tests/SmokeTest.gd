@@ -1951,6 +1951,106 @@ func _initialize() -> void:
     volcanic = scene.PoliticalWorld.find_planet_by_type(scene.political_world, "VOLCANIC")
     scene.current_planet = lush
 
+    # Bank/account acceptance: carried cash is distinct from protected bank money.
+    scene.research_credits = 1000
+    scene.bank_balance = 0
+    var deposited: int = int(scene._deposit_all_cash())
+    if deposited != 1000 or scene.research_credits != 0 or scene.bank_balance != 1000:
+        _fail("deposit-all did not move carried cash into protected bank balance")
+        return
+    var withdrawn: int = int(scene._withdraw_all_bank())
+    if withdrawn != 1000 or scene.research_credits != 1000 or scene.bank_balance != 0:
+        _fail("withdraw-all did not return bank balance to carried cash")
+        return
+
+    scene.bank_balance = 1000
+    var interest_cycles_before: int = int(scene.bank_interest_cycles)
+    var interest_paid: int = int(scene._apply_bank_interest())
+    if interest_paid != 30 or scene.bank_balance != 1030 or scene.bank_interest_cycles != interest_cycles_before + 1:
+        _fail("bank did not apply exact 3 percent flight-cycle interest")
+        return
+
+    # Bank market pages expose 12 legal and 12 grey goods in phone-sized pages.
+    scene.bank_view = "green"
+    scene.bank_market_page = 0
+    if scene._bank_market_page_count() != 2 or scene._bank_visible_goods().size() != 6:
+        _fail("green market pagination is not 12 goods across two six-row pages")
+        return
+    for good in scene._bank_visible_goods():
+        if not scene.legal_commodity_names.has(good) or scene.grey_commodity_names.has(good):
+            _fail("green market exposed non-legal commodity")
+            return
+    scene.bank_view = "grey"
+    scene.bank_market_page = 1
+    if scene._bank_market_page_count() != 2 or scene._bank_visible_goods().size() != 6:
+        _fail("grey market pagination is not 12 goods across two six-row pages")
+        return
+    for good in scene._bank_visible_goods():
+        if not scene.grey_commodity_names.has(good):
+            _fail("grey market exposed green commodity")
+            return
+
+    # Local day trading has live docked market ticks; no flight is required.
+    scene.bank_view = "green"
+    scene.bank_market_page = 0
+    scene.market_open = true
+    scene.playing = false
+    scene.run_paused = false
+    scene.docked_market_clock = scene.DOCKED_MARKET_TICK_SECONDS - 0.05
+    var local_tick_before: int = int(scene.economy_tick)
+    scene.rng.seed = 88123
+    scene._process(0.10)
+    if scene.economy_tick != local_tick_before + 1:
+        _fail("docked bank market did not advance local day-trading prices")
+        return
+    scene.market_open = false
+
+    # Currency market invests directly in factions and consumes no cargo space.
+    scene._ensure_currency_schema()
+    var currency_ids: Array[String] = scene._currency_faction_ids()
+    if currency_ids.size() != scene.political_world.factions.size():
+        _fail("currency market does not list every faction")
+        return
+    var currency_faction: String = currency_ids[0]
+    var currency_price: int = int(scene._currency_buy_price(currency_faction))
+    var cargo_before_currency: int = int(scene._cargo_used())
+    scene.research_credits = currency_price + 500
+    var cash_before_currency: int = int(scene.research_credits)
+    if not scene._buy_currency(currency_faction):
+        _fail("could not buy faction currency")
+        return
+    if int(scene.currency_holdings.get(currency_faction, 0)) != 1 or scene.research_credits != cash_before_currency - currency_price:
+        _fail("faction currency buy did not update cash/position")
+        return
+    if scene._cargo_used() != cargo_before_currency:
+        _fail("faction currency position consumed cargo capacity")
+        return
+    var cash_before_currency_sale: int = int(scene.research_credits)
+    if not scene._sell_currency(currency_faction) or int(scene.currency_holdings.get(currency_faction, 0)) != 0 or scene.research_credits <= cash_before_currency_sale:
+        _fail("faction currency sell did not liquidate position")
+        return
+
+    # Ship destruction loses carried cash only; protected bank balance survives.
+    scene.research_credits = 777
+    scene.bank_balance = 1234
+    scene.route_active = true
+    scene.playing = true
+    scene.active_contract.clear()
+    scene._fail_route("TEST SHIP LOSS", true)
+    if scene.research_credits != 0 or scene.bank_balance != 1234:
+        _fail("ship loss did not wipe only unbanked cash")
+        return
+    scene.research_credits = 555
+    scene.route_active = true
+    scene.playing = true
+    scene._fail_route("TEST ABORT", false)
+    if scene.research_credits != 555 or scene.bank_balance != 1234:
+        _fail("non-death route failure incorrectly destroyed cash or bank balance")
+        return
+    scene.bank_balance = 0
+    scene.bank_interest_cycles = 0
+    scene.bank_last_interest = 0
+
     # Market prices remain stock-sensitive on generated planets.
     scene.research_credits = 5000
     scene.cargo["Grain"] = 0
