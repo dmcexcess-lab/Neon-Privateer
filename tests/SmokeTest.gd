@@ -634,7 +634,7 @@ func _initialize() -> void:
 
     # Basic arcade controls remain intact.
     scene.active_contract.clear()
-    scene._fail_route(false)
+    scene._fail_route("TEST RESET")
     scene.current_planet = scene.planet_names[0]
     var dash_neighbor: Array[String] = scene.PoliticalWorld.neighbors(scene.political_world, scene.current_planet)
     if not scene._start_route(dash_neighbor[0]):
@@ -647,5 +647,5 @@ func _initialize() -> void:
         _fail("dash mechanic changed during political slice")
         return
 
-    print("PRIVATEER SMOKE OK")
+    print("NEON PRIVATEER SMOKE OK")
     quit(0)
