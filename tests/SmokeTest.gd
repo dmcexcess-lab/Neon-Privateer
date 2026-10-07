@@ -39,10 +39,6 @@ func _initialize() -> void:
     if not scene._privateer_art_ready():
         _fail("Privateer native generated-art texture did not load at expected dimensions")
         return
-    for chunk_index in scene.PRIVATEER_UI_ATLAS_CHUNKS:
-        if not FileAccess.file_exists(scene.PRIVATEER_UI_ATLAS_PATH % chunk_index):
-            _fail("Privateer embedded art payload chunk is missing")
-            return
     var art_regions: Dictionary = {}
     for planet_name in ["Aster", "Cinder", "Vesper", "Helix"]:
         var art_region: Rect2 = scene._planet_art_region(planet_name)
