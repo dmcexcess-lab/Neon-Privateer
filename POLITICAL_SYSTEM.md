@@ -660,6 +660,7 @@ Career world saves persist:
 - bank-interest cycle state
 - faction-currency holdings and market factors
 - cargo/contracts/passengers/economy state, including migrated contract commodity IDs
+- ship-loss reset state is persisted immediately after destruction so reload cannot restore destroyed upgrades, weapons, cargo, passengers, or cash
 
 Route political segmentation and route-wealth metadata are saved with the generated graph and can also be deterministically reproduced from the same world.
 
@@ -735,6 +736,22 @@ ACCOUNT remains cash/savings rather than an investment market. The three investa
 - **CURRENCY** — separate instruments for each generated superpower.
 
 Green/Grey positions and faction currency positions use no cargo capacity and survive ship destruction. Carried cash still uses the legacy `research_credits` field; the separate bank balance remains protected and earns 3% once per successful completed flight.
+
+### Ship destruction / respawn contract
+
+A destroyed ship is a total physical/progression loss for that hull. On death:
+
+- all carried cash is lost;
+- all ordinary cargo is lost;
+- any reserved delivery/passenger state is cleared;
+- all passengers are lost;
+- all ship upgrade levels reset to zero;
+- all starting-weapon unlocks are lost;
+- starting/current weapon resets to none;
+- replacement ship returns to baseline hull stats: two hits and zero shields;
+- the player respawns docked at the last planet successfully landed on, which is the in-flight `route_origin`.
+
+The bank balance, Green/Grey index holdings, faction-currency holdings, faction relation/heat, empire macroeconomy/war state, generated markets, and the persistent galaxy survive. A manual route abort is not a ship destruction and therefore does not trigger this reset.
 
 The Green/Grey index transaction ledger records the **sum of actual simulated shipment value** in its category each economy period. Index price movement derives from the underlying commodity basket plus change in summed trade value. The Green index has a tighter spread and ±1.2% period movement cap. Grey has a wider spread and ±8.5% cap because its underlying commodities are more volatile and active war adds demand pressure. There is no extra cosmetic RNG in either aggregate index.
 
