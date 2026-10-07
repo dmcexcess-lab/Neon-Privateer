@@ -277,11 +277,12 @@ func _initialize() -> void:
         "_route_political_segment_at_progress", "_direct_route_spec",
         "_route_political_percentages_for_spec", "_route_political_percentages", "_route_pirate_exposure",
         "_market_price", "_simulate_economy", "_buy_commodity", "_sell_commodity", "_route_spec",
+        "_jump_range", "_fuel_required_for_jump", "_refuel_cost", "_refuel_ship", "_jump_route_spec",
         "_planet_primary_faction", "_contract_issuer_name", "_contract_destination_profiles",
-        "_best_legal_delivery_profile", "_best_smuggling_profile", "_best_passenger_profile",
-        "_best_bounty_profiles", "_contract_reward_breakdown", "_contract_role",
+        "_best_legal_delivery_profile", "_best_smuggling_profile", "_best_passenger_profile", "_best_special_delivery_profile",
+        "_best_bounty_profiles", "_bounty_archetype_for_difficulty", "_contract_reward_breakdown", "_contract_role",
         "_contract_relation_reward", "_make_contract", "_upgrade_contract_record",
-        "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract",
+        "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract", "_fail_active_contract", "_update_active_contract_clock",
         "_route_level_for", "_route_duration_for", "_start_route",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
         "_route_wealth_encounter_multiplier", "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
@@ -334,10 +335,10 @@ func _initialize() -> void:
     var primary_touch_rects: Array = [
         scene.PROFILE_CONTINUE_RECT, scene.PROFILE_NEW_RECT,
         scene.HUB_TRAVEL_RECT, scene.HUB_MARKET_RECT, scene.HUB_CONTRACTS_RECT, scene.HUB_UPGRADES_RECT, scene.HUB_CAREERS_RECT,
-        scene.SUBMENU_BACK_RECT, scene.SYSTEM_MAP_BACK_RECT, scene.SYSTEM_FLY_RECT,
+        scene.SUBMENU_BACK_RECT, scene.SYSTEM_MAP_BACK_RECT, scene.SYSTEM_FLY_RECT, scene.SYSTEM_REFUEL_RECT,
         scene.LEFT_CONTROL_RECT, scene.DASH_RECT, scene.RIGHT_CONTROL_RECT,
         scene.PAUSE_RESUME_RECT, scene.PAUSE_QUIT_RECT,
-        scene.RESEARCH_SHIP_RECT, scene.RESEARCH_DASH_RECT, scene.RESEARCH_DAMAGE_RECT,
+        scene.RESEARCH_JUMP_RECT, scene.RESEARCH_SHIP_RECT, scene.RESEARCH_DASH_RECT, scene.RESEARCH_DAMAGE_RECT,
         scene.RESEARCH_HITS_RECT, scene.RESEARCH_SHIELD_RECT, scene.RESEARCH_WEAPONS_RECT
     ]
     for control_variant in primary_touch_rects:
