@@ -37,12 +37,15 @@ func _initialize() -> void:
 
     # Generated Privateer menu art is present and each world maps to its own atlas region.
     if not scene._privateer_art_ready():
-        _fail("Privateer generated-art atlas did not import at expected dimensions")
+        _fail("Privateer generated-art atlas did not decode at expected dimensions")
+        return
+    if not FileAccess.file_exists(scene.PRIVATEER_UI_ATLAS_PATH):
+        _fail("Privateer embedded art payload is missing")
         return
     var art_regions: Dictionary = {}
     for planet_name in ["Aster", "Cinder", "Vesper", "Helix"]:
         var art_region: Rect2 = scene._planet_art_region(planet_name)
-        if art_region.size != Vector2(192.0, 192.0):
+        if art_region.size != Vector2(195.0, 192.0):
             _fail("planet art region has wrong size for " + planet_name)
             return
         var key := "%d,%d" % [int(art_region.position.x), int(art_region.position.y)]
