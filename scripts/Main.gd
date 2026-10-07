@@ -1915,13 +1915,13 @@ func _contract_issuer_name(faction_id: String, smuggling: bool = false) -> Strin
 func _contract_destination_profiles(origin: String) -> Array:
     var profiles: Array = []
     for destination in _other_planets(origin):
-        var spec := _route_spec(origin, destination)
-        if spec.get("path", []).is_empty():
+        var jump_spec := _jump_route_spec(origin, destination)
+        if jump_spec.get("path", []).is_empty():
             continue
-        var pct := _route_political_percentages_for_spec(spec)
+        var pct := _route_political_percentages_for_spec(jump_spec)
         profiles.append({
             "destination": destination,
-            "spec": spec,
+            "spec": jump_spec,
             "pirate_exposure": clampf(float(pct.get("CONTESTED", 0.0)) + float(pct.get("UNCONTROLLED", 0.0)), 0.0, 1.0),
             "destination_faction": _planet_primary_faction(destination),
             "destination_state": String(_get_political_context_at(_system_planet_world_position(destination)).get("state", "UNCONTROLLED"))
