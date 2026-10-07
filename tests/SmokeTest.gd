@@ -37,6 +37,10 @@ func _world_difference(a: Dictionary, b: Dictionary) -> String:
         return "schema"
     if int(a.get("seed", 0)) != int(b.get("seed", 0)):
         return "seed"
+    if absf(float(a.get("control_threshold", 0.0)) - float(b.get("control_threshold", 0.0))) > 0.000001:
+        return "control threshold"
+    if absf(float(a.get("contest_ratio", 0.0)) - float(b.get("contest_ratio", 0.0))) > 0.000001:
+        return "contest ratio"
     var ap: Array = a.get("planets", [])
     var bp: Array = b.get("planets", [])
     if ap.size() != bp.size():
@@ -134,7 +138,7 @@ func _initialize() -> void:
         "_load_privateer_ui_art", "_privateer_art_ready", "_planet_art_region",
         "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel",
         "_system_planet_world_position", "_system_planet_position",
-        "_system_planet_hit_rect", "_system_route_pairs",
+        "_system_planet_hit_rect", "_system_planet_at_screen", "_system_route_pairs",
         "_default_travel_selection", "_set_travel_selection",
         "_reset_system_map_view", "_pan_system_map", "_zoom_system_map",
         "_map_world_to_screen", "_map_screen_to_world",
@@ -230,8 +234,14 @@ func _initialize() -> void:
         _fail("superpower count is outside 2-4")
         return
     var capitals: Dictionary = {}
+    var faction_names: Dictionary = {}
     var law_profiles: Dictionary = {}
     for faction in factions:
+        var faction_name: String = String(faction.name)
+        if faction_names.has(faction_name):
+            _fail("duplicate generated faction name")
+            return
+        faction_names[faction_name] = true
         var capital_id: String = String(faction.capital_id)
         if not ids.has(capital_id) or capitals.has(capital_id):
             _fail("invalid or duplicate faction capital")
@@ -338,6 +348,9 @@ func _initialize() -> void:
             return
         if not scene._system_planet_hit_rect(pid).has_point(screen_pos):
             _fail("map hit target misses planet center")
+            return
+        if scene._system_planet_at_screen(screen_pos) != pid:
+            _fail("map nearest-node selection does not resolve planet center")
             return
 
     var original_pan: Vector2 = scene.system_map_pan
