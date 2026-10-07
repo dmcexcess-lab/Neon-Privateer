@@ -34,6 +34,13 @@ const GREY_WEAPONS := ["Small Arms", "Heavy Weapons", "Explosives", "Military Te
 const GREY_NARCOTICS := ["Stims", "Sedatives", "Euphorics", "Neurodust"]
 const GREY_ENTERTAINMENT := ["Holovids", "Sim Chips", "VR Experiences", "Unlicensed Media"]
 const GREY_COMMODITIES := GREY_WEAPONS + GREY_NARCOTICS + GREY_ENTERTAINMENT
+const ALL_COMMODITIES := LEGAL_COMMODITIES + GREY_COMMODITIES
+const SPECIALTY_BY_TYPE := {
+    "LUSH": ["Grain", "Protein", "Produce", "Luxury Food", "Stims", "Sedatives", "Euphorics", "Neurodust"],
+    "VOLCANIC": ["Iron", "Copper", "Titanium", "Rare Alloys", "Explosives", "Heavy Weapons"],
+    "FROZEN": ["First Aid", "Antibiotics", "Vaccines", "Regenerative Medicine", "Holovids", "VR Experiences"],
+    "INDUSTRIAL": ["Copper", "Titanium", "Small Arms", "Heavy Weapons", "Military Tech", "Sim Chips", "VR Experiences", "Unlicensed Media"]
+}
 # Compatibility name retained for encounter/scan code. All grey goods are
 # potentially restricted; the actual legality is faction + item specific.
 const RESTRICTED_COMMODITIES := GREY_COMMODITIES
@@ -82,7 +89,9 @@ static func generate(seed_value: int) -> Dictionary:
         "factions": factions,
         "control_threshold": 0.08,
         "contest_ratio": 0.50,
-        "routes": []
+        "routes": [],
+        "wars": [],
+        "macro_tick": 0
     }
     _calibrate_political_thresholds(world)
     world.routes = _build_route_network(world)
@@ -177,11 +186,14 @@ static func _generate_planets(rng: RandomNumberGenerator) -> Array:
         var planet_type: String = String(PLANET_TYPES[i % PLANET_TYPES.size()] if i < 8 else PLANET_TYPES[rng.randi_range(0, PLANET_TYPES.size() - 1)])
         var display_name := _unique_planet_name(rng, used_names, i)
         used_names[display_name] = true
+        var specialty_pool: Array = SPECIALTY_BY_TYPE.get(planet_type, ALL_COMMODITIES)
+        var specialty := String(specialty_pool[rng.randi_range(0, specialty_pool.size() - 1)])
         planets.append({
             "id": "p%02d" % i,
             "name": display_name,
             "type": planet_type,
-            "pos": pos
+            "pos": pos,
+            "commodity_specialty": specialty
         })
     return planets
 
@@ -271,6 +283,13 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             "capital_id": capital_id,
             "radius": influence_radius,
             "strength": faction_strength,
+            "base_radius": influence_radius,
+            "base_strength": faction_strength,
+            "treasury": 900.0 + float(level_from_strength(faction_strength)) * 250.0,
+            "military": 90.0 + float(level_from_strength(faction_strength)) * 28.0,
+            "trade_volume": 0.0,
+            "war_weariness": 0.0,
+            "war_cooldown": 0,
             "level": level_from_strength(faction_strength),
             "relation": 0,
             "heat": 0,
@@ -285,6 +304,69 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             }
         })
     return factions
+
+static func specialty_for_planet(world: Dictionary, planet_id: String) -> String:
+    var planet := planet_record(world, planet_id)
+    var existing := String(planet.get("commodity_specialty", ""))
+    if not existing.is_empty():
+        return existing
+    var planet_type_value := String(planet.get("type", "LUSH"))
+    var pool: Array = SPECIALTY_BY_TYPE.get(planet_type_value, ALL_COMMODITIES)
+    if pool.is_empty():
+        return "Grain"
+    var seed_value := int(world.get("seed", 1))
+    var index := posmod(_stable_text_hash("%d|%s|%s" % [seed_value, planet_id, planet_type_value]), pool.size())
+    return String(pool[index])
+
+static func ensure_empire_schema(world: Dictionary) -> bool:
+    var changed := false
+    var planets: Array = world.get("planets", [])
+    for i in planets.size():
+        var planet: Dictionary = planets[i]
+        if String(planet.get("commodity_specialty", "")).is_empty():
+            var planet_type_value := String(planet.get("type", "LUSH"))
+            var pool: Array = SPECIALTY_BY_TYPE.get(planet_type_value, ALL_COMMODITIES)
+            var seed_value := int(world.get("seed", 1))
+            var index := posmod(_stable_text_hash("%d|%s|%s" % [seed_value, String(planet.get("id", i)), planet_type_value]), pool.size())
+            planet["commodity_specialty"] = String(pool[index])
+            planets[i] = planet
+            changed = true
+    world["planets"] = planets
+
+    var factions: Array = world.get("factions", [])
+    for i in factions.size():
+        var faction: Dictionary = factions[i]
+        if not faction.has("base_radius"):
+            faction["base_radius"] = float(faction.get("radius", 900.0))
+            changed = true
+        if not faction.has("base_strength"):
+            faction["base_strength"] = float(faction.get("strength", 1.0))
+            changed = true
+        if not faction.has("treasury"):
+            faction["treasury"] = 900.0 + float(faction_level(world, String(faction.get("id", "")))) * 250.0
+            changed = true
+        if not faction.has("military"):
+            faction["military"] = 90.0 + float(faction_level(world, String(faction.get("id", "")))) * 28.0
+            changed = true
+        if not faction.has("trade_volume"):
+            faction["trade_volume"] = 0.0
+            changed = true
+        if not faction.has("war_weariness"):
+            faction["war_weariness"] = 0.0
+            changed = true
+        if not faction.has("war_cooldown"):
+            faction["war_cooldown"] = 0
+            changed = true
+        factions[i] = faction
+    world["factions"] = factions
+    if not world.has("wars"):
+        world["wars"] = []
+        changed = true
+    if not world.has("macro_tick"):
+        world["macro_tick"] = 0
+        changed = true
+    return changed
+
 
 static func planet_record(world: Dictionary, planet_id: String) -> Dictionary:
     for planet in world.get("planets", []):
@@ -858,6 +940,33 @@ static func _assign_route_wealth(world: Dictionary, routes: Array) -> void:
         route["core_proximity"] = core_proximity
         route["traffic_score"] = traffic_score
         route["wealth"] = clampi(1 + int(round(wealth_signal * 4.0)), 1, 5)
+
+static func refresh_route_politics(world: Dictionary) -> void:
+    var routes: Array = world.get("routes", [])
+    for i in routes.size():
+        var route: Dictionary = routes[i]
+        route["segments"] = _segment_route(world, String(route.get("a", "")), String(route.get("b", "")))
+        route["danger"] = _danger_from_segments(route["segments"])
+        routes[i] = route
+    _assign_route_wealth(world, routes)
+    world["routes"] = routes
+
+static func war_key(a: String, b: String) -> String:
+    return a + "|" + b if a < b else b + "|" + a
+
+static func factions_at_war(world: Dictionary, a: String, b: String) -> bool:
+    var key := war_key(a, b)
+    for war in world.get("wars", []):
+        if String(war.get("key", "")) == key:
+            return true
+    return false
+
+static func active_war_for_faction(world: Dictionary, faction_id: String) -> Dictionary:
+    for war in world.get("wars", []):
+        if String(war.get("a", "")) == faction_id or String(war.get("b", "")) == faction_id:
+            return war
+    return {}
+
 
 static func ensure_route_wealth(world: Dictionary) -> bool:
     var routes: Array = world.get("routes", [])
