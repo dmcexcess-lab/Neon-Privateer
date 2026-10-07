@@ -304,6 +304,9 @@ func _initialize() -> void:
         "_career_slot_exists", "_career_slot_summary", "_open_profile_menu",
         "_load_privateer_ui_art", "_privateer_art_ready", "_planet_art_region",
         "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel",
+        "_commodity_visual_color", "_draw_soft_glow", "_draw_engine_flame",
+        "_draw_hull_panel", "_draw_corner_brackets", "_active_boss_object",
+        "_draw_player", "_draw_object", "_draw_hud", "_draw_controls",
         "_system_planet_world_position", "_system_planet_position",
         "_system_planet_hit_rect", "_system_planet_at_screen", "_system_route_pairs",
         "_default_travel_selection", "_set_travel_selection",
@@ -319,6 +322,9 @@ func _initialize() -> void:
             _fail("missing method " + method_name)
             return
 
+    if scene.GRAPHICS_REVISION < 2:
+        _fail("Privateer graphics overhaul revision is missing")
+        return
     if not scene._privateer_art_ready():
         _fail("Privateer native generated-art texture did not load")
         return
