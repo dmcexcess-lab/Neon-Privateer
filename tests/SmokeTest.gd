@@ -2362,5 +2362,30 @@ func _initialize() -> void:
         _fail("dash mechanic changed during political slice")
         return
 
+    # Slice 10 terminal save/load regression: close from a live route, reload
+    # the career, and require the exact generated world + active route to resume.
+    var closure_world_signature := _world_signature(scene.political_world)
+    var closure_destination := String(scene.destination_planet)
+    var closure_origin := String(scene.route_origin)
+    var closure_route_wealth := int(scene.route_wealth)
+    scene.elapsed = 5.25
+    scene._pause_run()
+    if not scene.run_paused:
+        _fail("production closure could not pause/save live route")
+        return
+    if not scene._load_career(1):
+        _fail("production closure could not reload active career")
+        return
+    if _world_signature(scene.political_world) != closure_world_signature:
+        _fail("production save/load changed generated world")
+        return
+    if not scene.run_paused or not scene.route_active or String(scene.destination_planet) != closure_destination or String(scene.route_origin) != closure_origin:
+        _fail("production save/load did not restore active route")
+        return
+    if int(scene.route_wealth) != closure_route_wealth or absf(float(scene.elapsed) - 5.25) > 0.01:
+        _fail("production save/load changed route balance/progress")
+        return
+
+    print("NEON PRIVATEER PRODUCTION CLOSURE OK")
     print("NEON PRIVATEER SMOKE OK")
     quit(0)
