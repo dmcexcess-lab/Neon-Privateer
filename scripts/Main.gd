@@ -1808,7 +1808,7 @@ func _refuel_ship() -> int:
     var missing := maxi(0, FUEL_CAPACITY - ship_fuel)
     if missing <= 0:
         return 0
-    var affordable := mini(missing, research_credits / FUEL_COST_PER_UNIT)
+    var affordable: int = mini(missing, int(research_credits / FUEL_COST_PER_UNIT))
     if affordable <= 0:
         return 0
     var cost := affordable * FUEL_COST_PER_UNIT
@@ -5697,7 +5697,7 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_line(p + Vector2(0, 3), p + Vector2(0, r3 + 8.0), accent3, 3.0)
         draw_circle(p, 4.0, accent3)
 
-    else:
+    elif kind == 4:
         var r4 := float(obj.r)
         var role4 := String(obj.get("encounter_role", ""))
         var body4 := Color("88413b")
@@ -5722,6 +5722,23 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_circle(p, 5.0, accent4)
         draw_line(p + Vector2(0, 2), p + Vector2(0, r4 + 9.0), accent4, 4.0)
 
+    else:
+        var r5 := float(obj.r)
+        draw_circle(p, r5 + 12.0, Color(1.0, 0.22, 0.28, 0.18))
+        var oct := PackedVector2Array()
+        for i in 8:
+            var a5 := -PI * 0.5 + TAU * float(i) / 8.0
+            oct.append(p + Vector2(cos(a5), sin(a5)) * r5)
+        draw_colored_polygon(oct, Color("702846"))
+        var oct_inner := PackedVector2Array()
+        for i in 8:
+            var a6 := -PI * 0.5 + TAU * float(i) / 8.0
+            oct_inner.append(p + Vector2(cos(a6), sin(a6)) * r5 * 0.58)
+        draw_colored_polygon(oct_inner, Color("241123"))
+        draw_circle(p, 8.0, Color("ff6a8f"))
+        draw_line(p + Vector2(-r5 * 0.65, 0), p + Vector2(r5 * 0.65, 0), Color("ffb0c0"), 4.0)
+        draw_line(p + Vector2(0, -r5 * 0.65), p + Vector2(0, r5 * 0.65), Color("ffb0c0"), 4.0)
+
     if (kind == 1 or kind == 2) and not String(obj.get("owner_faction", "")).is_empty():
         var owner_color := _faction_color(String(obj.owner_faction))
         draw_arc(p, float(obj.r) + 7.0, 0.0, TAU, 24, owner_color, 2.0, true)
@@ -5743,7 +5760,8 @@ func _draw_hud() -> void:
     _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
 
     if boss_active:
-        _text("BOUNTY BOSS", Vector2(137, 146), 16, Color("ff9a6b"))
+        var boss_name := String(active_contract.get("boss_archetype", "target")).to_upper()
+        _text("BOUNTY %s" % boss_name, Vector2(112, 146), 15, Color("ff9a6b"))
     elif police_scan_active:
         _text("CARGO SCAN %.1fs" % police_scan_timer, Vector2(121, 146), 15, Color("ffd166"))
     elif police_scan_result_timer > 0.0 and not police_scan_result_text.is_empty():
@@ -5931,7 +5949,7 @@ func _draw_title() -> void:
     _draw_planet_art(current_planet, Rect2(126.0, 78.0, 138.0, 138.0), 1.0)
     _text_center(_planet_display_name(current_planet), 244.0, 25, Color("f0fbff"), 60.0, 330.0)
     _text_center("CASH %07d   BANK %07d" % [research_credits, bank_balance], 276.0, 15, Color("ffd166"), 38.0, 352.0)
-    _text_center("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], 304.0, 14, Color("bdeef4"), 48.0, 342.0)
+    _text_center("CARGO %d/%d  PAX %d/%d  FUEL %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity(), ship_fuel, FUEL_CAPACITY], 304.0, 11, Color("bdeef4"), 38.0, 352.0)
     _text_center(_planet_crime_summary(current_planet), 324.0, 10, Color("8ea9b8"), 40.0, 350.0)
 
     if not active_contract.is_empty():
@@ -5963,7 +5981,14 @@ func _draw_travel_menu() -> void:
     _draw_menu_art(ART_BG_OPS, 0.78)
     _draw_menu_panel(Rect2(16.0, 14.0, 358.0, 78.0), 0.80)
     _text_center("SYSTEM MAP", 50.0, 27, Color("77f7ff"), 24.0, 366.0)
-    _text_center("CURRENT: %s" % _planet_display_name(current_planet).to_upper(), 76.0, 12, Color("bdeef4"), 24.0, 366.0)
+    _text("DOCKED %s" % _short_map_label(_planet_display_name(current_planet).to_upper(), 13), Vector2(24.0, 76.0), 9, Color("bdeef4"))
+    _text("J%d  F%d/%d" % [_jump_range(), ship_fuel, FUEL_CAPACITY], Vector2(158.0, 76.0), 9, Color("ffd166"))
+    var refuel_cost := _refuel_cost()
+    var refuel_label := "FULL" if refuel_cost <= 0 else ("FUEL %d" % refuel_cost)
+    var can_refuel := refuel_cost > 0 and research_credits >= FUEL_COST_PER_UNIT
+    draw_rect(SYSTEM_REFUEL_RECT, Color(0.04, 0.18, 0.15, 0.96) if can_refuel else Color(0.05, 0.06, 0.08, 0.96), true)
+    draw_rect(SYSTEM_REFUEL_RECT, Color("6bffb0") if can_refuel else Color("46515c"), false, 2.0)
+    _text_center(refuel_label, SYSTEM_REFUEL_RECT.position.y + 22.0, 9, Color("f0fbff") if can_refuel else Color("68737d"), SYSTEM_REFUEL_RECT.position.x, SYSTEM_REFUEL_RECT.end.x)
 
     draw_rect(SYSTEM_MAP_RECT, Color(0.004, 0.012, 0.030, 0.90), true)
     draw_rect(SYSTEM_MAP_RECT, Color(0.25, 0.78, 0.96, 0.30), false, 1.5)
@@ -6261,8 +6286,9 @@ func _draw_research() -> void:
     _draw_menu_panel(Rect2(22.0, 20.0, 346.0, 135.0), 0.76)
     _text_center("SHIP UPGRADES", 74.0, 31, Color("b56cff"), 26.0, 364.0)
     _text_center("CASH %07d" % research_credits, 112.0, 18, Color("ffd166"), 26.0, 364.0)
-    _text_center("PERMANENT SHIP MODS", 145.0, 15, Color("8ea9b8"), 26.0, 364.0)
-    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% scroll, +8% near score")
+    _text_center("SHIP MODS — LOST ON DESTRUCTION", 145.0, 12, Color("8ea9b8"), 26.0, 364.0)
+    _draw_research_button(RESEARCH_JUMP_RECT, "jump", "MAX JUMP RANGE", "+1 route distance per jump")
+    _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SHIP SPEED", "+4% travel speed, +8% near score")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "+35px / +40 speed / +12% dash-near")
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3% all weapon damage")
     _draw_research_button(RESEARCH_HITS_RECT, "hits", "HITS", "+1 starting hit")
