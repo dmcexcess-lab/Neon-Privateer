@@ -3776,19 +3776,22 @@ func _draw_travel_menu() -> void:
         draw_circle(star, 11.0, Color("ffd166"))
         draw_circle(star, 5.0, Color("fff4c2"))
 
+    # Resolve each highlighted path once per draw. With ~50 lanes this avoids
+    # rerunning shortest-path search for every line segment on phone/browser.
+    var selected_path: Array = _route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
+    var contract_path: Array = _route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
+
     # Every generated trade lane is drawn segment-by-segment from the same political data gameplay queries.
     for route in political_world.get("routes", []):
         var origin := String(route.a)
         var dest := String(route.b)
         var wa := _system_planet_world_position(origin)
         var wb := _system_planet_world_position(dest)
-        var selected_path: Array = _route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
         var on_selected_path := false
         for i in range(maxi(0, selected_path.size() - 1)):
             if (String(selected_path[i]) == origin and String(selected_path[i + 1]) == dest) or (String(selected_path[i]) == dest and String(selected_path[i + 1]) == origin):
                 on_selected_path = true
                 break
-        var contract_path: Array = _route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
         var on_contract_path := false
         for i in range(maxi(0, contract_path.size() - 1)):
             if (String(contract_path[i]) == origin and String(contract_path[i + 1]) == dest) or (String(contract_path[i]) == dest and String(contract_path[i + 1]) == origin):
