@@ -90,17 +90,26 @@ Normal in-run weapon prices remain:
 
 ## Score economy
 
-- Asteroid kill: 1
-- Square drone kill: 2
-- Ranged trapezoid kill: 4
-- Smart diamond kill: 5
-- Ordinary near misses: tens
-- Dash near misses: hundreds
-- Green energy orb: **25** base score
-- Green energy orb collected during dash: **125** base score before any active lane bonus
-- Nonlethal damage gives no score
+Enemy scoring is per enemy and has no combo/time-chain bonus. At baseline ship and dash speeds, an asteroid (enemy value 1) is worth:
 
-Ship Speed research raises near-miss rewards. Dash research adds an additional multiplier specifically to dash near-misses.
+- Normal kill: **1**
+- Near miss: **10**
+- Dash kill: **10**
+- Dash near miss: **100**
+
+Harder enemies multiply that same ladder by their normal enemy value:
+
+- Asteroid: ×1
+- Square drone: ×2
+- Ranged trapezoid: ×4
+- Smart diamond: ×5
+- Pentagon missile turret: ×7
+
+Normal kills are not speed-scaled. Ordinary near misses are multiplied by current Ship Speed relative to baseline Ship Speed. Dash kills and dash near misses are multiplied by current Dash Speed relative to baseline Dash Speed. The unupgraded ship therefore produces the exact 1/10/10/100 asteroid values above, while speed upgrades increase only their designated score classes.
+
+Each qualifying enemy is scored independently, even when several enemies are killed or near-missed at nearly the same time. Hard-lane difficulty does not add a multiplier to enemy-event scoring.
+
+Green energy orb scoring remains separate: **25** base score, or **125** during the dash scoring window, before any active lane pickup bonus. Nonlethal weapon damage gives no score.
 
 ### Green energy balls
 
