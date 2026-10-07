@@ -596,6 +596,7 @@ func _initialize() -> void:
 
     # Split difficulty must end with the physical station: survivors become neutral/full-width.
     scene._end_lane_event()
+    scene.objects.clear()
     scene._begin_lane_event()
     scene.station_top = 120.0
     scene.hard_lane_right = true
