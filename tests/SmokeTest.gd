@@ -255,7 +255,7 @@ func _initialize() -> void:
         "_commodity_legality_short", "_planet_law_summary",
         "_market_law_multiplier", "_commodity_category", "_commodity_volatility", "_is_grey_commodity",
         "_ensure_market_index_schema", "_ensure_currency_schema",
-        "_planet_specialty", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
+        "_planet_specialty", "_faction_currency_base_price", "_faction_currency_price", "_currency_buy_price", "_currency_sell_price",
         "_market_index_price", "_market_index_buy_price", "_market_index_sell_price", "_buy_market_index", "_sell_market_index",
         "_deposit_all_cash", "_withdraw_all_bank", "_apply_bank_interest", "_buy_currency", "_sell_currency",
         "_record_simulated_trade", "_trade_specialty_along_route", "_simulate_route_trade", "_update_aggregate_market_indices",
@@ -2077,6 +2077,76 @@ func _initialize() -> void:
         _fail("docked bank did not advance simulated trade/market prices")
         return
     scene.market_open = false
+
+    # Empire expansion is funded by actual economic depth and changes the same
+    # influence field used by encounters/maps/routes.
+    scene.PoliticalWorld.ensure_empire_schema(scene.political_world)
+    scene.political_world["wars"] = []
+    var expansion_faction: String = String(scene.political_world.factions[0].id)
+    var expansion_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, expansion_faction).duplicate(true)
+    expansion_record["treasury"] = 5000.0
+    expansion_record["trade_volume"] = 6000.0
+    expansion_record["war_cooldown"] = 9
+    scene.PoliticalWorld._replace_faction(scene.political_world, expansion_faction, expansion_record)
+    var radius_before_expansion: float = float(expansion_record.radius)
+    var macro_tick_before: int = int(scene.political_world.get("macro_tick", 0))
+    scene.rng.seed = 93001
+    scene._simulate_empire_macro_tick()
+    var expanded_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, expansion_faction)
+    if float(expanded_record.radius) <= radius_before_expansion:
+        _fail("peaceful empire economy did not fund influence expansion")
+        return
+    if int(scene.political_world.get("macro_tick", 0)) != macro_tick_before + 1:
+        _fail("empire macro tick did not advance")
+        return
+
+    # A forced frontier war consumes treasury/military and moves real influence.
+    var frontier_pairs: Dictionary = scene._frontier_pairs()
+    if frontier_pairs.is_empty():
+        _fail("generated political world has no frontier pair for war simulation")
+        return
+    var forced_key: String = String(frontier_pairs.keys()[0])
+    var forced_parts := forced_key.split("|")
+    var war_a := String(forced_parts[0])
+    var war_b := String(forced_parts[1])
+    var war_a_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, war_a).duplicate(true)
+    var war_b_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, war_b).duplicate(true)
+    war_a_record["treasury"] = 5000.0
+    war_b_record["treasury"] = 5000.0
+    war_a_record["military"] = 240.0
+    war_b_record["military"] = 80.0
+    war_a_record["trade_volume"] = 2500.0
+    war_b_record["trade_volume"] = 1000.0
+    war_a_record["war_cooldown"] = 0
+    war_b_record["war_cooldown"] = 0
+    scene.PoliticalWorld._replace_faction(scene.political_world, war_a, war_a_record)
+    scene.PoliticalWorld._replace_faction(scene.political_world, war_b, war_b_record)
+    scene.political_world["wars"] = [{"key": forced_key, "a": war_a, "b": war_b, "age": 0, "last_edge": 0.0}]
+    var war_a_radius_before: float = float(war_a_record.radius)
+    var war_b_radius_before: float = float(war_b_record.radius)
+    var currency_base_before_war: float = float(scene._faction_currency_base_price(war_a))
+    scene.rng.seed = 93002
+    scene._simulate_empire_macro_tick()
+    var war_a_after: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, war_a)
+    var war_b_after: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, war_b)
+    if scene.political_world.get("wars", []).is_empty() or int(scene.political_world.wars[0].age) != 1:
+        _fail("forced empire war did not remain active/advance")
+        return
+    if float(war_a_after.treasury) >= 5000.0 or float(war_b_after.treasury) >= 5000.0:
+        _fail("war did not consume empire treasury")
+        return
+    if float(war_a_after.military) >= 240.0 or float(war_b_after.military) >= 80.0:
+        _fail("war did not consume empire military capacity")
+        return
+    if absf(float(war_a_after.radius) - war_a_radius_before) < 0.001 and absf(float(war_b_after.radius) - war_b_radius_before) < 0.001:
+        _fail("war did not move the authoritative influence frontier")
+        return
+    if float(scene._faction_currency_base_price(war_a)) == currency_base_before_war:
+        _fail("faction currency fundamentals ignored war/economic state")
+        return
+    if not scene.PoliticalWorld.factions_at_war(scene.political_world, war_a, war_b):
+        _fail("war state is not queryable by trade/encounter systems")
+        return
 
     # Currency market invests directly in factions and consumes no cargo space.
     scene._ensure_currency_schema()
