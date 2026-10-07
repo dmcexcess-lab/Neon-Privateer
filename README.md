@@ -125,34 +125,36 @@ The atlas remains menu-only; the arcade renderer does not reference it.
 
 The arcade renderer uses shape as object identity:
 
-- **Circles — asteroids.** They retain environmental movement and are the only objects that award normal/dash near-miss credits. Destroying an asteroid gives no kill credits and has a rare 12% chance to release one unit of Ore salvage.
-- **Squares — basic cargo containers.** Stationary laterally, low durability, one small random 1–2 unit commodity bundle.
-- **Diamonds — reinforced cargo containers.** Stationary laterally, tougher and substantially rarer, two larger 2–3 unit bundles from a higher-value commodity table.
-- **Trapezoids — hostile ships.** Their role now comes from territory: pirates in CONTESTED/UNCONTROLLED space, faction patrols in CORE/CONTROLLED space only when the player is criminal with that faction.
-- **Pentagons — heavy enforcement platforms.** Random route pentagons are faction-only and require the Slice 3 heavy criminal threshold. Pirate encounters never spawn pentagons. The bounty-boss pentagon remains a contract-specific exception rather than random traffic.
+- **Circles — asteroids.** Environmental hazards and the only normal/dash near-miss objects. Destroying one gives no kill credits and has a rare 12% chance to release one Ore.
+- **Squares — basic cargo containers.** Stationary laterally, low durability, one random 1–2 unit commodity bundle.
+- **Diamonds — reinforced cargo containers.** Stationary laterally, tougher/rarer, two larger 2–3 unit bundles.
+- **Trapezoids — ships.** Pirates in CONTESTED/UNCONTROLLED space; faction patrol ships in CORE/CONTROLLED space.
+- **Pentagons — heavy government enforcement.** Random pentagons are faction-only and require the heavy criminal threshold. Pirate contacts never spawn them. Bounty bosses remain the explicit contract exception.
 
-### Territory encounter director
+### Territory contacts and enforcement
 
-Hostile ships are no longer enabled merely because a route has a high danger value.
+Pirate contacts are random only in CONTESTED/UNCONTROLLED route segments and are always hostile.
 
-At the ship's exact current route segment:
+Faction patrols are random only in that superpower's CORE/CONTROLLED route segments. Police presence itself does **not** mean the player is under attack:
 
-- UNCONTROLLED / CONTESTED → pirate encounter windows may occur.
-- CORE / CONTROLLED + clean player → no hostile patrol.
-- CORE / CONTROLLED + WANTED/HOSTILE player → faction patrol windows may occur.
-- CORE / CONTROLLED + heavy-enforcement threshold → patrols may include pentagon platforms.
+- clean player → lawful patrol traffic;
+- heat 30+ or relation -50 or worse → patrol becomes hostile;
+- heat 60+ or relation -75 or worse → hostile patrol may also include pentagon heavy enforcement.
 
-Contacts remain random; eligibility means the director is allowed to schedule one, not that every eligible segment automatically contains enemies. Entering a different political segment immediately stops further spawns from a contact that is no longer valid there.
+Lawful police do not track, fire, collide as damaging threats, or get hit/acquired by the player's automatic weapons. This prevents the auto-fire system from turning ordinary police traffic into an unavoidable crime.
 
-Faction patrol ships are colored by their superpower. Pirate ships are visually distinct.
+If the player's faction status crosses the criminal threshold while a patrol is already on screen, that same patrol escalates immediately and becomes hostile/targetable.
 
-Cargo containers still never award near-miss or kill credits. Their ownership comes from the political territory at spawn, and breaking an owned container applies the Slice 4 relation consequence.
+Destroying faction enforcement has additional consequences:
 
-Container loot and asteroid salvage remain physical in-flight cargo pickups and respect hold capacity.
+- police trapezoid: -12 relation, +15 heat;
+- heavy pentagon: -20 relation, +25 heat.
 
-The original LEFT / DASH / RIGHT controls, station splits, green energy pickups, weapons, shields, hit points, and procedural sound effects remain.
+Faction ships use their superpower color; pirate ships use a distinct pirate treatment.
 
-**Not in Slice 5:** police cargo scans, contraband detection, fines, confiscation, scan countdowns, or new heat from enforcement encounters.
+Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, station splits, pickups, shields, hit points, and procedural SFX remain unchanged.
+
+**Deferred to Slice 7:** police cargo scans, scan countdowns, contraband detection, fines, and confiscation.
 
 
 ## Flight bonus credits
@@ -203,7 +205,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, route scaling, territory-authorized pirate/police eligibility, heavy-enforcement pentagon gating, route-boundary encounter changes, legacy pirate-run migration, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, route scaling, territory-authorized pirate/police contacts, lawful patrol behavior, live criminal escalation, neutral auto-fire protection, heavy-enforcement pentagon gating, enforcement-kill reputation/heat consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
