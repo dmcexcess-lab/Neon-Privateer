@@ -815,21 +815,7 @@ func _sell_commodity(commodity: String) -> bool:
     return true
 
 func _route_spec(origin: String, dest: String) -> Dictionary:
-    var key := origin + "|" + dest
-    var reverse := dest + "|" + origin
-    var routes := {
-        "Aster|Cinder": {"distance": 1, "danger": 1},
-        "Aster|Vesper": {"distance": 2, "danger": 2},
-        "Aster|Helix": {"distance": 4, "danger": 3},
-        "Cinder|Vesper": {"distance": 3, "danger": 2},
-        "Cinder|Helix": {"distance": 2, "danger": 4},
-        "Vesper|Helix": {"distance": 2, "danger": 3}
-    }
-    if routes.has(key):
-        return routes[key].duplicate(true)
-    if routes.has(reverse):
-        return routes[reverse].duplicate(true)
-    return {"distance": 2, "danger": 2}
+    return PoliticalWorld.route_spec(political_world, origin, dest)
 
 func _other_planets(origin: String) -> Array[String]:
     var result: Array[String] = []
@@ -893,7 +879,9 @@ func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 
 func _start_route(destination: String) -> bool:
     if destination == current_planet or not planet_names.has(destination):
         return false
-    var spec := _route_spec(current_planet, destination)
+    var spec := _direct_route_spec(current_planet, destination)
+    if spec.is_empty():
+        return false
     var contract_difficulty := 0
     if _contract_target_matches(destination):
         contract_difficulty = int(active_contract.get("difficulty", 0))
@@ -1007,7 +995,7 @@ func _arrive_at_destination() -> void:
     research_credits += contract_reward
     _simulate_economy(route_distance + route_danger)
     _regenerate_contracts()
-    last_trip_summary = "ARRIVED %s  +%d CR" % [current_planet, flight_bonus + contract_reward]
+    last_trip_summary = "ARRIVED %s  +%d CR" % [_planet_display_name(current_planet), flight_bonus + contract_reward]
     hub_open = true
     market_open = false
     contracts_open = false
@@ -1052,6 +1040,8 @@ func _fail_route(reason: String) -> void:
 
 func _save_privateer_state() -> void:
     var cfg := ConfigFile.new()
+    cfg.set_value("political", "schema", POLITICAL_WORLD_SCHEMA)
+    cfg.set_value("political", "world", political_world)
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
@@ -1065,23 +1055,78 @@ func _save_privateer_state() -> void:
         return
     cfg.save(path)
 
+
 func _load_privateer_state() -> void:
     var cfg := ConfigFile.new()
     var path := _active_world_path()
     if path.is_empty() or cfg.load(path) != OK:
         return
-    current_planet = String(cfg.get_value("world", "planet", current_planet))
-    markets = cfg.get_value("world", "markets", markets)
+
+    var saved_schema := int(cfg.get_value("political", "schema", 0))
+    var saved_world = cfg.get_value("political", "world", {})
+    var saved_planet := String(cfg.get_value("world", "planet", "Aster"))
+    var saved_markets: Dictionary = cfg.get_value("world", "markets", {})
+    var migrated_world := false
+
+    if saved_schema >= POLITICAL_WORLD_SCHEMA and saved_world is Dictionary and not saved_world.is_empty():
+        political_world = saved_world
+        world_seed = int(political_world.get("seed", 1))
+        _sync_generated_planets()
+        current_planet = saved_planet
+        if not planet_names.has(current_planet):
+            current_planet = planet_names[0]
+        markets = saved_markets
+    else:
+        # One-time migration from the fixed four-world career model.
+        world_seed = int(rng.randi())
+        if world_seed == 0:
+            world_seed = 1
+        _generate_political_world(world_seed)
+        current_planet = PoliticalWorld.find_planet_by_type(
+            political_world,
+            PoliticalWorld.legacy_type_for_name(saved_planet)
+        )
+        markets.clear()
+        _init_privateer_world()
+        for old_name in ["Aster", "Cinder", "Vesper", "Helix"]:
+            if saved_markets.has(old_name):
+                var mapped_id := PoliticalWorld.find_planet_by_type(
+                    political_world,
+                    PoliticalWorld.legacy_type_for_name(old_name)
+                )
+                markets[mapped_id] = saved_markets[old_name]
+        migrated_world = true
+
     cargo = cfg.get_value("world", "cargo", cargo)
     contract_board.clear()
     for contract in cfg.get_value("world", "contracts", []):
-        contract_board.append(contract)
+        var migrated: Dictionary = contract.duplicate(true)
+        var old_dest := String(migrated.get("destination", ""))
+        if ["Aster", "Cinder", "Vesper", "Helix"].has(old_dest):
+            migrated.destination = PoliticalWorld.find_planet_by_type(
+                political_world,
+                PoliticalWorld.legacy_type_for_name(old_dest)
+            )
+        contract_board.append(migrated)
     active_contract = cfg.get_value("world", "active_contract", {})
+    if not active_contract.is_empty():
+        var old_active_dest := String(active_contract.get("destination", ""))
+        if ["Aster", "Cinder", "Vesper", "Helix"].has(old_active_dest):
+            active_contract.destination = PoliticalWorld.find_planet_by_type(
+                political_world,
+                PoliticalWorld.legacy_type_for_name(old_active_dest)
+            )
     passengers = int(cfg.get_value("world", "passengers", 0))
     economy_tick = int(cfg.get_value("world", "economy_tick", 0))
-    last_trip_summary = String(cfg.get_value("world", "summary", last_trip_summary))
+    last_trip_summary = String(cfg.get_value("world", "summary", "Docked at %s" % _planet_display_name(current_planet)))
+    if markets.is_empty():
+        _init_privateer_world()
     if contract_board.is_empty():
         _regenerate_contracts()
+    if migrated_world:
+        last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
+        _save_privateer_state()
+
 
 func _save_all_state() -> void:
     _save_meta()
@@ -3484,9 +3529,7 @@ func _privateer_art_ready() -> bool:
     return privateer_ui_atlas != null and privateer_ui_atlas.get_width() == 390 and privateer_ui_atlas.get_height() == 1228
 
 func _planet_art_region(planet: String) -> Rect2:
-    match planet:
-        "Aster":
-            return ART_PLANET_ASTER
+    match _planet_visual_key(planet):
         "Cinder":
             return ART_PLANET_CINDER
         "Vesper":
@@ -3494,6 +3537,7 @@ func _planet_art_region(planet: String) -> Rect2:
         "Helix":
             return ART_PLANET_HELIX
     return ART_PLANET_ASTER
+
 
 func _draw_menu_art(region: Rect2, darken: float = 0.56) -> void:
     if privateer_ui_atlas != null:
