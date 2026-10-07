@@ -1357,37 +1357,122 @@ func _handle_career_slots_tap(pos: Vector2) -> void:
             _load_career(slot)
             return
 
+func _system_world_bounds() -> Rect2:
+    return Rect2(political_world.get("bounds", PoliticalWorld.WORLD_BOUNDS))
+
+func _system_map_fit_scale() -> float:
+    var bounds := _system_world_bounds()
+    return minf(SYSTEM_MAP_RECT.size.x / bounds.size.x, SYSTEM_MAP_RECT.size.y / bounds.size.y)
+
+func _reset_system_map_view() -> void:
+    system_map_zoom = SYSTEM_MAP_MIN_ZOOM
+    system_map_pan = Vector2.ZERO
+    system_map_touches.clear()
+    system_map_touch_moved = false
+    system_map_last_pinch_distance = 0.0
+    queue_redraw()
+
+func _clamp_system_map_view() -> void:
+    system_map_zoom = clampf(system_map_zoom, SYSTEM_MAP_MIN_ZOOM, SYSTEM_MAP_MAX_ZOOM)
+    var bounds := _system_world_bounds()
+    var scale := _system_map_fit_scale() * system_map_zoom
+    var scaled := bounds.size * scale
+    var max_x := maxf(0.0, (scaled.x - SYSTEM_MAP_RECT.size.x) * 0.5 + 96.0)
+    var max_y := maxf(0.0, (scaled.y - SYSTEM_MAP_RECT.size.y) * 0.5 + 96.0)
+    system_map_pan.x = clampf(system_map_pan.x, -max_x, max_x)
+    system_map_pan.y = clampf(system_map_pan.y, -max_y, max_y)
+
+func _map_world_to_screen(world_pos: Vector2) -> Vector2:
+    var bounds := _system_world_bounds()
+    var scale := _system_map_fit_scale() * system_map_zoom
+    return SYSTEM_MAP_RECT.get_center() + (world_pos - bounds.get_center()) * scale + system_map_pan
+
+func _map_screen_to_world(screen_pos: Vector2) -> Vector2:
+    var bounds := _system_world_bounds()
+    var scale := maxf(0.0001, _system_map_fit_scale() * system_map_zoom)
+    return bounds.get_center() + (screen_pos - SYSTEM_MAP_RECT.get_center() - system_map_pan) / scale
+
+func _pan_system_map(delta_screen: Vector2) -> void:
+    system_map_pan += delta_screen
+    _clamp_system_map_view()
+    queue_redraw()
+
+func _zoom_system_map(factor: float, anchor: Vector2 = SYSTEM_MAP_RECT.get_center()) -> void:
+    var before := _map_screen_to_world(anchor)
+    system_map_zoom = clampf(system_map_zoom * factor, SYSTEM_MAP_MIN_ZOOM, SYSTEM_MAP_MAX_ZOOM)
+    var after_screen := _map_world_to_screen(before)
+    system_map_pan += anchor - after_screen
+    _clamp_system_map_view()
+    queue_redraw()
+
+func _system_map_touch_begin(index: int, pos: Vector2) -> void:
+    if not SYSTEM_MAP_RECT.has_point(pos):
+        _handle_travel_tap(pos)
+        return
+    system_map_touches[index] = pos
+    if system_map_touches.size() == 1:
+        system_map_touch_moved = false
+    elif system_map_touches.size() >= 2:
+        var keys := system_map_touches.keys()
+        system_map_last_pinch_distance = Vector2(system_map_touches[keys[0]]).distance_to(Vector2(system_map_touches[keys[1]]))
+        system_map_touch_moved = true
+
+func _system_map_touch_drag(index: int, pos: Vector2, relative: Vector2) -> void:
+    if not system_map_touches.has(index):
+        return
+    system_map_touches[index] = pos
+    if system_map_touches.size() >= 2:
+        var keys := system_map_touches.keys()
+        var p0 := Vector2(system_map_touches[keys[0]])
+        var p1 := Vector2(system_map_touches[keys[1]])
+        var distance := p0.distance_to(p1)
+        if system_map_last_pinch_distance > 1.0 and distance > 1.0:
+            _zoom_system_map(distance / system_map_last_pinch_distance, (p0 + p1) * 0.5)
+        system_map_last_pinch_distance = distance
+        system_map_touch_moved = true
+    else:
+        if relative.length() > 1.5:
+            system_map_touch_moved = true
+        _pan_system_map(relative)
+
+func _system_map_touch_end(index: int, pos: Vector2) -> void:
+    if not system_map_touches.has(index):
+        return
+    var was_single := system_map_touches.size() == 1
+    var should_tap := was_single and not system_map_touch_moved and SYSTEM_MAP_RECT.has_point(pos)
+    system_map_touches.erase(index)
+    if system_map_touches.size() < 2:
+        system_map_last_pinch_distance = 0.0
+    if system_map_touches.is_empty():
+        system_map_touch_moved = false
+    if should_tap:
+        _handle_travel_tap(pos)
+
+func _system_planet_world_position(planet: String) -> Vector2:
+    return PoliticalWorld.planet_position(political_world, planet)
+
 func _system_planet_position(planet: String) -> Vector2:
-    match planet:
-        "Aster":
-            return Vector2(195.0, 188.0)
-        "Cinder":
-            return Vector2(308.0, 300.0)
-        "Vesper":
-            return Vector2(82.0, 426.0)
-        "Helix":
-            return Vector2(268.0, 518.0)
-    return SYSTEM_STAR_POS
+    return _map_world_to_screen(_system_planet_world_position(planet))
 
 func _system_planet_hit_rect(planet: String) -> Rect2:
     var center := _system_planet_position(planet)
-    return Rect2(center - Vector2.ONE * (SYSTEM_PLANET_HIT_SIZE * 0.5), Vector2.ONE * SYSTEM_PLANET_HIT_SIZE)
+    var hit_size := clampf(SYSTEM_PLANET_HIT_SIZE * sqrt(system_map_zoom), 44.0, 70.0)
+    return Rect2(center - Vector2.ONE * hit_size * 0.5, Vector2.ONE * hit_size)
 
 func _system_route_pairs() -> Array:
-    return [
-        ["Aster", "Cinder"],
-        ["Aster", "Vesper"],
-        ["Aster", "Helix"],
-        ["Cinder", "Vesper"],
-        ["Cinder", "Helix"],
-        ["Vesper", "Helix"]
-    ]
+    var pairs: Array = []
+    for route in political_world.get("routes", []):
+        pairs.append([String(route.a), String(route.b)])
+    return pairs
 
 func _default_travel_selection() -> String:
     if not active_contract.is_empty():
         var contract_dest := String(active_contract.get("destination", ""))
         if planet_names.has(contract_dest) and contract_dest != current_planet:
             return contract_dest
+    var neighbors := PoliticalWorld.neighbors(political_world, current_planet)
+    if not neighbors.is_empty():
+        return neighbors[0]
     for planet in planet_names:
         if planet != current_planet:
             return planet
@@ -1400,6 +1485,24 @@ func _set_travel_selection(planet: String) -> bool:
     queue_redraw()
     return true
 
+func _faction_color(faction_id: String) -> Color:
+    var faction := PoliticalWorld.faction_record(political_world, faction_id)
+    return Color(faction.get("color", Color("77f7ff")))
+
+func _territory_color(state: String, faction_id: String = "") -> Color:
+    match state:
+        "CORE":
+            var core := _faction_color(faction_id)
+            return Color(core.r, core.g, core.b, 0.96)
+        "CONTROLLED":
+            var controlled := _faction_color(faction_id)
+            return Color(controlled.r, controlled.g, controlled.b, 0.70)
+        "CONTESTED":
+            return Color("ff6687")
+        "UNCONTROLLED":
+            return Color("8c98a6")
+    return Color("77f7ff")
+
 func _system_route_color(danger: int) -> Color:
     match danger:
         1:
@@ -1410,6 +1513,19 @@ func _system_route_color(danger: int) -> Color:
             return Color("ffb347")
         _:
             return Color("ff6687")
+
+func _political_risk_label(danger: int) -> String:
+    match danger:
+        1:
+            return "LOW"
+        2:
+            return "GUARDED"
+        3:
+            return "ELEVATED"
+        4:
+            return "HIGH"
+        _:
+            return "SEVERE"
 
 
 func _market_buy_rect(index: int) -> Rect2:
