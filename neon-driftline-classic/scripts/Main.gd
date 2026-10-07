@@ -1980,7 +1980,7 @@ func _move_objects(delta: float) -> void:
                 continue
             var hit_dist: float = obj.r + 14.0
             if absf(dy) < hit_dist and dx < hit_dist:
-                if dash_score_timer > 0.0:
+                if dash_timer > 0.0:
                     _award_hazard_kill(obj, true)
                     continue
                 if invuln <= 0.0:

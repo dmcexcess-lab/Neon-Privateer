@@ -979,13 +979,14 @@ func _initialize() -> void:
         _fail("collision did not hurt again after invulnerability expired")
         return
 
-    # During the dash scoring window, body contact becomes a dash kill and causes no hit.
+    # During the active forward dash, body contact becomes a dash kill and causes no hit.
     scene.objects.clear()
     scene.pending_drops.clear()
     scene.hp = 4
     scene.max_hp = 4
     scene.invuln = 0.0
     scene.score = 0
+    scene.dash_timer = 0.20
     scene.dash_score_timer = 0.5
     scene.objects.append({
         "id": 990005, "type": "hazard", "kind": 1,
@@ -1008,6 +1009,7 @@ func _initialize() -> void:
     if not scene.near_miss_text.begins_with("DASH KILL +"):
         _fail("dash collision did not register dash-kill feedback")
         return
+    scene.dash_timer = 0.0
     scene.dash_score_timer = 0.0
 
     scene.objects.clear()
