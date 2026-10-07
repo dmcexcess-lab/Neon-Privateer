@@ -2542,23 +2542,71 @@ func _arrive_at_destination() -> void:
     _save_all_state()
     queue_redraw()
 
+func _reset_destroyed_ship() -> Dictionary:
+    var losses := {
+        "cash": maxi(0, research_credits),
+        "cargo": _cargo_used(),
+        "passengers": maxi(0, passengers),
+        "upgrades": research_ship_speed + research_dash + research_damage + research_hits + research_shield,
+        "weapons": int(research_start_single) + int(research_start_dual) + int(research_start_laser) + int(research_start_cone) + int(research_start_seeker)
+    }
+
+    # Financial assets, bank balance, faction standing and the simulated world
+    # survive. Everything physically installed/carried on the destroyed ship does not.
+    research_credits = 0
+    research_ship_speed = 0
+    research_dash = 0
+    research_damage = 0
+    research_hits = 0
+    research_shield = 0
+    research_start_single = false
+    research_start_dual = false
+    research_start_laser = false
+    research_start_cone = false
+    research_start_seeker = false
+    starting_weapon = "none"
+    current_weapon = "none"
+
+    for commodity in commodity_names:
+        cargo[commodity] = 0
+    passengers = 0
+    active_contract.clear()
+
+    max_hp = 2
+    hp = 2
+    shield_charges = 0
+
+    # During a flight current_planet is still the last successful landing, but
+    # use route_origin explicitly so a restored in-flight snapshot has the same rule.
+    if planet_names.has(route_origin):
+        current_planet = route_origin
+    return losses
+
 func _fail_route(reason: String, ship_destroyed: bool = false) -> void:
     _cancel_police_scan()
-    var lost_cash := 0
+    var losses := {"cash": 0, "cargo": 0, "passengers": 0, "upgrades": 0, "weapons": 0}
     if ship_destroyed:
-        lost_cash = maxi(0, research_credits)
-        research_credits = 0
+        losses = _reset_destroyed_ship()
     playing = false
     route_active = false
     boss_active = false
     boss_defeated_pending = false
     destination_planet = ""
     score = 0
-    if not active_contract.is_empty():
+    if not ship_destroyed and not active_contract.is_empty():
         if String(active_contract.get("type", "")) == "passenger":
             passengers = maxi(0, passengers - 1)
         active_contract.clear()
-    last_trip_summary = ("%s — CASH LOST %d" % [reason, lost_cash]) if ship_destroyed else (reason + " — CONTRACT LOST")
+    if ship_destroyed:
+        last_trip_summary = "%s — RESPAWN %s • CASH %d • CARGO %d • PAX %d • SHIP RESET" % [
+            reason,
+            _planet_display_name(current_planet).to_upper(),
+            int(losses.cash),
+            int(losses.cargo),
+            int(losses.passengers)
+        ]
+    else:
+        last_trip_summary = reason + " — CONTRACT LOST"
     hub_open = true
     market_open = false
     contracts_open = false
