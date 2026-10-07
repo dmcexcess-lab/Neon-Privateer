@@ -203,7 +203,8 @@ var trade_ledger: Dictionary = {
     "cross_empire_volume": 0.0,
     "shipments": 0,
     "last_route": "",
-    "last_commodity": ""
+    "last_commodity": "",
+    "by_commodity": {}
 }
 var currency_holdings: Dictionary = {}
 var currency_markets: Dictionary = {}
@@ -569,7 +570,7 @@ func _reset_career_state() -> void:
         "green": {"price": GREEN_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0},
         "grey": {"price": GREY_INDEX_BASE, "volume": 0.0, "last_volume": 0.0, "basket": 0.0, "last_basket": 0.0}
     }
-    trade_ledger = {"green_volume": 0.0, "grey_volume": 0.0, "cross_empire_volume": 0.0, "shipments": 0, "last_route": "", "last_commodity": ""}
+    trade_ledger = {"green_volume": 0.0, "grey_volume": 0.0, "cross_empire_volume": 0.0, "shipments": 0, "last_route": "", "last_commodity": "", "by_commodity": {}}
     currency_holdings.clear()
     currency_markets.clear()
     bank_interest_cycles = 0
@@ -1159,6 +1160,9 @@ func _ensure_market_index_schema() -> bool:
         if not trade_ledger.has(key):
             trade_ledger[key] = "" if key.begins_with("last_") else (0 if key == "shipments" else 0.0)
             changed = true
+    if not trade_ledger.has("by_commodity"):
+        trade_ledger["by_commodity"] = {}
+        changed = true
     return changed
 
 func _ensure_currency_schema() -> bool:
@@ -1391,6 +1395,9 @@ func _record_simulated_trade(origin: String, destination: String, commodity: Str
     trade_ledger["shipments"] = int(trade_ledger.get("shipments", 0)) + 1
     trade_ledger["last_route"] = "%s>%s" % [origin, destination]
     trade_ledger["last_commodity"] = commodity
+    var by_commodity: Dictionary = trade_ledger.get("by_commodity", {})
+    by_commodity[commodity] = float(by_commodity.get(commodity, 0.0)) + value
+    trade_ledger["by_commodity"] = by_commodity
 
     var origin_faction := _planet_primary_faction(origin)
     var destination_faction := _planet_primary_faction(destination)
@@ -1455,6 +1462,7 @@ func _simulate_route_trade() -> void:
     trade_ledger["grey_volume"] = 0.0
     trade_ledger["cross_empire_volume"] = 0.0
     trade_ledger["shipments"] = 0
+    trade_ledger["by_commodity"] = {}
     for route_variant in political_world.get("routes", []):
         var route: Dictionary = route_variant
         var a := String(route.get("a", ""))
