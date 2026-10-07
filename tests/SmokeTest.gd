@@ -29,7 +29,9 @@ func _initialize() -> void:
         "_save_run_snapshot", "_load_run_snapshot", "_pause_run",
         "_create_new_career", "_load_career", "_continue_career",
         "_career_slot_exists", "_career_slot_summary", "_open_profile_menu",
-        "_load_privateer_ui_art", "_privateer_art_ready", "_planet_art_region", "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel"
+        "_load_privateer_ui_art", "_privateer_art_ready", "_planet_art_region", "_draw_menu_art", "_draw_planet_art", "_draw_menu_panel",
+        "_system_planet_position", "_system_planet_hit_rect", "_system_route_pairs",
+        "_default_travel_selection", "_set_travel_selection", "_system_route_color"
     ]:
         if not scene.has_method(method_name):
             _fail("missing method " + method_name)
@@ -117,6 +119,47 @@ func _initialize() -> void:
         if not scene.markets.has(planet):
             _fail("missing market for " + planet)
             return
+
+    # Travel is a spatial system map: every world has a unique node and every route is represented.
+    var system_positions: Dictionary = {}
+    for planet in scene.planet_names:
+        var map_pos: Vector2 = scene._system_planet_position(planet)
+        var map_key := "%d,%d" % [int(map_pos.x), int(map_pos.y)]
+        if system_positions.has(map_key):
+            _fail("system map planets overlap at " + map_key)
+            return
+        system_positions[map_key] = true
+        if not scene.SYSTEM_MAP_RECT.has_point(map_pos):
+            _fail("system map planet lies outside map bounds: " + planet)
+            return
+        if not scene._system_planet_hit_rect(planet).has_point(map_pos):
+            _fail("system map hit target does not cover " + planet)
+            return
+    if scene._system_route_pairs().size() != 6:
+        _fail("system map does not represent all six routes")
+        return
+
+    scene.current_planet = "Aster"
+    scene.active_contract = {"type": "delivery", "destination": "Helix", "difficulty": 2, "reward": 500}
+    if scene._default_travel_selection() != "Helix":
+        _fail("system map did not prioritize active contract destination")
+        return
+    scene.travel_selected_planet = ""
+    if not scene._set_travel_selection("Cinder") or scene.travel_selected_planet != "Cinder":
+        _fail("system map could not select a destination")
+        return
+    scene.travel_open = true
+    scene.hub_open = false
+    scene._handle_travel_tap(scene._system_planet_position("Vesper"))
+    if scene.travel_selected_planet != "Vesper" or not scene.travel_open or scene.playing:
+        _fail("tapping a system-map planet did not select it without launching")
+        return
+    scene._handle_travel_tap(scene.SYSTEM_MAP_BACK_RECT.get_center())
+    if scene.travel_open or not scene.hub_open:
+        _fail("system map BACK did not return to hub")
+        return
+    scene.active_contract = {}
+    scene.travel_selected_planet = ""
 
     # Market prices are real stock-sensitive prices and trading changes local supply.
     scene.research_credits = 5000
