@@ -2644,13 +2644,14 @@ func _reset_destroyed_ship() -> Dictionary:
         "cash": maxi(0, research_credits),
         "cargo": _cargo_used(),
         "passengers": maxi(0, passengers),
-        "upgrades": research_ship_speed + research_dash + research_damage + research_hits + research_shield,
+        "upgrades": research_jump_range + research_ship_speed + research_dash + research_damage + research_hits + research_shield,
         "weapons": int(research_start_single) + int(research_start_dual) + int(research_start_laser) + int(research_start_cone) + int(research_start_seeker)
     }
 
     # Financial assets, bank balance, faction standing and the simulated world
     # survive. Everything physically installed/carried on the destroyed ship does not.
     research_credits = 0
+    research_jump_range = 0
     research_ship_speed = 0
     research_dash = 0
     research_damage = 0
@@ -2672,6 +2673,7 @@ func _reset_destroyed_ship() -> Dictionary:
     max_hp = 2
     hp = 2
     shield_charges = 0
+    ship_fuel = FUEL_CAPACITY
 
     # During a flight current_planet is still the last successful landing, but
     # use route_origin explicitly so a restored in-flight snapshot has the same rule.
@@ -3461,6 +3463,10 @@ func _next_hop_toward(destination: String) -> String:
     return String(path[1])
 
 func _handle_travel_tap(pos: Vector2) -> void:
+    if SYSTEM_REFUEL_RECT.has_point(pos):
+        _refuel_ship()
+        queue_redraw()
+        return
     if SYSTEM_MAP_BACK_RECT.has_point(pos):
         travel_open = false
         hub_open = true
@@ -3866,6 +3872,8 @@ func _finish(success: bool) -> void:
 
 func _research_level(track: String) -> int:
     match track:
+        "jump":
+            return research_jump_range
         "ship":
             return research_ship_speed
         "dash":
@@ -3879,6 +3887,8 @@ func _research_level(track: String) -> int:
     return 0
 
 func _research_max(track: String) -> int:
+    if track == "jump":
+        return JUMP_RANGE_MAX - JUMP_RANGE_BASE
     if track == "shield":
         return 5
     if track == "hits":
@@ -3890,6 +3900,8 @@ func _research_max(track: String) -> int:
 func _research_cost(track: String) -> int:
     var lvl := _research_level(track)
     match track:
+        "jump":
+            return int(round(1200.0 * pow(2.1, lvl)))
         "ship":
             return int(round(500.0 * pow(1.75, lvl)))
         "dash":
@@ -3911,6 +3923,8 @@ func _buy_research(track: String) -> bool:
         return false
     research_credits -= cost
     match track:
+        "jump":
+            research_jump_range += 1
         "ship":
             research_ship_speed += 1
         "dash":
@@ -4014,7 +4028,9 @@ func _handle_weapon_research_tap(pos: Vector2) -> void:
     queue_redraw()
 
 func _handle_research_tap(pos: Vector2) -> void:
-    if RESEARCH_SHIP_RECT.has_point(pos):
+    if RESEARCH_JUMP_RECT.has_point(pos):
+        _buy_research("jump")
+    elif RESEARCH_SHIP_RECT.has_point(pos):
         _buy_research("ship")
     elif RESEARCH_DASH_RECT.has_point(pos):
         _buy_research("dash")
@@ -4101,6 +4117,8 @@ func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
     cfg.set_value("meta", "bank_balance", bank_balance)
+    cfg.set_value("meta", "fuel", ship_fuel)
+    cfg.set_value("meta", "jump_range", research_jump_range)
     cfg.set_value("meta", "ship_speed", research_ship_speed)
     cfg.set_value("meta", "dash", research_dash)
     cfg.set_value("meta", "damage", research_damage)
@@ -4124,6 +4142,8 @@ func _load_meta() -> void:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
     bank_balance = int(cfg.get_value("meta", "bank_balance", 0))
+    ship_fuel = clampi(int(cfg.get_value("meta", "fuel", FUEL_CAPACITY)), 0, FUEL_CAPACITY)
+    research_jump_range = clampi(int(cfg.get_value("meta", "jump_range", 0)), 0, JUMP_RANGE_MAX - JUMP_RANGE_BASE)
     research_ship_speed = int(cfg.get_value("meta", "ship_speed", 0))
     research_dash = int(cfg.get_value("meta", "dash", 0))
     research_damage = int(cfg.get_value("meta", "damage", 0))
@@ -5795,8 +5815,8 @@ func _draw_travel_menu() -> void:
 
     # Resolve each highlighted path once per draw. With ~50 lanes this avoids
     # rerunning shortest-path search for every line segment on phone/browser.
-    var selected_path: Array = _route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
-    var contract_path: Array = _route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
+    var selected_path: Array = _jump_route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
+    var contract_path: Array = _jump_route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
 
     # Every generated trade lane is drawn segment-by-segment from the same political data gameplay queries.
     for route in political_world.get("routes", []):
@@ -5896,15 +5916,20 @@ func _draw_travel_menu() -> void:
             _text(String(status_lines[status_index]), Vector2(126.0, 695.0 + float(status_index) * 13.0), 7, status_color)
         _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 727.0), 8, Color("8ea9b8"))
     else:
-        var selected_spec := _route_spec(current_planet, selected)
+        var selected_spec := _jump_route_spec(current_planet, selected)
         next_hop = _next_hop_toward(selected)
         var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
-        var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
-        var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
-        var pct := _route_political_percentages(current_planet, selected)
-        _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 646.0), 9, _system_route_color(int(selected_spec.danger)))
+        var selected_level := _route_level_for(int(selected_spec.get("distance", 0)), int(selected_spec.get("danger", 1)), contract_diff)
+        var selected_duration := _route_duration_for(int(selected_spec.get("distance", 1)), int(selected_spec.get("danger", 1)), contract_diff)
+        var pct := _route_political_percentages_for_spec(selected_spec)
+        if selected_spec.get("path", []).is_empty():
+            _text("OUT OF JUMP RANGE  •  MAX J%d" % _jump_range(), Vector2(126.0, 646.0), 9, Color("ff8fa6"))
+        else:
+            _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 646.0), 9, _system_route_color(int(selected_spec.danger)))
         _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 662.0), 9, Color("8ea9b8"))
-        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 678.0), 9, Color("ffd166"))
+        var next_jump := PoliticalWorld.direct_route(political_world, current_planet, next_hop) if not next_hop.is_empty() else {}
+        var next_fuel := _fuel_required_for_jump(int(next_jump.get("distance", 0))) if not next_jump.is_empty() else 0
+        _text("FLIGHT ~%ds  L%d  NEXT %s  F%d" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper(), next_fuel], Vector2(126.0, 678.0), 8, Color("ffd166"))
         _text("SPEC %s  •  %s" % [_short_map_label(_planet_specialty(selected).to_upper(), 12), _planet_law_summary(selected)], Vector2(126.0, 697.0), 7, Color("bdeef4"))
         for status_index in range(status_lines.size()):
             if status_index >= 2:
@@ -5918,7 +5943,9 @@ func _draw_travel_menu() -> void:
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SYSTEM_MAP_BACK_RECT.position.y + 35.0, 18, Color("f0fbff"), SYSTEM_MAP_BACK_RECT.position.x, SYSTEM_MAP_BACK_RECT.end.x)
 
-    var can_fly := not next_hop.is_empty()
+    var next_jump_spec := PoliticalWorld.direct_route(political_world, current_planet, next_hop) if not next_hop.is_empty() else {}
+    var next_jump_fuel := _fuel_required_for_jump(int(next_jump_spec.get("distance", 0))) if not next_jump_spec.is_empty() else 0
+    var can_fly := not next_hop.is_empty() and ship_fuel >= next_jump_fuel
     draw_rect(SYSTEM_FLY_RECT, Color(0.04, 0.18, 0.15, 0.96) if can_fly else Color(0.05, 0.06, 0.08, 0.96), true)
     draw_rect(SYSTEM_FLY_RECT, Color("6bffb0") if can_fly else Color("46515c"), false, 2.5)
     _text_center("FLY", SYSTEM_FLY_RECT.position.y + 35.0, 19, Color("f0fbff") if can_fly else Color("68737d"), SYSTEM_FLY_RECT.position.x, SYSTEM_FLY_RECT.end.x)
