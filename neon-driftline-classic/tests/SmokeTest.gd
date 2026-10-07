@@ -849,7 +849,8 @@ func _initialize() -> void:
         _fail("dash energy orb should score in the hundreds")
         return
 
-    # Random orb cadence increases by level and gets faster during an active split.
+    # Random orb cadence increases by level and only gets faster while the
+    # split structure is crossing the top generation boundary.
     scene.rng.seed = 424242
     scene.level = 1
     scene.lane_event_active = false
@@ -860,18 +861,31 @@ func _initialize() -> void:
     var late_orb_interval: float = scene._energy_spawn_interval()
     scene.rng.seed = 424242
     scene.lane_event_active = true
+    scene.station_height = scene._station_height_for_level()
+    scene.station_top = -scene.station_height + 1.0
     var split_orb_interval: float = scene._energy_spawn_interval()
     if late_orb_interval >= level_one_orb_interval:
         _fail("energy orbs did not become more frequent in later levels")
         return
     if split_orb_interval >= late_orb_interval:
-        _fail("energy orbs did not become more frequent during splits")
+        _fail("energy orbs did not become more frequent while split crossed top boundary")
         return
 
-    # During splits, random energy balls strongly favor the hard lane.
+    # Once the trailing edge clears the top, pickup cadence returns to neutral
+    # even though the structure remains visible farther downscreen.
+    scene.rng.seed = 424242
+    scene.station_top = 1.0
+    var behind_split_orb_interval: float = scene._energy_spawn_interval()
+    if absf(behind_split_orb_interval - late_orb_interval) > 0.001:
+        _fail("energy orb cadence stayed boosted behind split structure")
+        return
+
+    # While crossing the top boundary, random energy balls strongly favor the hard lane.
     scene.objects.clear()
     scene.level = 8
     scene.lane_event_active = true
+    scene.station_height = scene._station_height_for_level()
+    scene.station_top = -scene.station_height + 1.0
     scene.hard_lane_right = true
     scene.rng.seed = 777
     var hard_orbs := 0
@@ -884,7 +898,7 @@ func _initialize() -> void:
         else:
             easy_orbs += 1
     if hard_orbs <= easy_orbs * 2:
-        _fail("split energy orbs do not favor the hard lane strongly enough")
+        _fail("top-boundary split energy orbs do not favor hard lane strongly enough")
         return
 
     # Kill rewards have rare, explicit orb and +1-hit bands.
