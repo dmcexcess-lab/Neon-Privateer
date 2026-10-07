@@ -1985,6 +1985,27 @@ func _initialize() -> void:
     volcanic = scene.PoliticalWorld.find_planet_by_type(scene.political_world, "VOLCANIC")
     scene.current_planet = lush
 
+    # Privateer travel is permanently open-field: the old station/lane split
+    # mechanics are removed rather than merely disabled.
+    for retired_method in ["_begin_lane_event", "_end_lane_event", "_split_count_for_level", "_first_split_time", "_schedule_next_split", "_station_barrier_rects", "_check_station_collision", "_draw_station"]:
+        if scene.has_method(retired_method):
+            _fail("retired Privateer lane-split method still exists: " + retired_method)
+            return
+    scene.objects.clear()
+    scene.rng.seed = 77001
+    scene._spawn_hazard(0.4, true, true)
+    if scene.objects.is_empty():
+        _fail("open-field hazard spawn failed after lane split removal")
+        return
+    var open_field_hazard: Dictionary = scene.objects[0]
+    if bool(open_field_hazard.get("hard", true)):
+        _fail("hazard still carries hard-lane state after lane split removal")
+        return
+    if float(open_field_hazard.get("lane_min", -999.0)) != scene.LEFT or float(open_field_hazard.get("lane_max", -999.0)) != scene.RIGHT:
+        _fail("hazard spawn is still constrained to a split lane")
+        return
+    scene.objects.clear()
+
     # Bank/account acceptance: carried cash is distinct from protected bank money.
     scene.research_credits = 1000
     scene.bank_balance = 0
