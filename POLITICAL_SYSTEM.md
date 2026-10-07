@@ -82,6 +82,54 @@ For restricted commodities:
 
 This query is presentation/data authority now and is intended to become the source for police scans later. A future scan by a specific police faction should use that faction's law directly rather than infer enforcement from the generic contested-space label.
 
+## Faction reputation and criminal state
+
+Slice 3 adds two independent persistent player-state axes for every superpower:
+
+- **Relation**: long-term reputation, clamped to `-100…+100`.
+- **Heat**: current criminal attention, clamped to `0…100`.
+
+Relation bands:
+
+- `ALLIED` at +60 or higher
+- `FRIENDLY` at +25 or higher
+- `NEUTRAL` from -24 through +24
+- `UNFRIENDLY` from -59 through -25
+- `HOSTILE` at -60 or lower
+
+Heat bands:
+
+- `CLEAR` below 10
+- `WATCHED` from 10–29
+- `WANTED` from 30–59
+- `HUNTED` at 60+
+
+The authoritative criminal-state query is `faction_crime_state(world, faction_id)`.
+
+Eligibility thresholds reserved for later encounter/enforcement slices:
+
+- ordinary police hostility becomes eligible at **heat >= 30** or **relation <= -50**;
+- heavy/pentagon enforcement becomes eligible at **heat >= 60** or **relation <= -75**.
+
+These are eligibility rules only. Slice 3 does not change encounter spawning or make police attack.
+
+Authoritative mutation APIs:
+
+- `adjust_faction_relation(world, faction_id, delta)`
+- `adjust_faction_heat(world, faction_id, delta)`
+- `record_crime(world, faction_id, relation_loss, heat_gain, offense)`
+- `decay_all_heat(world, amount)`
+
+`record_crime` increments an offense count and stores the last offense tag for debugging/future UI. Crimes are faction-specific: changing one superpower's relation/heat does not affect another.
+
+The Main scene exposes wrappers for gameplay systems and UI, including:
+
+- `_is_criminal_with_faction`
+- `_police_hostile_eligible`
+- `_heavy_enforcement_eligible`
+- `_record_faction_crime`
+- `_planet_crime_summary`
+
 ## Capital selection
 
 The first capital is chosen on the outer system. Additional capitals maximize minimum distance from already chosen capitals. This deliberately spreads 2–4 superpowers instead of independently choosing random neighboring worlds.
@@ -226,10 +274,11 @@ Career world saves persist:
 
 - political schema
 - economy schema
+- crime schema
 - schema
 - seed
 - planets
-- faction records and laws
+- faction records, laws, relation, heat, offense count, and last offense
 - generated route graph
 - current planet
 - market state for all seven commodities
@@ -299,3 +348,19 @@ Planet-type tendencies:
 - **INDUSTRIAL:** strong Electronics/Arms; weak Narcotics.
 
 Market trading remains mechanically available in Slice 2 even when a commodity is illegal. The law is surfaced now so later contraband/scanning systems can impose the actual risk.
+
+
+## Slice 3 crime schema
+
+Crime schema version **1** upgrades existing political careers in place. Missing faction fields are added without regenerating planets, factions, capitals, laws, influence, or routes:
+
+- missing `relation` -> 0
+- missing `heat` -> 0
+- missing `offenses` -> 0
+- missing `last_offense` -> empty string
+
+Existing relation values are preserved and clamped. The upgraded schema is persisted immediately.
+
+The market, career hub, and selected-world map card expose faction reputation/heat compactly. In contested space both claimant factions remain independent; uncontrolled space has no faction criminal record.
+
+Police/pirate spawning, scans, fines, confiscation, and actual hostility remain deferred.
