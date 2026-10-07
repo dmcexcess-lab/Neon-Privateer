@@ -276,6 +276,84 @@ Pirate kills have no superpower reputation consequence.
 
 Contraband scans, scan timers, cargo confiscation, and fines remain Slice 7.
 
+## Slice 7 random patrols and contraband scans
+
+Each superpower now has a persistent **faction level** from 1–5.
+
+Faction level is generated from that power's strength and saved in the political world. Older careers missing the field derive it deterministically from the already-saved faction strength, so upgrading does not reroll the system.
+
+### Random encounter rule
+
+Police presence is probabilistic, like pirate presence.
+
+A CORE/CONTROLLED segment makes that faction's patrols **eligible**. It does not guarantee a patrol.
+
+At each encounter opportunity:
+
+- a random roll is made;
+- police chance is based on that faction's level;
+- route danger, contract difficulty, and player heat do not increase the probability of a police contact;
+- a failed roll schedules another later opportunity rather than forcing an encounter.
+
+Current police contact probability per opportunity:
+
+- Level 1: 19%
+- Level 2: 24%
+- Level 3: 29%
+- Level 4: 34%
+- Level 5: 39%
+
+Opportunity timing is itself randomized. Therefore a flight through faction territory can complete without any police encounter, including on a difficult route.
+
+Pirate windows are also probabilistic rather than guaranteed when their territory is eligible.
+
+Heat/relation still control whether a patrol is lawful or hostile **after** a patrol exists.
+
+### Cargo scans
+
+A lawful police patrol may independently choose to scan the player.
+
+Scan chance also scales by faction level and remains random.
+
+A scan is a visible timed action. While it is active the HUD shows the remaining scan time.
+
+The scan uses the specific patrol faction's laws, not a generic regional legality label:
+
+- illegal Arms are contraband only if that faction bans Arms;
+- illegal Narcotics are contraband only if that faction bans Narcotics;
+- unrestricted commodities are never confiscated.
+
+If the scan completes with no contraband, it reports clear and changes no relation/heat.
+
+If contraband is found:
+
+- all cargo illegal to that scanning faction is confiscated;
+- legal cargo is untouched;
+- a fine is charged from available credits;
+- `contraband_scan` is recorded as the faction offense;
+- faction relation falls;
+- heat rises to at least the WANTED threshold;
+- the current patrol therefore escalates to hostile enforcement.
+
+### Arrival and scan cancellation
+
+If the player reaches the destination before the scan timer completes, arrival ends the scan immediately.
+
+An unfinished scan causes:
+
+- no confiscation;
+- no fine;
+- no faction relation loss;
+- no heat increase.
+
+Political-border/contact termination also cancels an unfinished scan.
+
+Active scan state is persisted in the in-flight run snapshot so pausing/reloading cannot reset the timer.
+
+### Enforcement schema
+
+Enforcement schema version **1** persists faction level. Existing careers upgrade in place without rerolling planets, routes, laws, reputation, or markets.
+
 ## Route graph
 
 The 32 planets are not a complete graph.
