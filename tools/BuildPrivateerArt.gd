@@ -21,17 +21,11 @@ func _init() -> void:
         quit(1)
         return
 
-    var texture := ImageTexture.create_from_image(image)
-    if texture == null:
-        push_error("Privateer ImageTexture creation failed")
-        quit(1)
-        return
-
-    err = ResourceSaver.save(texture, OUTPUT_PATH)
+    err = ResourceSaver.save(image, OUTPUT_PATH)
     if err != OK:
-        push_error("Privateer native texture save failed: %s" % err)
+        push_error("Privateer native image save failed: %s" % err)
         quit(1)
         return
 
-    print("PRIVATEER ART RESOURCE OK 390x1228")
+    print("PRIVATEER ART IMAGE RESOURCE OK 390x1228")
     quit()
