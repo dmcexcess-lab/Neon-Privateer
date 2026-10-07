@@ -75,7 +75,7 @@ Docked/privateer-facing screens now use generated sci-fi artwork while the arcad
 - **Travel + contracts:** navigation / operations room.
 - **Ship upgrades + starting weapons:** outfitting hangar.
 
-The assets are packed into one compact **390×1228 JPEG atlas**, stored as an embedded Base64 payload and decoded into a Godot texture at boot for reliable repo/Web export. Menu hitboxes and gameplay logic are unchanged. The arcade renderer does not reference the atlas.
+The assets are packed into one compact **390×1228 JPEG atlas**, stored as four small embedded Base64 chunks and decoded into one Godot texture at boot for reliable repo/Web export. Menu hitboxes and gameplay logic are unchanged. The arcade renderer does not reference the atlas.
 
 ## Space travel
 
