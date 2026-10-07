@@ -2125,7 +2125,6 @@ func _start_route(destination: String) -> bool:
     _start_game()
     level = _route_level_for(route_distance, route_danger, contract_difficulty)
     route_active = true
-    next_lane_event_at = _first_split_time()
     easy_spawn_clock = _route_object_spawn_interval(false, true)
     hard_spawn_clock = _route_object_spawn_interval(true, true)
     neutral_spawn_clock = _route_object_spawn_interval(false, false)
@@ -2787,8 +2786,6 @@ func _process(delta: float) -> void:
     else:
         player_y = lerpf(player_y, PLAYER_Y, minf(1.0, game_delta * DASH_RETURN_RATE))
 
-    easy_spawn_clock -= world_delta
-    hard_spawn_clock -= world_delta
     neutral_spawn_clock -= world_delta
     pickup_clock -= world_delta
     fire_clock -= game_delta
@@ -2819,34 +2816,11 @@ func _process(delta: float) -> void:
         queue_redraw()
         return
 
-    if lane_event_active:
-        station_top += STATION_SPEED * world_delta
-        lane_event_timer = maxf(0.0, lane_event_timer - world_delta)
-        _check_station_collision()
-        if not playing:
-            queue_redraw()
-            return
-        if easy_spawn_clock <= 0.0:
-            _spawn_hazard(difficulty, false, true)
-            easy_spawn_clock = _route_object_spawn_interval(false, true) if route_active else (rng.randf_range(1.55, 1.95) if level == 1 else _spawn_interval(1.05, 0.52, difficulty) * rng.randf_range(0.88, 1.18))
-        if hard_spawn_clock <= 0.0:
-            if route_active:
-                _spawn_hazard(difficulty, true, true)
-                hard_spawn_clock = _route_object_spawn_interval(true, true)
-            elif level == 1:
-                _spawn_circle_bunch(true, rng.randi_range(2, 3))
-                hard_spawn_clock = rng.randf_range(1.65, 2.15)
-            else:
-                _spawn_hazard(difficulty, true, true)
-                hard_spawn_clock = _spawn_interval(0.82, 0.34, difficulty) * rng.randf_range(0.84, 1.14)
-        if station_top > H + 40.0:
-            _end_lane_event()
-    else:
-        if neutral_spawn_clock <= 0.0:
-            _spawn_hazard(difficulty, false, false)
-            neutral_spawn_clock = _route_object_spawn_interval(false, false) if route_active else (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
-        if lane_events_started < _split_count_for_level() and elapsed >= next_lane_event_at and elapsed < _level_duration() - 3.0:
-            _begin_lane_event()
+    # Privateer travel is a single continuous open field. The former
+    # easy/hard lane-split station event has been retired completely.
+    if neutral_spawn_clock <= 0.0:
+        _spawn_hazard(difficulty, false, false)
+        neutral_spawn_clock = _route_object_spawn_interval(false, false) if route_active else (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
 
     if pickup_clock <= 0.0:
         _spawn_pickup()
@@ -3632,7 +3606,6 @@ func _start_game() -> void:
     lane_event_active = false
     lane_event_timer = 0.0
     lane_events_started = 0
-    next_lane_event_at = _first_split_time()
     lane_choice_banner_timer = 0.0
     station_height = _station_height_for_level()
     station_top = -station_height - 40.0
@@ -3787,7 +3760,6 @@ func _start_next_level() -> void:
     lane_event_active = false
     lane_event_timer = 0.0
     lane_events_started = 0
-    next_lane_event_at = _first_split_time()
     lane_choice_banner_timer = 0.0
     station_height = _station_height_for_level()
     station_top = -station_height - 40.0
@@ -4289,7 +4261,7 @@ func _clear_run_snapshot() -> void:
     cfg.save(path)
 
 func _lane_score_multiplier() -> float:
-    return 1.35 if _station_at_player() and _is_hard_position(player_x) else 1.0
+    return 1.0
 
 func _dash_score_multiplier() -> float:
     return 2.0 if dash_score_timer > 0.0 else 1.0
@@ -4532,13 +4504,13 @@ func _container_owner_for_current_space() -> String:
     return _container_owner_for_context(_current_flight_political_context())
 
 func _make_cargo_pickup(commodity: String, quantity: int, x: float, y: float, hard: bool = false) -> Dictionary:
-    var bounds := _lane_bounds(hard) if lane_event_active else Vector2(LEFT, RIGHT)
+    var bounds := Vector2(LEFT, RIGHT)
     return {
         "id": rng.randi(),
         "type": "cargo",
         "commodity": commodity,
         "quantity": maxi(1, quantity),
-        "hard": hard and lane_event_active,
+        "hard": false,
         "x": clampf(x, bounds.x + 16.0, bounds.y - 16.0),
         "y": y,
         "r": 13.0,
@@ -4966,8 +4938,7 @@ func _spawn_weapon_pickup() -> void:
     var choices: Array[String] = ["single", "dual", "cone", "seeker", "laser"]
     choices.erase(current_weapon)
     var weapon: String = choices[rng.randi_range(0, choices.size() - 1)]
-    var hard_lane := lane_event_active and rng.randf() < 0.5
-    var bounds := _lane_bounds(hard_lane) if lane_event_active else Vector2(LEFT, RIGHT)
+    var bounds := Vector2(LEFT, RIGHT)
     objects.append({
         "id": rng.randi(),
         "type": "weapon",
@@ -5060,16 +5031,14 @@ func _move_enemy_shots(delta: float) -> void:
 
 func _energy_spawn_interval() -> float:
     var interval := maxf(0.85, 2.8 - float(level - 1) * 0.18)
-    if lane_event_active:
-        interval *= 0.82
     return interval * rng.randf_range(0.88, 1.14)
 
 func _make_energy_orb(x: float, y: float, hard: bool = false) -> Dictionary:
-    var bounds := _lane_bounds(hard) if lane_event_active else Vector2(LEFT, RIGHT)
+    var bounds := Vector2(LEFT, RIGHT)
     return {
         "id": rng.randi(),
         "type": "energy",
-        "hard": hard and lane_event_active,
+        "hard": false,
         "x": clampf(x, bounds.x + 16.0, bounds.y - 16.0),
         "y": y,
         "r": 12.0,
@@ -5117,16 +5086,12 @@ func _flush_pending_drops(target: Array[Dictionary]) -> void:
 func _spawn_repair() -> void:
     if hp >= max_hp:
         return
-    var lane_hard := lane_event_active and rng.randf() < 0.5
-    var bounds := _lane_bounds(lane_hard) if lane_event_active else Vector2(LEFT, RIGHT)
-    var x := rng.randf_range(bounds.x + 18.0, bounds.y - 18.0)
+    var x := rng.randf_range(LEFT + 18.0, RIGHT - 18.0)
     objects.append(_make_repair_pickup(x, -34.0))
 
 func _spawn_pickup() -> void:
-    var hard_lane := lane_event_active and rng.randf() < 0.82
-    var bounds := _lane_bounds(hard_lane) if lane_event_active else Vector2(LEFT, RIGHT)
-    var x := rng.randf_range(bounds.x + 16.0, bounds.y - 16.0)
-    objects.append(_make_energy_orb(x, -30.0, hard_lane))
+    var x := rng.randf_range(LEFT + 16.0, RIGHT - 16.0)
+    objects.append(_make_energy_orb(x, -30.0, false))
 
 func _begin_finale() -> void:
     finale_active = true
