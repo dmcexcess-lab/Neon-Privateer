@@ -2736,7 +2736,6 @@ func _process(delta: float) -> void:
     near_miss_timer = maxf(0.0, near_miss_timer - delta)
     weapon_banner_timer = maxf(0.0, weapon_banner_timer - delta)
     loot_banner_timer = maxf(0.0, loot_banner_timer - delta)
-    lane_choice_banner_timer = maxf(0.0, lane_choice_banner_timer - delta)
     finale_banner_timer = maxf(0.0, finale_banner_timer - delta)
     flash = maxf(0.0, flash - delta)
     cyan_flash = maxf(0.0, cyan_flash - delta)
@@ -4276,6 +4275,11 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
         return 1
     return 0
 
+
+func _route_progress_fraction() -> float:
+    if not route_active or route_duration <= 0.0:
+        return 0.0
+    return clampf(elapsed / route_duration, 0.0, 1.0)
 
 func _current_flight_political_context() -> Dictionary:
     if route_active and not route_origin.is_empty() and not destination_planet.is_empty():
