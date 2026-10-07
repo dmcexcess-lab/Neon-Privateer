@@ -3975,18 +3975,32 @@ func _make_cargo_pickup(commodity: String, quantity: int, x: float, y: float, ha
         "lane_max": bounds.y
     }
 
+func _asteroid_metal_commodity(roll: float = -1.0) -> String:
+    var use_roll := rng.randf() if roll < 0.0 else roll
+    if use_roll < 0.65:
+        return "Iron"
+    if use_roll < 0.90:
+        return "Copper"
+    if use_roll < 0.99:
+        return "Titanium"
+    return "Rare Alloys"
+
 func _queue_asteroid_ore_drop(obj: Dictionary, roll: float = -1.0) -> bool:
     var use_roll := rng.randf() if roll < 0.0 else roll
     if use_roll >= ASTEROID_ORE_DROP_CHANCE:
         return false
-    pending_drops.append(_make_cargo_pickup("Ore", 1, float(obj.x), float(obj.y), bool(obj.get("hard", false))))
+    pending_drops.append(_make_cargo_pickup(_asteroid_metal_commodity(), 1, float(obj.x), float(obj.y), bool(obj.get("hard", false))))
     return true
 
 func _basic_container_commodity() -> String:
     return commodity_names[rng.randi_range(0, commodity_names.size() - 1)]
 
 func _reinforced_container_commodity() -> String:
-    var premium := ["Electronics", "Arms", "Medicine", "Narcotics", "Fuel", "Ore"]
+    var premium := [
+        "Titanium", "Rare Alloys", "Vaccines", "Regenerative Medicine",
+        "Heavy Weapons", "Explosives", "Military Tech",
+        "Euphorics", "Neurodust", "VR Experiences", "Unlicensed Media"
+    ]
     return String(premium[rng.randi_range(0, premium.size() - 1)])
 
 func _queue_container_loot(obj: Dictionary) -> int:
@@ -4021,7 +4035,7 @@ func _collect_cargo_pickup(obj: Dictionary) -> int:
         loot_banner_text = "CARGO FULL"
         loot_banner_timer = 0.9
         return 0
-    var commodity := String(obj.get("commodity", "Ore"))
+    var commodity := String(obj.get("commodity", "Iron"))
     if not cargo.has(commodity):
         cargo[commodity] = 0
     var available := maxi(1, int(obj.get("quantity", 1)))
@@ -5000,7 +5014,7 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_rect(Rect2(p - Vector2(cargo_r, cargo_r * 0.72), Vector2(cargo_r * 2.0, cargo_r * 1.44)), Color("9b6a2f"), true)
         draw_rect(Rect2(p - Vector2(cargo_r - 3.0, cargo_r * 0.72 - 3.0), Vector2((cargo_r - 3.0) * 2.0, cargo_r * 1.44 - 6.0)), Color("2f261c"), true)
         draw_line(p + Vector2(-cargo_r, 0), p + Vector2(cargo_r, 0), Color("ffd166"), 2.0)
-        _text(String(obj.get("commodity", "Ore")).substr(0, 1).to_upper(), p + Vector2(-4, 5), 12, Color("fff4c2"))
+        _text(String(obj.get("commodity", "Iron")).substr(0, 1).to_upper(), p + Vector2(-4, 5), 12, Color("fff4c2"))
         var qty := int(obj.get("quantity", 1))
         if qty > 1:
             _text("x%d" % qty, p + Vector2(10, 16), 9, Color("ffd166"))
