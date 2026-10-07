@@ -198,7 +198,7 @@ Unowned containers carry no faction penalty.
 
 Loot is released as in-flight cargo pickups rather than being inserted directly into the hold. Cargo pickup collection respects normal cargo capacity and persists through the ordinary Privateer world save.
 
-Asteroids no longer award kill credits. They retain the existing near-miss/dash-near-miss credit behavior and have a 12% chance to release one unit of Ore when destroyed.
+Asteroids no longer award kill credits. They retain the existing near-miss/dash-near-miss credit behavior and have the existing rare salvage chance to release one weighted metal unit, usually Iron/Copper and rarely Titanium/Rare Alloys.
 
 Basic and reinforced containers award no kill credits and no near-miss credits.
 
@@ -710,31 +710,119 @@ These APIs now drive:
 - smuggling legality and scan consequences
 
 
-## Economy schema 3: Bank / Green / Grey / Currency
+## Economy schema 4: aggregate markets, real trade, expansion, war
 
-Economy schema **3** replaces the old seven-good catalog with 24 active commodity IDs.
+Economy schema **4** retains the 24 physical commodity IDs introduced in schema 3 but changes the Bank into three investment markets backed by a real simulated economy.
 
-Green market:
+Green physical goods:
 
 - Food: Grain, Protein, Produce, Luxury Food
 - Metals: Iron, Copper, Titanium, Rare Alloys
 - Medicine: First Aid, Antibiotics, Vaccines, Regenerative Medicine
 
-Grey market:
+Grey physical goods:
 
 - Weapons: Small Arms, Heavy Weapons, Explosives, Military Tech
 - Narcotics: Stims, Sedatives, Euphorics, Neurodust
 - Entertainment: Holovids, Sim Chips, VR Experiences, Unlicensed Media
 
-Every item has a base price and volatility. Each local market persists stock, production, consumption, price factor, and volatility. The price factor mean-reverts while receiving bounded random movement; scarcity and planet specialization remain part of the final quote. While the Bank screen is open, an economy tick occurs every 10 seconds, enabling same-world day trading without a flight. Travel also advances the economy.
+### Three Bank investment markets
 
-The Bank exposes ACCOUNT / GREEN / GREY / CURRENCY. Carried cash uses the legacy `research_credits` code/save field for compatibility. Banked cash is a separate protected meta-save balance. Deposits/withdrawals currently move all available cash; banked money earns 3% once per successful completed flight; ship destruction wipes carried cash but not banked cash or faction-currency holdings.
+ACCOUNT remains cash/savings rather than an investment market. The three investable markets are:
 
-Faction currency instruments are generated for every live faction. Their base index derives from faction level, controlled-world footprint, and route wealth, then a persistent bounded market factor moves the live quote. Currency positions use no cargo capacity.
+- **GREEN** — one low-volatility system index backed by all Green trade;
+- **GREY** — one high-volatility system index backed by all Grey trade;
+- **CURRENCY** — separate instruments for each generated superpower.
 
-### Economy-2 migration
+Green/Grey positions and faction currency positions use no cargo capacity and survive ship destruction. Carried cash still uses the legacy `research_credits` field; the separate bank balance remains protected and earns 3% once per successful completed flight.
 
-Retired IDs map deterministically:
+The Green/Grey index transaction ledger records the **sum of actual simulated shipment value** in its category each economy period. Index price movement derives from the underlying commodity basket plus change in summed trade value. The Green index has a tighter spread and ±1.2% period movement cap. Grey has a wider spread and ±8.5% cap because its underlying commodities are more volatile and active war adds demand pressure. There is no extra cosmetic RNG in either aggregate index.
+
+### Planet specialty production
+
+Every planet persists one `commodity_specialty`. The specialty is selected deterministically from a pool appropriate to its LUSH/VOLCANIC/FROZEN/INDUSTRIAL archetype.
+
+The specialty receives the largest production surplus on that world. It is therefore the primary commodity that world contributes to its controlling empire. Existing worlds missing the field receive it deterministically from the preserved world seed, planet ID, and archetype; geography is not rerolled.
+
+### Real route trade
+
+Commodity trade changes actual market stock.
+
+For each direct route, each endpoint can export its specialty toward the other endpoint when:
+
+- the origin has surplus above its reserve floor;
+- the destination has shortage and/or a price pull;
+- route wealth provides enough shipment capacity;
+- the two endpoint empires are not at war.
+
+A completed simulated shipment:
+
+- subtracts quantity from the origin's persistent stock;
+- adds the same quantity to the destination's stock;
+- records the transaction value in the Green or Grey ledger;
+- records per-commodity underlying volume;
+- adds trade volume/revenue to participating faction macroeconomies.
+
+Grey goods remain subject to law. If the destination bans the item, official flow is heavily reduced rather than deleted, representing thinner illicit trade.
+
+### Empire macroeconomy
+
+Faction records now persist:
+
+- `base_radius`, `base_strength`;
+- `treasury`;
+- `military`;
+- rolling `trade_volume`;
+- `war_weariness`;
+- `war_cooldown`.
+
+Controlled specialist planets add commodity-value contribution to their empire. Simulated trade adds treasury and rolling trade volume.
+
+A peaceful empire with sufficient treasury spends part of that surplus on military replacement and expansion. Expansion changes the faction's existing influence `radius` and `strength`.
+
+There is **no second territory/ownership map**. After influence changes, `refresh_route_politics(world)` recomputes every route's political segmentation, danger, core proximity, traffic-derived wealth, and therefore downstream encounter/contract/map behavior. The political overlay is rebuilt from the same authoritative influence query.
+
+### War
+
+A war may begin only between two powers that:
+
+- share an actual CONTESTED frontier;
+- are not already in another war;
+- have completed war cooldown;
+- have sufficient treasury.
+
+Active war persists as a world-level war record with faction IDs, age, and last power edge.
+
+Each macro step:
+
+- both sides spend treasury;
+- both lose military capacity;
+- trade volume contributes modestly to war power;
+- relative power changes both factions' influence strength/radius in opposite directions;
+- war weariness rises;
+- direct trade between the two warring powers stops.
+
+War ends after prolonged duration, decisive power advantage after a minimum age, or sufficient weariness. Both powers then receive a cooldown.
+
+Because border movement uses the normal influence authority, winning a war can organically turn contested/uncontrolled planets and routes into controlled territory without scripting captures.
+
+### Faction currency
+
+Faction-currency fundamentals now use:
+
+- faction level;
+- controlled-world count;
+- route wealth;
+- treasury;
+- military capacity;
+- rolling real trade volume;
+- active-war penalty.
+
+The persistent currency market factor still supplies bounded market fluctuation around those fundamentals.
+
+### Migration
+
+Retired schema-2 commodity IDs still map deterministically:
 
 - Food -> Grain
 - Ore -> Iron
@@ -744,7 +832,7 @@ Retired IDs map deterministically:
 - Arms -> Small Arms
 - Narcotics -> Stims
 
-Cargo quantity and practical legacy stock are preserved through those mappings where possible. Old keys are then removed; every generated market ends with exactly 24 active goods. Existing faction geography is not rerolled. Missing item-level grey laws are generated deterministically from the preserved world seed/faction ID.
+Schema-2/3 careers upgrade in place. Cargo and practical market stock are preserved where possible, old commodity keys are retired, missing specialty/macro fields are added deterministically, and Green/Grey investment state starts clean if absent. Existing planets, routes, factions, relations, bank balance, and progression are preserved.
 
 
 ## Slice 3 crime schema
