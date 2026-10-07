@@ -3742,99 +3742,139 @@ func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SUBMENU_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), SUBMENU_BACK_RECT.position.x, SUBMENU_BACK_RECT.end.x)
 func _draw_travel_menu() -> void:
-    _draw_menu_art(ART_BG_OPS, 0.76)
-    _draw_menu_panel(Rect2(16.0, 14.0, 358.0, 78.0), 0.76)
-    _text_center("SYSTEM MAP", 52.0, 29, Color("77f7ff"), 24.0, 366.0)
-    _text_center("CURRENT: %s" % current_planet.to_upper(), 78.0, 13, Color("bdeef4"), 24.0, 366.0)
+    _draw_menu_art(ART_BG_OPS, 0.78)
+    _draw_menu_panel(Rect2(16.0, 14.0, 358.0, 78.0), 0.80)
+    _text_center("SYSTEM MAP", 50.0, 27, Color("77f7ff"), 24.0, 366.0)
+    _text_center("CURRENT: %s" % _planet_display_name(current_planet).to_upper(), 76.0, 12, Color("bdeef4"), 24.0, 366.0)
 
-    # Dark navigation glass over the generated operations-room art.
-    draw_rect(SYSTEM_MAP_RECT, Color(0.005, 0.015, 0.035, 0.82), true)
-    draw_rect(SYSTEM_MAP_RECT, Color(0.25, 0.78, 0.96, 0.26), false, 1.5)
+    draw_rect(SYSTEM_MAP_RECT, Color(0.004, 0.012, 0.030, 0.90), true)
+    draw_rect(SYSTEM_MAP_RECT, Color(0.25, 0.78, 0.96, 0.30), false, 1.5)
 
-    # Orbital guide rings make this read as a star system rather than a route list.
-    for radius in [72.0, 126.0, 182.0]:
-        draw_arc(SYSTEM_STAR_POS, radius, 0.0, TAU, 72, Color(0.32, 0.66, 0.86, 0.13), 1.0, true)
+    # Faction influence fields. These are presentation of the authoritative radial model.
+    for faction in political_world.get("factions", []):
+        var capital_id := String(faction.capital_id)
+        var capital_world := _system_planet_world_position(capital_id)
+        var capital_screen := _map_world_to_screen(capital_world)
+        var radius_px := float(faction.radius) * _system_map_fit_scale() * system_map_zoom
+        var fc := Color(faction.color)
+        if capital_screen.distance_to(SYSTEM_MAP_RECT.get_center()) < radius_px + 360.0:
+            draw_circle(capital_screen, radius_px, Color(fc.r, fc.g, fc.b, 0.035))
+            draw_arc(capital_screen, radius_px, 0.0, TAU, 72, Color(fc.r, fc.g, fc.b, 0.16), 1.0, true)
+            draw_circle(capital_screen, radius_px * 0.27, Color(fc.r, fc.g, fc.b, 0.045))
+            draw_arc(capital_screen, radius_px * 0.27, 0.0, TAU, 48, Color(fc.r, fc.g, fc.b, 0.24), 1.0, true)
 
-    # System primary.
-    draw_circle(SYSTEM_STAR_POS, 31.0, Color(1.0, 0.68, 0.20, 0.07))
-    draw_circle(SYSTEM_STAR_POS, 21.0, Color(1.0, 0.73, 0.26, 0.14))
-    draw_circle(SYSTEM_STAR_POS, 12.0, Color("ffd166"))
-    draw_circle(SYSTEM_STAR_POS, 6.0, Color("fff4c2"))
+    # System primary at logical origin.
+    var star := _map_world_to_screen(Vector2.ZERO)
+    if SYSTEM_MAP_RECT.grow(40.0).has_point(star):
+        draw_circle(star, 18.0, Color(1.0, 0.68, 0.20, 0.08))
+        draw_circle(star, 11.0, Color("ffd166"))
+        draw_circle(star, 5.0, Color("fff4c2"))
 
-    # Every physical route in the current game is represented on the map.
-    for pair in _system_route_pairs():
-        var origin := String(pair[0])
-        var dest := String(pair[1])
-        var spec := _route_spec(origin, dest)
-        var a := _system_planet_position(origin)
-        var b := _system_planet_position(dest)
-        var danger := int(spec.danger)
-        var route_color := _system_route_color(danger)
-        var selected_route := travel_selected_planet != "" and (
-            (origin == current_planet and dest == travel_selected_planet) or
-            (dest == current_planet and origin == travel_selected_planet)
-        )
-        var contract_route := not active_contract.is_empty() and (
-            (origin == current_planet and dest == String(active_contract.get("destination", ""))) or
-            (dest == current_planet and origin == String(active_contract.get("destination", "")))
-        )
-        draw_line(a, b, Color(0.01, 0.02, 0.04, 0.88), 6.0 if selected_route else 4.0, true)
-        var alpha := 0.92 if selected_route else (0.70 if contract_route else 0.42)
-        var width := 4.0 if selected_route else (3.0 if contract_route else 1.7 + float(danger) * 0.20)
-        var final_color := Color("6bffb0") if contract_route else route_color
-        draw_line(a, b, Color(final_color.r, final_color.g, final_color.b, alpha), width, true)
+    # Every generated trade lane is drawn segment-by-segment from the same political data gameplay queries.
+    for route in political_world.get("routes", []):
+        var origin := String(route.a)
+        var dest := String(route.b)
+        var wa := _system_planet_world_position(origin)
+        var wb := _system_planet_world_position(dest)
+        var selected_path: Array = _route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
+        var on_selected_path := false
+        for i in range(maxi(0, selected_path.size() - 1)):
+            if (String(selected_path[i]) == origin and String(selected_path[i + 1]) == dest) or (String(selected_path[i]) == dest and String(selected_path[i + 1]) == origin):
+                on_selected_path = true
+                break
+        var contract_path: Array = _route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
+        var on_contract_path := false
+        for i in range(maxi(0, contract_path.size() - 1)):
+            if (String(contract_path[i]) == origin and String(contract_path[i + 1]) == dest) or (String(contract_path[i]) == dest and String(contract_path[i + 1]) == origin):
+                on_contract_path = true
+                break
 
-    # Planets are actual map nodes using their generated portraits.
+        for segment in route.get("segments", []):
+            var t0 := float(segment.start_t)
+            var t1 := float(segment.end_t)
+            var a := _map_world_to_screen(wa.lerp(wb, t0))
+            var b := _map_world_to_screen(wa.lerp(wb, t1))
+            var state := String(segment.state)
+            var faction_id := String(segment.get("faction_id", segment.get("strongest_faction_id", "")))
+            var rc := _territory_color(state, faction_id)
+            var alpha := 0.92 if on_selected_path else (0.72 if on_contract_path else 0.43)
+            var width := 4.0 if on_selected_path else (2.8 if on_contract_path else 1.5)
+            draw_line(a, b, Color(0.0, 0.0, 0.0, 0.72), width + 2.2, true)
+            draw_line(a, b, Color(rc.r, rc.g, rc.b, alpha), width, true)
+
+    # Planet nodes.
     for planet in planet_names:
         var center := _system_planet_position(planet)
+        if not SYSTEM_MAP_RECT.grow(52.0).has_point(center):
+            continue
         var is_current := planet == current_planet
         var is_selected := planet == travel_selected_planet
         var is_contract := _contract_target_matches(planet)
-        var portrait_size := 62.0 if is_selected else 54.0
-        var portrait_rect := Rect2(center - Vector2.ONE * (portrait_size * 0.5), Vector2.ONE * portrait_size)
+        var record := PoliticalWorld.planet_record(political_world, planet)
+        var context := _get_political_context_at(Vector2(record.pos))
+        var faction_id := String(context.get("faction_id", context.get("strongest_faction_id", "")))
+        var portrait_size := clampf(25.0 + system_map_zoom * 5.0, 30.0, 43.0)
+        if is_selected or is_current:
+            portrait_size += 5.0
+        var portrait_rect := Rect2(center - Vector2.ONE * portrait_size * 0.5, Vector2.ONE * portrait_size)
 
         if is_selected:
-            draw_circle(center, 41.0, Color(0.47, 0.97, 1.0, 0.12))
-            draw_arc(center, 39.0, 0.0, TAU, 40, Color("77f7ff"), 2.5, true)
+            draw_circle(center, portrait_size * 0.72, Color(0.47, 0.97, 1.0, 0.11))
+            draw_arc(center, portrait_size * 0.70, 0.0, TAU, 32, Color("77f7ff"), 2.0, true)
         if is_current:
-            draw_arc(center, 34.0, 0.0, TAU, 40, Color("ffd166"), 3.0, true)
+            draw_arc(center, portrait_size * 0.61, 0.0, TAU, 32, Color("ffd166"), 2.5, true)
         if is_contract:
-            draw_arc(center, 45.0, 0.0, TAU, 40, Color("6bffb0"), 2.0, true)
+            draw_arc(center, portrait_size * 0.82, 0.0, TAU, 32, Color("6bffb0"), 1.8, true)
 
         _draw_planet_art(planet, portrait_rect, 1.0)
 
-        var label_color := Color("ffd166") if is_current else (Color("6bffb0") if is_contract else Color("f0fbff"))
-        var label_y := center.y + 43.0
-        _text_center(planet.to_upper(), label_y, 12, label_color, center.x - 58.0, center.x + 58.0)
-        if is_current:
-            _text_center("YOU", label_y + 15.0, 10, Color("ffd166"), center.x - 44.0, center.x + 44.0)
-        elif is_contract:
-            _text_center("CONTRACT", label_y + 15.0, 9, Color("6bffb0"), center.x - 48.0, center.x + 48.0)
+        var is_capital := false
+        for faction in political_world.get("factions", []):
+            if String(faction.capital_id) == planet:
+                is_capital = true
+                var fc := Color(faction.color)
+                draw_arc(center, portrait_size * 0.92, 0.0, TAU, 32, fc, 2.0, true)
+                break
 
-    # Selection card is the only place route numbers are repeated.
-    _draw_menu_panel(SYSTEM_ROUTE_INFO_RECT, 0.88, Color(0.35, 0.85, 1.0, 0.34))
+        var show_label := system_map_zoom >= 1.25 or is_current or is_selected or is_contract or is_capital
+        if show_label:
+            var label_color := Color("ffd166") if is_current else (Color("6bffb0") if is_contract else Color("f0fbff"))
+            _text_center(_planet_display_name(planet).to_upper(), center.y + portrait_size * 0.82, 9, label_color, center.x - 58.0, center.x + 58.0)
+            if is_capital:
+                _text_center("CAP", center.y + portrait_size * 0.82 + 12.0, 8, _faction_color(faction_id), center.x - 34.0, center.x + 34.0)
+
+    draw_rect(SYSTEM_RESET_RECT, Color(0.04, 0.08, 0.12, 0.92), true)
+    draw_rect(SYSTEM_RESET_RECT, Color("77f7ff"), false, 1.5)
+    _text_center("CENTER", SYSTEM_RESET_RECT.position.y + 23.0, 10, Color("bdeef4"), SYSTEM_RESET_RECT.position.x, SYSTEM_RESET_RECT.end.x)
+
+    # Route planning card.
+    _draw_menu_panel(SYSTEM_ROUTE_INFO_RECT, 0.91, Color(0.35, 0.85, 1.0, 0.34))
     var selected := travel_selected_planet if planet_names.has(travel_selected_planet) else current_planet
-    _draw_planet_art(selected, Rect2(38.0, 607.0, 84.0, 82.0), 1.0)
-    _text(selected.to_upper(), Vector2(138.0, 620.0), 21, Color("f0fbff"))
+    _draw_planet_art(selected, Rect2(36.0, 607.0, 76.0, 74.0), 1.0)
+    _text(_planet_display_name(selected).to_upper(), Vector2(126.0, 620.0), 18, Color("f0fbff"))
 
+    var next_hop := ""
     if selected == current_planet:
-        _text("DOCKED HERE", Vector2(138.0, 650.0), 14, Color("ffd166"))
-        _text("SELECT ANOTHER WORLD", Vector2(138.0, 678.0), 12, Color("8ea9b8"))
+        _text("DOCKED HERE", Vector2(126.0, 646.0), 13, Color("ffd166"))
+        _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 672.0), 10, Color("8ea9b8"))
     else:
         var selected_spec := _route_spec(current_planet, selected)
+        next_hop = _next_hop_toward(selected)
         var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
         var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
         var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
-        _text("DIST %d   DANGER %d" % [int(selected_spec.distance), int(selected_spec.danger)], Vector2(138.0, 648.0), 13, _system_route_color(int(selected_spec.danger)))
-        _text("FLIGHT %ds   L%d" % [int(selected_duration), selected_level], Vector2(138.0, 674.0), 13, Color("ffd166"))
+        var pct := _route_political_percentages(current_planet, selected)
+        _text("D%d  RISK %s  HOPS %d" % [int(selected_spec.distance), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 11, _system_route_color(int(selected_spec.danger)))
+        _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 667.0), 10, Color("8ea9b8"))
+        _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 689.0), 10, Color("ffd166"))
         if _contract_target_matches(selected):
-            _text("ACTIVE CONTRACT", Vector2(138.0, 700.0), 11, Color("6bffb0"))
+            _text("ACTIVE CONTRACT", Vector2(126.0, 710.0), 9, Color("6bffb0"))
 
     draw_rect(SYSTEM_MAP_BACK_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SYSTEM_MAP_BACK_RECT.position.y + 35.0, 18, Color("f0fbff"), SYSTEM_MAP_BACK_RECT.position.x, SYSTEM_MAP_BACK_RECT.end.x)
 
-    var can_fly := planet_names.has(selected) and selected != current_planet
+    var can_fly := not next_hop.is_empty()
     draw_rect(SYSTEM_FLY_RECT, Color(0.04, 0.18, 0.15, 0.96) if can_fly else Color(0.05, 0.06, 0.08, 0.96), true)
     draw_rect(SYSTEM_FLY_RECT, Color("6bffb0") if can_fly else Color("46515c"), false, 2.5)
     _text_center("FLY", SYSTEM_FLY_RECT.position.y + 35.0, 19, Color("f0fbff") if can_fly else Color("68737d"), SYSTEM_FLY_RECT.position.x, SYSTEM_FLY_RECT.end.x)
