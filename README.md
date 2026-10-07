@@ -154,7 +154,32 @@ Faction ships use their superpower color; pirate ships use a distinct pirate tre
 
 Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, station splits, pickups, shields, hit points, and procedural SFX remain unchanged.
 
-**Deferred to Slice 7:** police cargo scans, scan countdowns, contraband detection, fines, and confiscation.
+### Random police encounters and cargo scans
+
+Police are **not guaranteed** by route difficulty.
+
+CORE/CONTROLLED space only makes the controlling faction eligible to appear. Each patrol opportunity then makes a random roll based on that faction's persistent level (1–5). Route danger, contract difficulty, and heat do not increase police-contact probability. Failed rolls can leave an entire flight with no police encounter.
+
+Faction level currently gives per-opportunity police chances from 19% at level 1 through 39% at level 5. Opportunity timing is randomized as well.
+
+Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed.
+
+A lawful patrol may also randomly initiate a timed cargo scan. The HUD shows the scan countdown. The scan checks Arms and Narcotics against that **specific faction's** laws.
+
+If a completed scan finds contraband:
+
+- only commodities illegal to that faction are confiscated;
+- ordinary/legal cargo remains;
+- a fine is deducted from available credits;
+- relation drops and heat rises;
+- the offense is recorded as `contraband_scan`;
+- the patrol escalates into hostile enforcement.
+
+A clean completed scan has no reputation/crime consequence.
+
+If destination arrival occurs before scan completion, the scan is simply terminated with no confiscation, fine, relation loss, or heat. Active scan timers survive pause/reload.
+
+
 
 
 ## Flight bonus credits
@@ -185,7 +210,7 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2 and crime schema 1, all 32 generated planets, factions, capitals, influence parameters, faction law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, crime schema 1, and enforcement schema 1, all 32 generated planets, factions, capitals, influence parameters, faction level/law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
 
 Generated political state is created once and never rerolled on reload.
 
@@ -205,7 +230,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, route scaling, territory-authorized pirate/police contacts, lawful patrol behavior, live criminal escalation, neutral auto-fire protection, heavy-enforcement pentagon gating, enforcement-kill reputation/heat consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid-only near misses, asteroid Ore salvage, cargo-container ownership/loot/reputation penalties, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, faction-level enforcement migration, route scaling, probabilistic pirate/police opportunities, proof that police probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, heavy-enforcement pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
