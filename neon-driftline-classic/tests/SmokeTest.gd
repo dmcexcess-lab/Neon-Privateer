@@ -67,14 +67,17 @@ func _initialize() -> void:
         _fail("SFX pool cursor did not advance")
         return
 
-    # Title loadout selector is part of the actual run-start input path.
+    # Title loadout selector is part of the actual run-start input path and
+    # exposes only permanently unlocked weapons.
     scene.playing = false
     scene.game_over = false
+    scene.research_start_single = true
     scene.starting_weapon = "none"
     scene._handle_tap(scene.MAIN_LOADOUT_RECT.get_center())
     if scene.starting_weapon != "single":
         _fail("title-screen loadout button did not select an unlocked permanent weapon")
         return
+    scene.research_start_single = false
     scene.starting_weapon = "none"
 
     scene._start_game()
