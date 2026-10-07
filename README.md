@@ -72,7 +72,7 @@ Status thresholds:
 - Relation: ALLIED / FRIENDLY / NEUTRAL / UNFRIENDLY / HOSTILE
 - Heat: CLEAR / WATCHED / WANTED / HUNTED
 
-Future enforcement systems now have authoritative eligibility queries:
+Enforcement uses these authoritative eligibility queries:
 
 - police hostility: heat 30+ or HOSTILE relation (-60 or worse)
 - heavy/pentagon enforcement: heat 60+ or relation -75 or worse
@@ -176,9 +176,9 @@ Police are **not guaranteed** by route difficulty.
 
 CORE/CONTROLLED space only makes the controlling faction eligible to appear. Each patrol opportunity then makes a random roll based on that faction's persistent level (1–5) and the lane's route wealth. Route danger, contract difficulty, and heat do not increase police-contact probability. Failed rolls can leave an entire flight with no police encounter.
 
-Faction level contributes a 19%–39% base police chance before the route-wealth multiplier. Wealthy core/traffic lanes raise that chance; poor backwater lanes lower it. Opportunity timing is randomized as well.
+Faction level contributes a **16.5%–34.5%** base police chance before the route-wealth multiplier. Route wealth scales that by **0.65×–1.35×**, so the final per-opportunity patrol chance remains probabilistic even at maximum traffic. Police opportunities occur every 11–16 seconds while eligible.
 
-Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed. Route wealth scales pirate-contact probability too, and every pirate contact is attack-on-sight.
+Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed. The production bases are **22% in CONTESTED** and **32% in UNCONTROLLED** before the same 0.65×–1.35× wealth multiplier. Pirate opportunities occur every 9.5–14.5 seconds, and every actual pirate contact is attack-on-sight.
 
 A lawful patrol may also randomly initiate a timed cargo scan. The HUD shows the scan countdown. The scan checks Arms and Narcotics against that **specific faction's** laws.
 
@@ -234,6 +234,27 @@ Older four-world careers migrate once to political schema 2. Existing five-commo
 
 The active route snapshot remains separate and preserves exact in-flight state.
 
+## Slice 10 production closure
+
+Slice 10 is the final balance/hardening pass for this system set; it adds no new game layer.
+
+Production tuning is centralized in `Main.gd`:
+
+- patrol contact: faction-level base 16.5%–34.5%, then route-wealth multiplier 0.65×–1.35×;
+- pirate contact: 22% CONTESTED / 32% UNCONTROLLED base, then route wealth;
+- scan chance: 14.5% at faction level 1 through 32.5% at level 5;
+- patrol opportunity spacing: 11–16 seconds;
+- pirate opportunity spacing: 9.5–14.5 seconds;
+- asteroid Ore salvage: 10%;
+- owned container relation loss: 3 basic / 7 reinforced;
+- police kill: -15 relation / +20 heat;
+- heavy enforcement kill: -25 relation / +35 heat;
+- completed contraband scans still apply at least 30 heat, so discovery immediately reaches WANTED.
+
+The production smoke suite sweeps 12 deterministic world seeds and verifies 32 worlds, 2–4 powers, all four political states, sparse connected routing, danger/wealth variation, law variation, deterministic regeneration, loot averages, encounter/scan envelopes, penalty hierarchy, phone hitboxes/layout, and a final live-route save/reload regression.
+
+CI requires the production-closure marker before the frozen Classic regression, Web export, artifact upload, and GitHub Pages deployment.
+
 ## Technical target
 
 - Godot 4.7.2 stable
@@ -246,7 +267,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, legal/illegal market premiums, faction-aware contract generation, smuggling opportunities, pirate-exposure payout premiums, contract-schema migration/persistence, smuggling-cargo scan confiscation, contract-driven market stock and faction-relation effects, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
+The smoke test covers the complete Privateer system pass: 12-seed generated-world production validation, deterministic generation, phone-layout/hit-target validation, economy simulation, legal/illegal market premiums, faction-aware contract generation, smuggling opportunities, pirate-exposure payout premiums, contract-schema migration/persistence, smuggling-cargo scan confiscation, contract-driven market stock and faction-relation effects, tuned loot averages, encounter/scan probability envelopes, reputation/heat penalty hierarchy, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy migration, asteroid salvage/containers, durable active-route save/reload, and core flight mechanics.
 
 
 ## Preserved arcade version
