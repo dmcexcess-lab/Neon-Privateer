@@ -2115,8 +2115,9 @@ func _arrive_at_destination() -> void:
     var contract_reward := _complete_contract_if_ready()
     research_credits += contract_reward
     _simulate_economy(route_distance + route_danger)
+    var bank_interest := _apply_bank_interest()
     _regenerate_contracts()
-    last_trip_summary = "ARRIVED %s  +%d CR" % [_planet_display_name(current_planet), flight_bonus + contract_reward]
+    last_trip_summary = "ARRIVED %s  CASH +%d  BANK +%d" % [_planet_display_name(current_planet), flight_bonus + contract_reward, bank_interest]
     hub_open = true
     market_open = false
     contracts_open = false
@@ -2132,8 +2133,12 @@ func _arrive_at_destination() -> void:
     _save_all_state()
     queue_redraw()
 
-func _fail_route(reason: String) -> void:
+func _fail_route(reason: String, ship_destroyed: bool = false) -> void:
     _cancel_police_scan()
+    var lost_cash := 0
+    if ship_destroyed:
+        lost_cash = maxi(0, research_credits)
+        research_credits = 0
     playing = false
     route_active = false
     boss_active = false
@@ -2144,7 +2149,7 @@ func _fail_route(reason: String) -> void:
         if String(active_contract.get("type", "")) == "passenger":
             passengers = maxi(0, passengers - 1)
         active_contract.clear()
-    last_trip_summary = reason + " — CONTRACT LOST"
+    last_trip_summary = ("%s — CASH LOST %d" % [reason, lost_cash]) if ship_destroyed else (reason + " — CONTRACT LOST")
     hub_open = true
     market_open = false
     contracts_open = false
@@ -2171,6 +2176,9 @@ func _save_privateer_state() -> void:
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
+    cfg.set_value("world", "currency_holdings", currency_holdings)
+    cfg.set_value("world", "currency_markets", currency_markets)
+    cfg.set_value("world", "bank_interest_cycles", bank_interest_cycles)
     cfg.set_value("world", "contracts", contract_board)
     cfg.set_value("world", "active_contract", active_contract)
     cfg.set_value("world", "passengers", passengers)
@@ -2226,8 +2234,13 @@ func _load_privateer_state() -> void:
     var crime_schema_changed: bool = _ensure_crime_schema()
     var enforcement_schema_changed: bool = _ensure_enforcement_schema()
     var route_wealth_schema_changed: bool = _ensure_route_wealth_schema()
+    var grey_law_schema_changed: bool = PoliticalWorld.ensure_grey_law_schema(political_world)
     cargo = cfg.get_value("world", "cargo", cargo)
+    currency_holdings = cfg.get_value("world", "currency_holdings", {})
+    currency_markets = cfg.get_value("world", "currency_markets", {})
+    bank_interest_cycles = int(cfg.get_value("world", "bank_interest_cycles", 0))
     var commodity_schema_changed: bool = _ensure_commodity_schema()
+    var currency_schema_changed: bool = _ensure_currency_schema()
     contract_board.clear()
     for contract in cfg.get_value("world", "contracts", []):
         var migrated: Dictionary = contract.duplicate(true)
@@ -2256,7 +2269,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or commodity_schema_changed or contract_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION or int(cfg.get_value("world", "contract_schema", 0)) < CONTRACT_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or grey_law_schema_changed or commodity_schema_changed or currency_schema_changed or contract_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION or int(cfg.get_value("world", "contract_schema", 0)) < CONTRACT_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -2265,6 +2278,12 @@ func _save_all_state() -> void:
     _save_privateer_state()
 
 func _process(delta: float) -> void:
+    if not playing and market_open and not run_paused:
+        docked_market_clock += delta
+        if docked_market_clock >= DOCKED_MARKET_TICK_SECONDS:
+            docked_market_clock = fmod(docked_market_clock, DOCKED_MARKET_TICK_SECONDS)
+            _simulate_economy(1)
+            _save_privateer_state()
     if run_paused or not playing:
         queue_redraw()
         return
@@ -3249,7 +3268,7 @@ func _finish(success: bool) -> void:
         if success:
             _arrive_at_destination()
         else:
-            _fail_route(result_reason if not result_reason.is_empty() else "SHIP LOST")
+            _fail_route(result_reason if not result_reason.is_empty() else "SHIP LOST", true)
         return
     playing = false
     game_over = true
@@ -3497,6 +3516,7 @@ func _bank_run_score() -> void:
 func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
+    cfg.set_value("meta", "bank_balance", bank_balance)
     cfg.set_value("meta", "ship_speed", research_ship_speed)
     cfg.set_value("meta", "dash", research_dash)
     cfg.set_value("meta", "damage", research_damage)
@@ -3519,6 +3539,7 @@ func _load_meta() -> void:
     if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
+    bank_balance = int(cfg.get_value("meta", "bank_balance", 0))
     research_ship_speed = int(cfg.get_value("meta", "ship_speed", 0))
     research_dash = int(cfg.get_value("meta", "dash", 0))
     research_damage = int(cfg.get_value("meta", "damage", 0))
