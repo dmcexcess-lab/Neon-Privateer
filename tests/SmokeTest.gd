@@ -2675,9 +2675,9 @@ func _initialize() -> void:
         _fail("route-time randomness is not affecting travel duration")
         return
     scene.research_ship_speed = 0
-    var slow_wall_time := scene._route_duration_for(5, 1, 0, 1.0) / scene._ship_speed_multiplier()
+    var slow_wall_time: float = float(scene._route_duration_for(5, 1, 0, 1.0)) / float(scene._ship_speed_multiplier())
     scene.research_ship_speed = 5
-    var fast_wall_time := scene._route_duration_for(5, 1, 0, 1.0) / scene._ship_speed_multiplier()
+    var fast_wall_time: float = float(scene._route_duration_for(5, 1, 0, 1.0)) / float(scene._ship_speed_multiplier())
     if fast_wall_time >= slow_wall_time:
         _fail("ship speed upgrade does not reduce wall-clock travel time")
         return
@@ -2687,7 +2687,7 @@ func _initialize() -> void:
     # actual edge constraint rather than display-only metadata.
     scene.ship_fuel = 5
     scene.research_credits = 1000
-    var refuel_cash_before := scene.research_credits
+    var refuel_cash_before: int = int(scene.research_credits)
     var refueled_units := int(scene._refuel_ship())
     if refueled_units != scene.FUEL_CAPACITY - 5 or scene.ship_fuel != scene.FUEL_CAPACITY:
         _fail("refueling did not fill missing tank units")
@@ -2717,7 +2717,7 @@ func _initialize() -> void:
         return
     var launch_edge: Dictionary = scene.PoliticalWorld.direct_route(scene.political_world, scene.current_planet, neighbor)
     scene.ship_fuel = scene.FUEL_CAPACITY
-    var fuel_before_launch := scene.ship_fuel
+    var fuel_before_launch: int = int(scene.ship_fuel)
     if not scene._start_route(neighbor):
         _fail("could not launch generated jump-range-valid direct lane")
         return
