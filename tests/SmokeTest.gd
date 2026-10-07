@@ -733,7 +733,7 @@ func _initialize() -> void:
     scene.target_x = scene.player_x
     scene.last_near_ids.clear()
     scene.score = 0
-    var square_x := scene.player_x + 37.0
+    var square_x: float = float(scene.player_x) + 37.0
     var moving_square := {
         "id": 70006, "type": "hazard", "kind": 1,
         "hp": 4.0, "max_hp": 4.0, "hard": false,
