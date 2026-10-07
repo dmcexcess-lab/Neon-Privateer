@@ -624,9 +624,9 @@ func _initialize() -> void:
         _fail("police encounter chance changed with route danger")
         return
     scene.route_wealth = 1
-    var low_wealth_police_chance := scene._encounter_roll_chance(clean_controlled)
+    var low_wealth_police_chance: float = float(scene._encounter_roll_chance(clean_controlled))
     scene.route_wealth = 5
-    var high_wealth_police_chance := scene._encounter_roll_chance(clean_controlled)
+    var high_wealth_police_chance: float = float(scene._encounter_roll_chance(clean_controlled))
     if high_wealth_police_chance <= low_wealth_police_chance:
         _fail("route wealth did not raise patrol encounter chance")
         return
@@ -659,9 +659,9 @@ func _initialize() -> void:
 
     # Pirates are always hostile when rolled, and wealthy eligible lanes attract them more often.
     scene.route_wealth = 1
-    var poor_pirate_chance := scene._encounter_roll_chance(pirate_uncontrolled)
+    var poor_pirate_chance: float = float(scene._encounter_roll_chance(pirate_uncontrolled))
     scene.route_wealth = 5
-    var rich_pirate_chance := scene._encounter_roll_chance(pirate_uncontrolled)
+    var rich_pirate_chance: float = float(scene._encounter_roll_chance(pirate_uncontrolled))
     if poor_pirate_chance <= 0.0 or rich_pirate_chance >= 1.0 or rich_pirate_chance <= poor_pirate_chance:
         _fail("pirate contact chance is not probabilistic/wealth-scaled")
         return
@@ -1373,7 +1373,7 @@ func _initialize() -> void:
     for sample_index in 2400:
         if scene._choose_enemy_kind(false) == 0:
             low_danger_asteroids += 1
-    var low_danger_interval := scene._route_object_spawn_interval(false, false)
+    var low_danger_interval: float = float(scene._route_object_spawn_interval(false, false))
 
     scene.route_danger = 5
     scene.rng.seed = 81173
@@ -1381,7 +1381,7 @@ func _initialize() -> void:
     for sample_index in 2400:
         if scene._choose_enemy_kind(false) == 0:
             high_danger_asteroids += 1
-    var high_danger_interval := scene._route_object_spawn_interval(false, false)
+    var high_danger_interval: float = float(scene._route_object_spawn_interval(false, false))
     if high_danger_asteroids <= low_danger_asteroids or high_danger_interval >= low_danger_interval:
         _fail("route danger did not increase asteroid density")
         return
@@ -1391,7 +1391,7 @@ func _initialize() -> void:
     scene.rng.seed = 91173
     var poor_route_containers := 0
     for sample_index in 2400:
-        var poor_kind := scene._choose_enemy_kind(false)
+        var poor_kind: int = int(scene._choose_enemy_kind(false))
         if poor_kind == 1 or poor_kind == 2:
             poor_route_containers += 1
 
@@ -1399,7 +1399,7 @@ func _initialize() -> void:
     scene.rng.seed = 91173
     var rich_route_containers := 0
     for sample_index in 2400:
-        var rich_kind := scene._choose_enemy_kind(false)
+        var rich_kind: int = int(scene._choose_enemy_kind(false))
         if rich_kind == 1 or rich_kind == 2:
             rich_route_containers += 1
     if rich_route_containers <= poor_route_containers:
@@ -1708,7 +1708,7 @@ func _initialize() -> void:
     if max_distance > min_distance and scene._route_duration_for(max_distance, 1, 0) <= scene._route_duration_for(min_distance, 5, 5):
         _fail("longer route did not produce longer travel time")
         return
-    var fixed_length_time := scene._route_duration_for(3, 1, 0)
+    var fixed_length_time: float = float(scene._route_duration_for(3, 1, 0))
     if absf(fixed_length_time - scene._route_duration_for(3, 5, 5)) > 0.0001:
         _fail("danger or contract difficulty changed travel time for the same route length")
         return
@@ -1726,7 +1726,7 @@ func _initialize() -> void:
     if scene.route_wealth != int(launched_route.get("wealth", 0)):
         _fail("launched route did not inherit generated route wealth")
         return
-    var expected_snapshot_wealth := scene.route_wealth
+    var expected_snapshot_wealth: int = int(scene.route_wealth)
 
     # Active route snapshot preserves generated IDs, wealth, and encounter context.
     scene.elapsed = 7.5
