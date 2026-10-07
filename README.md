@@ -26,7 +26,7 @@ The old Aster, Cinder, Vesper, and Helix identities are planet **types**, not fi
 
 Each generated planet has a stable internal ID, unique display name, type, and system position. All four types appear multiple times and reuse the existing generated planet art.
 
-A new career also generates **2–4 superpowers** with separated capitals, colors, persistent player relation fields, influence radius/strength, and initial Arms/Narcotics law data. Political geography is derived from those influence fields:
+A new career also generates **2–4 superpowers** with separated capitals, colors, persistent player relation fields, influence radius/strength, and item-level grey-market law data. Political geography is derived from those influence fields:
 
 - **CORE** — strong space around a capital; lowest political risk.
 - **CONTROLLED** — clearly dominated by one power.
@@ -41,25 +41,60 @@ The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/res
 
 See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, route generation/segmentation, danger derivation, persistence, and migration contract.
 
-## Economy
+## Bank, markets, and economy
 
-Seven commodities are simulated:
+Every docked world exposes its economy through the **Bank**. The Bank has four tabs:
 
-- Food
-- Ore
-- Medicine
-- Electronics
-- Fuel
-- Arms
-- Narcotics
+- **ACCOUNT** — move money between carried cash and the protected bank balance.
+- **GREEN** — trade the 12 legal commodities.
+- **GREY** — trade all 12 grey commodities while seeing the local faction's item-level legality.
+- **CURRENCY** — buy and sell investment units in each generated superpower.
 
-Every generated planet maintains persistent stock for every commodity plus local production and consumption rates. Its profile comes from its LUSH/VOLCANIC/FROZEN/INDUSTRIAL type. Industrial worlds are the strongest Arms producers; lush worlds are the strongest Narcotics producers. Prices continue to derive from stock scarcity, production/consumption pressure, base commodity value, local production advantages, and—only for restricted commodities—the destination's legal status. Illegal Arms/Narcotics markets apply a 30% black-market multiplier; mixed-law markets apply a smaller 14% multiplier.
+### Cash and bank balance
 
-**Arms** and **Narcotics** are politically restricted commodities. Every superpower independently decides whether each is legal. CORE/CONTROLLED markets show that controlling faction's law, CONTESTED worlds show mixed/shared claimant law, and UNCONTROLLED worlds report them as unregulated. The selected planet on the system map shows the same law summary.
+`research_credits` remains the internal compatibility field for **carried cash**, but the player-facing economy distinguishes CASH from BANK.
 
-Trading itself remains mechanically available even where a commodity is illegal. The enforcement layer now supplies the risk: lawful patrols can scan cargo, confiscate faction-illegal Arms/Narcotics, fine the player, add heat/relation penalties, and escalate into combat.
+- Flight bonuses, contracts, commodity sales, and currency sales pay carried cash.
+- Commodity purchases, currency purchases, fines, and ship upgrades spend carried cash.
+- **Ship destruction loses all carried cash.**
+- The protected bank balance survives ship destruction.
+- Depositing and withdrawing currently move the full available balance with one tap.
+- The bank balance earns **3% once per successfully completed flight**. Reopening the Bank does not trigger interest.
+- Faction-currency positions survive ship loss and use no cargo space.
 
-Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system.
+### Green-market commodities
+
+The legal catalog has 12 goods:
+
+- **Food:** Grain, Protein, Produce, Luxury Food.
+- **Metals:** Iron, Copper, Titanium, Rare Alloys.
+- **Medicine:** First Aid, Antibiotics, Vaccines, Regenerative Medicine.
+
+Green goods are always legal. Each item has its own base value and price volatility, so cheap staples are steadier while luxury food, rare alloys, and advanced medicine carry larger price swings.
+
+### Grey-market commodities
+
+The grey catalog also has 12 goods:
+
+- **Weapons:** Small Arms, Heavy Weapons, Explosives, Military Tech.
+- **Narcotics:** Stims, Sedatives, Euphorics, Neurodust.
+- **Entertainment:** Holovids, Sim Chips, VR Experiences, Unlicensed Media.
+
+A grey good is not automatically illegal. Every superpower independently permits **0–4 goods in each grey category**, so a faction can allow none, some, or all weapons, narcotics, and entertainment products. CORE/CONTROLLED law comes from the controlling faction; CONTESTED space can be mixed; UNCONTROLLED space is unregulated.
+
+Illegal grey goods receive the existing black-market price premium: 30% in an illegal market and 14% in mixed-law territory. Police scans inspect every carried grey good and confiscate only the individual items banned by that patrol faction.
+
+### Local day trading and hauling
+
+Each world maintains its own persistent stock, production, consumption, and price factor for all 24 goods. Price movement combines scarcity, production/consumption pressure, planet-type specialization, item volatility, and grey-market law.
+
+While the Bank is open, the economy advances periodically, so the player can **day trade a single local market without taking a flight**. The same physical commodities occupy cargo space, so buying locally and flying to a different world remains the hauling/arbitrage game.
+
+Travel also advances the wider economy. LUSH worlds favor food and narcotics, VOLCANIC worlds favor metals, FROZEN worlds favor medicine, and INDUSTRIAL worlds favor weapons and entertainment.
+
+### Faction currency market
+
+Each generated superpower has a tradeable currency/index. Its underlying value derives from faction level, controlled-world footprint, and route wealth, with a persistent market factor adding bounded movement over time. Players buy and sell currency units directly from the Bank's CURRENCY tab; these positions do not occupy cargo space.
 
 ## Faction reputation and criminal state
 
@@ -77,7 +112,7 @@ Enforcement uses these authoritative eligibility queries:
 - police hostility: heat 30+ or HOSTILE relation (-60 or worse)
 - heavy/pentagon enforcement: heat 60+ or relation -75 or worse
 
-The hub, market, and system-map destination card expose current faction reputation/heat. Contested regions maintain separate state for both claimant factions. Uncontrolled space has no faction record.
+The hub, Bank, and system-map destination card expose current faction reputation/heat. Contested regions maintain separate state for both claimant factions. Uncontrolled space has no faction record.
 
 Slice 3 established the persistent criminal-state authority. Later encounter/enforcement slices now consume those same fields for patrol hostility, heavy enforcement, scans, and political-map inspection.
 
@@ -92,8 +127,8 @@ Every contract stores its origin, destination, issuer, route pirate exposure, pa
 
 - Delivery contracts reserve one cargo slot and name the actual commodity being moved.
 - Legal freight selection follows market demand and destination legality rather than choosing arbitrary cargo.
-- Restricted commodities sold in illegal markets carry a black-market price premium; mixed-law destinations have a smaller premium.
-- When a destination bans Arms or Narcotics, the board can generate an **UNDERWORLD / SMUGGLE** delivery with a separate illegal-cargo premium.
+- Grey commodities sold where that **specific item** is illegal carry a black-market price premium; mixed-law destinations have a smaller premium.
+- When a destination bans a grey good, the board can generate an **UNDERWORLD / SMUGGLE** delivery with a separate illegal-cargo premium.
 - Smuggling contract cargo is real contraband for police scans. If a patrol faction bans that commodity and completes a scan, the contract cargo is confiscated, the contract fails, and normal contraband fine/relation/heat consequences apply.
 - Successful freight delivery adds one unit of the named commodity into the destination market stock.
 
@@ -180,13 +215,13 @@ Faction level contributes a **16.5%–34.5%** base police chance before the rout
 
 Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed. The production bases are **22% in CONTESTED** and **32% in UNCONTROLLED** before the same 0.65×–1.35× wealth multiplier. Pirate opportunities occur every 9.5–14.5 seconds, and every actual pirate contact is attack-on-sight.
 
-A lawful patrol may also randomly initiate a timed cargo scan. The HUD shows the scan countdown. The scan checks Arms and Narcotics against that **specific faction's** laws.
+A lawful patrol may also randomly initiate a timed cargo scan. The HUD shows the scan countdown. The scan checks every carried grey-market good against that **specific faction's item-level laws**. Green-market goods are never contraband.
 
 If a completed scan finds contraband:
 
 - only commodities illegal to that faction are confiscated;
 - ordinary/legal cargo remains;
-- a fine is deducted from available credits;
+- a fine is deducted from carried cash;
 - relation drops and heat rises;
 - the offense is recorded as `contraband_scan`;
 - the patrol escalates into hostile enforcement.
@@ -209,11 +244,11 @@ Arcade score is a small travel bonus rather than the primary economy.
 - Asteroid and cargo-container destruction: **0 kill credits**.
 - Existing ship/platform kill scoring remains in place until their later role-specific slices.
 
-Flight bonus score is converted to credits on successful arrival. Destroying the ship loses the unbanked flight bonus. Manual quit still banks the accumulated flight bonus before returning to the origin and failing the active contract.
+Flight bonus score is converted to carried cash on successful arrival. **Destroying the ship loses all carried cash, not just that flight's bonus; banked money and investment positions survive.** Manually aborting a flight preserves accumulated cash while returning to the origin and failing the active contract.
 
 ## Ship upgrades
 
-The old Research currency is gone as a concept. Persistent **credits** pay for permanent ship upgrades:
+The old Research currency is gone as a concept. Permanent ship upgrades are paid from **carried cash**:
 
 - Ship speed
 - Dash
@@ -222,15 +257,15 @@ The old Research currency is gone as a concept. Persistent **credits** pay for p
 - Shield charges
 - Starting weapon unlocks
 
-Internally some legacy variable/function names still use `research_*` for compatibility, but the player-facing system is now credits and ship upgrades.
+Internally some legacy variable/function names still use `research_*` for save/code compatibility, but the player-facing financial state is CASH, BANK, commodity inventory, and faction-currency positions.
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, crime schema 1, enforcement schema 1, and contract schema 1, all 32 generated planets, factions, capitals, influence parameters, faction level/law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, politically/economically annotated contracts, passengers, and economy tick.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus **economy schema 3**, crime schema 1, enforcement schema 1, and **contract schema 2**, all 32 generated planets, item-level grey laws, faction level/reputation/crime state, sparse route graph and political segments, current location, all 24 local commodity markets, cargo, faction-currency holdings/indices, bank-interest cycle state, contracts, passengers, and economy tick. Carried cash and protected bank balance are persisted in the career meta save.
 
 Generated political state is created once and never rerolled on reload. Existing generated careers missing route-wealth metadata derive it deterministically from their preserved capitals and route graph, without rerolling planets or lanes.
 
-Older four-world careers migrate once to political schema 2. Existing five-commodity saves also upgrade in place by adding Arms/Narcotics cargo keys and market entries without rerolling the political world. Existing political careers missing Slice 3 criminal-state fields receive clean heat/offense fields while preserving their faction relations and generated world. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
+Older four-world careers still migrate once to political schema 2. Economy-2 careers migrate deterministically to economy schema 3: the retired seven commodity IDs map to their nearest new goods, all markets become exactly 24 active goods, old commodity keys are retired, faction grey laws are generated deterministically from the preserved world/faction identity, old credits remain carried cash, and the new bank starts at zero unless already saved. The political world, locations, routes, faction relations, and practical player progression are preserved.
 
 The active route snapshot remains separate and preserves exact in-flight state.
 
@@ -267,7 +302,7 @@ CI requires the production-closure marker before the frozen Classic regression, 
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers the complete Privateer system pass: 12-seed generated-world production validation, deterministic generation, phone-layout/hit-target validation, economy simulation, legal/illegal market premiums, faction-aware contract generation, smuggling opportunities, pirate-exposure payout premiums, contract-schema migration/persistence, smuggling-cargo scan confiscation, contract-driven market stock and faction-relation effects, tuned loot averages, encounter/scan probability envelopes, reputation/heat penalty hierarchy, political/crime state, faction-level and route-wealth migration, authoritative political-map field caching/borders/legend/inspection, length-only travel duration, danger-driven asteroid density, wealth-driven container density, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy migration, asteroid salvage/containers, durable active-route save/reload, and core flight mechanics.
+The smoke test covers the complete Privateer system pass, including the 24-good economy, six-row Green/Grey pagination, item-level grey laws, local docked price ticks, bank deposit/withdrawal, exact 3% completed-flight interest, death loss of cash while preserving the bank, faction-currency trading with zero cargo use, career-slot financial isolation, economy-3/contract-2 migration, deterministic generated worlds, contracts, contraband scans, political/crime state, route/encounter balance, phone layout, Classic regression, durable active-route save/reload, and core flight mechanics.
 
 
 ## Preserved arcade version
