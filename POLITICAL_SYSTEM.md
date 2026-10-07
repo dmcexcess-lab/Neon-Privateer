@@ -57,7 +57,30 @@ Initial law fields:
 - `arms_legal`
 - `narcotics_legal`
 
-Laws exist in Slice 1 as data only. Enforcement belongs to later slices.
+Slice 2 makes these laws authoritative for commodity legality. They currently classify cargo and drive market/map indicators; police scans, fines, confiscation, and hostility still belong to later slices. Installed ship weapons are not governed by `arms_legal`; only the **Arms commodity** is.
+
+## Commodity legality
+
+Slice 2 adds two restricted commodities:
+
+- `Arms`
+- `Narcotics`
+
+The authoritative law helpers are:
+
+- `commodity_law_key(commodity)`
+- `faction_commodity_legal(world, faction_id, commodity)`
+- `commodity_legality_at(world, position, commodity)`
+
+Ordinary commodities are always reported as legal/unrestricted.
+
+For restricted commodities:
+
+- **CORE / CONTROLLED:** the controlling superpower's law applies.
+- **CONTESTED:** both meaningful claimant factions are consulted. If their laws disagree, status is `MIXED`; if they agree, the shared `LEGAL` or `ILLEGAL` result is returned.
+- **UNCONTROLLED:** status is `UNREGULATED`.
+
+This query is presentation/data authority now and is intended to become the source for police scans later. A future scan by a specific police faction should use that faction's law directly rather than infer enforcement from the generic contested-space label.
 
 ## Capital selection
 
@@ -201,13 +224,15 @@ No separate hand-painted political map is authoritative.
 
 Career world saves persist:
 
+- political schema
+- economy schema
 - schema
 - seed
 - planets
 - faction records and laws
 - generated route graph
 - current planet
-- market state
+- market state for all seven commodities
 - cargo/contracts/passengers/economy state
 
 Route political segmentation is saved with the generated graph and can also be deterministically reproduced from the same world.
@@ -253,3 +278,24 @@ These APIs will later drive:
 - contraband law
 - faction reputation/crime consequences
 - route encounter composition
+
+
+## Slice 2 economy schema
+
+Economy schema version **2** adds `Arms` and `Narcotics` to every generated market and cargo inventory.
+
+Existing five-commodity careers are upgraded idempotently on load:
+
+- missing cargo keys are added at zero;
+- every generated market receives missing commodity entries from its planet-type production profile;
+- existing stock for the original five commodities is preserved;
+- the upgraded economy schema is saved back to the career.
+
+Planet-type tendencies:
+
+- **LUSH:** strong Food and Narcotics production; weak Arms.
+- **VOLCANIC:** strong Ore/Fuel and moderate Arms; weak Narcotics.
+- **FROZEN:** strong Medicine with modest Narcotics and weak Arms.
+- **INDUSTRIAL:** strong Electronics/Arms; weak Narcotics.
+
+Market trading remains mechanically available in Slice 2 even when a commodity is illegal. The law is surfaced now so later contraband/scanning systems can impose the actual risk.
