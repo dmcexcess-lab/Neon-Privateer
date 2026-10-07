@@ -5,6 +5,7 @@ const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
 const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 2
+const CRIME_SCHEMA_VERSION := 1
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -630,6 +631,95 @@ func _political_laws_at(position: Vector2) -> Dictionary:
         return {}
     return PoliticalWorld.faction_record(political_world, faction_id).get("laws", {}).duplicate(true)
 
+func _ensure_crime_schema() -> bool:
+    return PoliticalWorld.ensure_crime_schema(political_world)
+
+func _faction_relation(faction_id: String) -> int:
+    return PoliticalWorld.faction_relation(political_world, faction_id)
+
+func _faction_heat(faction_id: String) -> int:
+    return PoliticalWorld.faction_heat(political_world, faction_id)
+
+func _faction_crime_state(faction_id: String) -> Dictionary:
+    return PoliticalWorld.faction_crime_state(political_world, faction_id)
+
+func _is_criminal_with_faction(faction_id: String) -> bool:
+    return bool(_faction_crime_state(faction_id).get("criminal", false))
+
+func _police_hostile_eligible(faction_id: String) -> bool:
+    return bool(_faction_crime_state(faction_id).get("police_hostile", false))
+
+func _heavy_enforcement_eligible(faction_id: String) -> bool:
+    return bool(_faction_crime_state(faction_id).get("heavy_enforcement", false))
+
+func _adjust_faction_relation(faction_id: String, delta: int, persist: bool = true) -> int:
+    var value := PoliticalWorld.adjust_faction_relation(political_world, faction_id, delta)
+    if persist and not faction_id.is_empty():
+        _save_all_state()
+    queue_redraw()
+    return value
+
+func _adjust_faction_heat(faction_id: String, delta: int, persist: bool = true) -> int:
+    var value := PoliticalWorld.adjust_faction_heat(political_world, faction_id, delta)
+    if persist and not faction_id.is_empty():
+        _save_all_state()
+    queue_redraw()
+    return value
+
+func _record_faction_crime(faction_id: String, relation_loss: int, heat_gain: int, offense: String = "", persist: bool = true) -> Dictionary:
+    var state := PoliticalWorld.record_crime(political_world, faction_id, relation_loss, heat_gain, offense)
+    if persist and not state.is_empty():
+        _save_all_state()
+    queue_redraw()
+    return state
+
+func _decay_all_faction_heat(amount: int, persist: bool = true) -> bool:
+    var changed := PoliticalWorld.decay_all_heat(political_world, amount)
+    if changed and persist:
+        _save_all_state()
+    if changed:
+        queue_redraw()
+    return changed
+
+func _planet_faction_ids(planet_id: String) -> Array[String]:
+    var context := _get_political_context_at(_system_planet_world_position(planet_id))
+    var result: Array[String] = []
+    var state := String(context.get("state", "UNCONTROLLED"))
+    if state == "CONTESTED":
+        for faction_id in context.get("contesting_factions", []):
+            var fid := String(faction_id)
+            if not fid.is_empty() and not result.has(fid):
+                result.append(fid)
+    else:
+        var fid := String(context.get("faction_id", ""))
+        if not fid.is_empty():
+            result.append(fid)
+    return result
+
+func _faction_status_summary(faction_id: String) -> String:
+    if faction_id.is_empty():
+        return "NO FACTION"
+    var state := _faction_crime_state(faction_id)
+    return "REP %+d %s  HEAT %d %s" % [
+        int(state.get("relation", 0)),
+        String(state.get("relation_label", "NEUTRAL")),
+        int(state.get("heat", 0)),
+        String(state.get("heat_label", "CLEAR"))
+    ]
+
+func _planet_crime_summary(planet_id: String) -> String:
+    var factions := _planet_faction_ids(planet_id)
+    if factions.is_empty():
+        return "NO FACTION RECORD"
+    if factions.size() == 1:
+        return _faction_status_summary(factions[0])
+    var first := _faction_crime_state(factions[0])
+    var second := _faction_crime_state(factions[1])
+    return "REP %+d/H%d • %+d/H%d" % [
+        int(first.get("relation", 0)), int(first.get("heat", 0)),
+        int(second.get("relation", 0)), int(second.get("heat", 0))
+    ]
+
 func _commodity_legality_at(position: Vector2, commodity: String) -> Dictionary:
     return PoliticalWorld.commodity_legality_at(political_world, position, commodity)
 
@@ -750,6 +840,7 @@ func _init_privateer_world() -> void:
         _sync_generated_planets()
     if current_planet.is_empty() and not planet_names.is_empty():
         current_planet = planet_names[0]
+    _ensure_crime_schema()
     _ensure_commodity_schema()
     if contract_board.is_empty():
         _regenerate_contracts()
@@ -1119,6 +1210,7 @@ func _save_privateer_state() -> void:
     cfg.set_value("political", "schema", POLITICAL_WORLD_SCHEMA)
     cfg.set_value("political", "world", political_world)
     cfg.set_value("world", "economy_schema", ECONOMY_SCHEMA_VERSION)
+    cfg.set_value("world", "crime_schema", CRIME_SCHEMA_VERSION)
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
@@ -1174,6 +1266,7 @@ func _load_privateer_state() -> void:
                 markets[mapped_id] = saved_markets[old_name]
         migrated_world = true
 
+    var crime_schema_changed: bool = _ensure_crime_schema()
     cargo = cfg.get_value("world", "cargo", cargo)
     var commodity_schema_changed: bool = _ensure_commodity_schema()
     contract_board.clear()
@@ -1203,7 +1296,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -1621,10 +1714,10 @@ func _political_risk_label(danger: int) -> String:
 
 
 func _market_buy_rect(index: int) -> Rect2:
-    return Rect2(22.0, 150.0 + float(index) * 76.0, 165.0, 62.0)
+    return Rect2(22.0, 166.0 + float(index) * 74.0, 165.0, 60.0)
 
 func _market_sell_rect(index: int) -> Rect2:
-    return Rect2(203.0, 150.0 + float(index) * 76.0, 165.0, 62.0)
+    return Rect2(203.0, 166.0 + float(index) * 74.0, 165.0, 60.0)
 
 func _contract_row_rect(index: int) -> Rect2:
     return Rect2(26.0, 146.0 + float(index) * 108.0, 338.0, 92.0)
@@ -3817,16 +3910,17 @@ func _draw_title() -> void:
     _text_center(_planet_display_name(current_planet), 244.0, 25, Color("f0fbff"), 60.0, 330.0)
     _text_center("%07d CREDITS" % research_credits, 276.0, 18, Color("ffd166"), 55.0, 335.0)
     _text_center("CARGO %d/%d   PAX %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity()], 304.0, 14, Color("bdeef4"), 48.0, 342.0)
+    _text_center(_planet_crime_summary(current_planet), 324.0, 10, Color("8ea9b8"), 40.0, 350.0)
 
     if not active_contract.is_empty():
         var ct := String(active_contract.get("type", "")).to_upper()
         var cd := String(active_contract.get("destination", ""))
         var cr := int(active_contract.get("reward", 0))
-        _text_center("%s > %s  %d CR" % [ct, _planet_display_name(cd), cr], 335.0, 14, Color("6bffb0"), 38.0, 352.0)
+        _text_center("%s > %s  %d CR" % [ct, _planet_display_name(cd), cr], 344.0, 13, Color("6bffb0"), 38.0, 352.0)
     else:
-        _text_center("NO ACTIVE CONTRACT", 335.0, 14, Color("8ea9b8"), 38.0, 352.0)
+        _text_center("NO ACTIVE CONTRACT", 344.0, 13, Color("8ea9b8"), 38.0, 352.0)
 
-    _text_center(last_trip_summary, 363.0, 13, Color("8ea9b8"), 35.0, 355.0)
+    _text_center(last_trip_summary, 370.0, 11, Color("8ea9b8"), 35.0, 355.0)
     _text("CAREER %d" % active_career_slot, Vector2(292, 38), 11, Color("8ea9b8"))
 
     var labels := ["TRAVEL", "MARKET", "CONTRACTS", "SHIP UPGRADES"]
@@ -3962,7 +4056,8 @@ func _draw_travel_menu() -> void:
     if selected == current_planet:
         _text("DOCKED HERE", Vector2(126.0, 646.0), 13, Color("ffd166"))
         _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 670.0), 10, Color("8ea9b8"))
-        _text(_planet_law_summary(selected), Vector2(126.0, 697.0), 9, Color("bdeef4"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 695.0), 9, Color("bdeef4"))
+        _text(_planet_crime_summary(selected), Vector2(126.0, 714.0), 8, Color("8ea9b8"))
     else:
         var selected_spec := _route_spec(current_planet, selected)
         next_hop = _next_hop_toward(selected)
@@ -3973,9 +4068,10 @@ func _draw_travel_menu() -> void:
         _text("D%d  RISK %s  HOPS %d" % [int(selected_spec.distance), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 11, _system_route_color(int(selected_spec.danger)))
         _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 667.0), 10, Color("8ea9b8"))
         _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 687.0), 10, Color("ffd166"))
-        _text(_planet_law_summary(selected), Vector2(126.0, 706.0), 9, Color("bdeef4"))
+        _text(_planet_law_summary(selected), Vector2(126.0, 702.0), 8, Color("bdeef4"))
+        _text(_planet_crime_summary(selected), Vector2(126.0, 719.0), 8, Color("8ea9b8"))
         if _contract_target_matches(selected):
-            _text("CONTRACT", Vector2(302.0, 706.0), 8, Color("6bffb0"))
+            _text("CONTRACT", Vector2(302.0, 719.0), 8, Color("6bffb0"))
 
     draw_rect(SYSTEM_MAP_BACK_RECT, Color(0.04, 0.10, 0.14, 0.95), true)
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
@@ -3988,12 +4084,13 @@ func _draw_travel_menu() -> void:
 
 func _draw_market_menu() -> void:
     _draw_menu_art(ART_BG_MARKET, 0.67)
-    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 126.0), 0.78)
+    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 144.0), 0.78)
     _draw_planet_art(current_planet, Rect2(306.0, 18.0, 60.0, 60.0), 0.96)
     _text("%s MARKET" % _planet_display_name(current_planet).to_upper(), Vector2(28, 48), 24, Color("77f7ff"))
     _text("%d CR   CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(28, 76), 14, Color("ffd166"))
     _text(_planet_jurisdiction_label(current_planet), Vector2(28, 101), 10, Color("bdeef4"))
-    _text(_planet_law_summary(current_planet), Vector2(28, 122), 10, Color("8ea9b8"))
+    _text(_planet_law_summary(current_planet), Vector2(28, 121), 10, Color("8ea9b8"))
+    _text(_planet_crime_summary(current_planet), Vector2(28, 142), 9, Color("ffb347") if _planet_crime_summary(current_planet).contains("HUNTED") or _planet_crime_summary(current_planet).contains("WANTED") else Color("8ea9b8"))
 
     for i in commodity_names.size():
         var commodity: String = commodity_names[i]
