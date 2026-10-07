@@ -148,7 +148,7 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             "name": FACTION_ADJ[(i + rng.randi_range(0, FACTION_ADJ.size() - 1)) % FACTION_ADJ.size()] + " " + FACTION_NOUN[(i * 3 + rng.randi_range(0, FACTION_NOUN.size() - 1)) % FACTION_NOUN.size()],
             "color": FACTION_COLORS[i % FACTION_COLORS.size()],
             "capital_id": capital_ids[i],
-            "radius": rng.randf_range(640.0, 760.0),
+            "radius": rng.randf_range(760.0, 900.0),
             "strength": rng.randf_range(0.98, 1.16),
             "relation": 0,
             "laws": {
@@ -211,8 +211,8 @@ static func political_context_at(world: Dictionary, pos: Vector2) -> Dictionary:
     var state := STATE_UNCONTROLLED
     var controller := ""
 
-    if strongest_value >= 0.13:
-        var comparable := second_value >= 0.10 and second_value / maxf(strongest_value, 0.001) >= 0.68
+    if strongest_value >= 0.025:
+        var comparable := second_value >= 0.015 and second_value / maxf(strongest_value, 0.001) >= 0.55
         if comparable:
             state = STATE_CONTESTED
         else:
