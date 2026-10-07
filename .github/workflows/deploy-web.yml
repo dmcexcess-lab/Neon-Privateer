@@ -49,6 +49,12 @@ jobs:
           mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}"
           cp -R /tmp/templates/templates/. "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_STATUS}/"
 
+      - name: Import Privateer generated art
+        shell: bash
+        run: |
+          set -euxo pipefail
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --editor --path . --quit
+
       - name: Run Privateer smoke test
         shell: bash
         run: |
