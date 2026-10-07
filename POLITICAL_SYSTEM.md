@@ -108,7 +108,7 @@ The authoritative criminal-state query is `faction_crime_state(world, faction_id
 
 Eligibility thresholds reserved for later encounter/enforcement slices:
 
-- ordinary police hostility becomes eligible at **heat >= 30** or **relation <= -50**;
+- ordinary police hostility becomes eligible at **heat >= 30** or **HOSTILE relation <= -60**;
 - heavy/pentagon enforcement becomes eligible at **heat >= 60** or **relation <= -75**.
 
 These are eligibility rules only. Slice 3 does not change encounter spawning or make police attack.
@@ -261,10 +261,11 @@ The same live patrol becomes hostile immediately when that faction's Slice 3 cri
 Random pentagons are reserved for serious faction enforcement:
 
 - police contact only;
+- the patrol must already be in active hostile combat with the player;
 - player must already meet the heavy-enforcement threshold;
 - heat >= 60 or relation <= -75.
 
-Bounty-boss pentagons remain the contract-specific exception and are independent of faction patrol traffic.
+A lawful/non-hostile patrol never spawns a pentagon. Bounty-boss pentagons remain the contract-specific exception and are independent of faction patrol traffic.
 
 ### Enforcement consequences
 
@@ -291,21 +292,14 @@ A CORE/CONTROLLED segment makes that faction's patrols **eligible**. It does not
 At each encounter opportunity:
 
 - a random roll is made;
-- police chance is based on that faction's level;
+- police base chance is based on that faction's level;
+- route wealth scales that chance;
 - route danger, contract difficulty, and player heat do not increase the probability of a police contact;
 - a failed roll schedules another later opportunity rather than forcing an encounter.
 
-Current police contact probability per opportunity:
+The faction-level base police chance remains 19% at level 1 through 39% at level 5 before wealth scaling. Route wealth then multiplies that base so traffic-rich/core-adjacent lanes see more patrol traffic while poor backwater lanes see less. Opportunity timing remains randomized, so no route guarantees a patrol.
 
-- Level 1: 19%
-- Level 2: 24%
-- Level 3: 29%
-- Level 4: 34%
-- Level 5: 39%
-
-Opportunity timing is itself randomized. Therefore a flight through faction territory can complete without any police encounter, including on a difficult route.
-
-Pirate windows are also probabilistic rather than guaranteed when their territory is eligible.
+Pirate windows are also probabilistic rather than guaranteed when their territory is eligible. Route wealth scales pirate probability too, while CONTESTED/UNCONTROLLED political state remains the hard eligibility gate. Pirates are always hostile once an encounter starts.
 
 Heat/relation still control whether a patrol is lawful or hostile **after** a patrol exists.
 
@@ -379,8 +373,11 @@ A route stores:
 - gameplay `distance`
 - contiguous political `segments`
 - derived `danger`
+- derived `wealth` from 1–5
+- normalized `core_proximity`
+- normalized `traffic_score`
 
-Danger is derived from political segments and is never authoritative on its own.
+Danger is derived from political segments and is never authoritative on its own. Wealth is derived from preserved world geography/network structure rather than rolled independently.
 
 ## Route segmentation
 
@@ -407,7 +404,30 @@ Relative weights:
 
 Route danger combines weighted segment coverage with maximum segment severity so a short contested crossing remains meaningful.
 
-Asteroid/environmental difficulty remains separate in Slice 1.
+In current flight gameplay, route danger is the authoritative control for **asteroid density**. It does not lengthen the flight and does not raise patrol/pirate encounter probability.
+
+## Route wealth and traffic
+
+Every generated direct lane receives deterministic wealth from two independent signals:
+
+1. **Core proximity** — how close the lane passes to a faction capital/core world, normalized against that faction's influence radius.
+2. **Traffic centrality** — how often that edge lies on shortest paths across the sparse 32-world route graph, normalized against the busiest generated lane.
+
+The stronger of those two signals determines a 1–5 route wealth tier. A lane can therefore be wealthy because it serves a core world **or** because it is a major cross-system traffic artery.
+
+Route wealth controls:
+
+- cargo-container density during travel;
+- patrol probability in CORE/CONTROLLED space;
+- pirate probability in CONTESTED/UNCONTROLLED space.
+
+Route wealth does not grant encounter eligibility by itself. Territory state still decides whether police or pirates are allowed to appear.
+
+Existing political-schema-2 careers missing these route fields are upgraded in place by recomputing wealth from their already-saved factions and route graph. The migration does not reroll worlds or lanes.
+
+## Route travel time
+
+Gameplay `distance` is the authoritative control for total flight duration. Political danger, route wealth, and contract difficulty do not increase the time required to traverse the same direct lane.
 
 ## Route planning
 
@@ -463,7 +483,7 @@ Career world saves persist:
 - market state for all seven commodities
 - cargo/contracts/passengers/economy state
 
-Route political segmentation is saved with the generated graph and can also be deterministically reproduced from the same world.
+Route political segmentation and route-wealth metadata are saved with the generated graph and can also be deterministically reproduced from the same world.
 
 ## Legacy migration
 
@@ -492,6 +512,7 @@ Later systems should consume these authoritative queries or wrappers:
 - contesting factions
 - faction laws
 - route political segment at progress
+- route wealth / traffic metadata
 - direct route lookup
 - route shortest-path specification
 - planet type
