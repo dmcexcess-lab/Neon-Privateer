@@ -194,6 +194,7 @@ var destination_planet := ""
 var route_origin := ""
 var route_distance := 1
 var route_danger := 1
+var route_wealth := 1
 var route_duration := 18.0
 var route_active := false
 var boss_active := false
@@ -479,6 +480,7 @@ func _reset_career_state() -> void:
     route_origin = ""
     route_distance = 1
     route_danger = 1
+    route_wealth = 1
     route_duration = 18.0
     route_active = false
     boss_active = false
@@ -680,6 +682,9 @@ func _ensure_crime_schema() -> bool:
 func _ensure_enforcement_schema() -> bool:
     return PoliticalWorld.ensure_enforcement_schema(political_world)
 
+func _ensure_route_wealth_schema() -> bool:
+    return PoliticalWorld.ensure_route_wealth(political_world)
+
 func _faction_level(faction_id: String) -> int:
     return PoliticalWorld.faction_level(political_world, faction_id)
 
@@ -834,6 +839,7 @@ func _direct_route_spec(origin: String, destination: String) -> Dictionary:
     return {
         "distance": int(route.distance),
         "danger": int(route.danger),
+        "wealth": int(route.get("wealth", 1)),
         "segments": route.segments,
         "direct": true,
         "path": [origin, destination],
@@ -1089,10 +1095,11 @@ func _contract_target_matches(destination: String) -> bool:
     return not active_contract.is_empty() and String(active_contract.get("destination", "")) == destination
 
 func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) -> int:
-    return clampi(1 + distance + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
+    return clampi(1 + danger + int(round(float(contract_difficulty) * 0.7)), 1, 10)
 
 func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0) -> float:
-    return clampf(16.0 + float(distance) * 7.0 + float(danger) * 3.5 + float(contract_difficulty) * 2.5, 18.0, 68.0)
+    # Route length controls travel time. Political danger and contract pressure do not lengthen the lane.
+    return clampf(14.0 + float(maxi(1, distance)) * 8.0, 18.0, 62.0)
 
 func _start_route(destination: String) -> bool:
     if destination == current_planet or not planet_names.has(destination):
@@ -1107,10 +1114,15 @@ func _start_route(destination: String) -> bool:
     destination_planet = destination
     route_distance = int(spec.distance)
     route_danger = int(spec.danger)
+    route_wealth = clampi(int(spec.get("wealth", 1)), 1, 5)
     route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty)
     _start_game()
     level = _route_level_for(route_distance, route_danger, contract_difficulty)
     route_active = true
+    next_lane_event_at = _first_split_time()
+    easy_spawn_clock = _route_object_spawn_interval(false, true)
+    hard_spawn_clock = _route_object_spawn_interval(true, true)
+    neutral_spawn_clock = _route_object_spawn_interval(false, false)
     hub_open = false
     market_open = false
     contracts_open = false
@@ -1180,14 +1192,20 @@ func _encounter_eligibility_for_context(context: Dictionary) -> Dictionary:
 func _current_encounter_eligibility() -> Dictionary:
     return _encounter_eligibility_for_context(_current_flight_political_context())
 
+func _route_wealth_encounter_multiplier() -> float:
+    return lerpf(0.65, 1.45, float(clampi(route_wealth, 1, 5) - 1) / 4.0)
+
 func _encounter_roll_chance(eligibility: Dictionary) -> float:
     var mode := String(eligibility.get("mode", ""))
+    var wealth_multiplier := _route_wealth_encounter_multiplier()
     if mode == "pirate":
-        return 0.34 if String(eligibility.get("state", "UNCONTROLLED")) == "UNCONTROLLED" else 0.25
+        var base := 0.34 if String(eligibility.get("state", "UNCONTROLLED")) == "UNCONTROLLED" else 0.25
+        return clampf(base * wealth_multiplier, 0.0, 0.90)
     if mode == "police":
         var faction_id := String(eligibility.get("faction_id", ""))
-        # Police occurrence is faction-level + RNG only. Route/contract difficulty and heat are excluded.
-        return clampf(0.14 + float(_faction_level(faction_id)) * 0.05, 0.0, 0.95)
+        # Police occurrence is faction level + route wealth + RNG. Danger, contract pressure, and heat are excluded.
+        var base := 0.14 + float(_faction_level(faction_id)) * 0.05
+        return clampf(base * wealth_multiplier, 0.0, 0.90)
     return 0.0
 
 func _encounter_opportunity_interval(eligibility: Dictionary) -> float:
@@ -1578,6 +1596,7 @@ func _load_privateer_state() -> void:
 
     var crime_schema_changed: bool = _ensure_crime_schema()
     var enforcement_schema_changed: bool = _ensure_enforcement_schema()
+    var route_wealth_schema_changed: bool = _ensure_route_wealth_schema()
     cargo = cfg.get_value("world", "cargo", cargo)
     var commodity_schema_changed: bool = _ensure_commodity_schema()
     contract_board.clear()
@@ -1607,7 +1626,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or crime_schema_changed or enforcement_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or commodity_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION:
         _save_privateer_state()
 
 
@@ -1695,9 +1714,12 @@ func _process(delta: float) -> void:
             return
         if easy_spawn_clock <= 0.0:
             _spawn_hazard(difficulty, false, true)
-            easy_spawn_clock = (rng.randf_range(1.55, 1.95) if level == 1 else _spawn_interval(1.05, 0.52, difficulty) * rng.randf_range(0.88, 1.18))
+            easy_spawn_clock = _route_object_spawn_interval(false, true) if route_active else (rng.randf_range(1.55, 1.95) if level == 1 else _spawn_interval(1.05, 0.52, difficulty) * rng.randf_range(0.88, 1.18))
         if hard_spawn_clock <= 0.0:
-            if level == 1:
+            if route_active:
+                _spawn_hazard(difficulty, true, true)
+                hard_spawn_clock = _route_object_spawn_interval(true, true)
+            elif level == 1:
                 _spawn_circle_bunch(true, rng.randi_range(2, 3))
                 hard_spawn_clock = rng.randf_range(1.65, 2.15)
             else:
@@ -1708,7 +1730,7 @@ func _process(delta: float) -> void:
     else:
         if neutral_spawn_clock <= 0.0:
             _spawn_hazard(difficulty, false, false)
-            neutral_spawn_clock = (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
+            neutral_spawn_clock = _route_object_spawn_interval(false, false) if route_active else (rng.randf_range(1.65, 2.20) if level == 1 else _spawn_interval(1.10, 0.43, difficulty) * rng.randf_range(0.86, 1.18))
         if lane_events_started < _split_count_for_level() and elapsed >= next_lane_event_at and elapsed < _level_duration() - 3.0:
             _begin_lane_event()
 
@@ -2777,6 +2799,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "destination_planet", destination_planet)
     cfg.set_value("run", "route_distance", route_distance)
     cfg.set_value("run", "route_danger", route_danger)
+    cfg.set_value("run", "route_wealth", route_wealth)
     cfg.set_value("run", "route_duration", route_duration)
     cfg.set_value("run", "boss_active", boss_active)
     cfg.set_value("run", "boss_defeated_pending", boss_defeated_pending)
@@ -2864,6 +2887,7 @@ func _load_run_snapshot() -> bool:
         )
     route_distance = int(cfg.get_value("run", "route_distance", 1))
     route_danger = int(cfg.get_value("run", "route_danger", 1))
+    route_wealth = clampi(int(cfg.get_value("run", "route_wealth", 1)), 1, 5)
     route_duration = float(cfg.get_value("run", "route_duration", 18.0))
     boss_active = bool(cfg.get_value("run", "boss_active", false))
     boss_defeated_pending = bool(cfg.get_value("run", "boss_defeated_pending", false))
@@ -3017,6 +3041,31 @@ func _enemy_kind_cap_for_level() -> int:
         return 3
     return 4
 
+func _route_asteroid_weight() -> float:
+    return 1.0 + float(clampi(route_danger, 1, 5) - 1) * 0.36
+
+func _route_container_weight() -> float:
+    return 0.28 + float(clampi(route_wealth, 1, 5) - 1) * 0.14
+
+func _route_object_spawn_interval(hard_lane: bool = false, lane_mode: bool = false) -> float:
+    var total_weight := _route_asteroid_weight() + _route_container_weight()
+    var interval := 1.58 / maxf(0.1, total_weight)
+    if lane_mode:
+        interval *= 0.78 if hard_lane else 1.12
+    return clampf(interval, 0.34, 1.45)
+
+func _choose_route_environment_kind() -> int:
+    var asteroid_weight := _route_asteroid_weight()
+    var container_weight := _route_container_weight()
+    var container_chance := container_weight / maxf(0.01, asteroid_weight + container_weight)
+    if rng.randf() >= container_chance:
+        return 0
+    var reinforced_chance := 0.06 + float(clampi(route_wealth, 1, 5) - 1) * 0.02
+    return 2 if rng.randf() < reinforced_chance else 1
+
+func _police_combat_active() -> bool:
+    return route_active and encounter_active and encounter_mode == "police" and encounter_hostile
+
 func _choose_enemy_kind(hard_lane: bool) -> int:
     var cap := _enemy_kind_cap_for_level()
     var roll := rng.randf()
@@ -3024,22 +3073,16 @@ func _choose_enemy_kind(hard_lane: bool) -> int:
     if route_active:
         if encounter_active:
             if encounter_mode == "pirate":
-                # Pirate contacts are ships only; pentagons are never pirate traffic.
+                # Pirates always attack on sight. Pirate contacts never produce pentagons.
                 if roll < (0.48 if hard_lane else 0.36):
                     return 3
-                cap = mini(cap, 2)
             elif encounter_mode == "police":
-                var heavy := encounter_hostile and _heavy_enforcement_eligible(encounter_faction_id)
-                if heavy and roll < (0.18 if hard_lane else 0.12):
+                # Heavy pentagons exist only during active hostile patrol combat.
+                if _police_combat_active() and _heavy_enforcement_eligible(encounter_faction_id) and roll < (0.18 if hard_lane else 0.12):
                     return 4
                 if roll < (0.52 if hard_lane else 0.40):
                     return 3
-                cap = mini(cap, 2)
-            else:
-                cap = mini(cap, 2)
-        else:
-            # No random hostile ships outside an active territory-authorized contact.
-            cap = mini(cap, 2)
+        return _choose_route_environment_kind()
 
     if cap <= 0:
         return 0
@@ -4668,7 +4711,7 @@ func _draw_travel_menu() -> void:
         var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
         var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
         var pct := _route_political_percentages(current_planet, selected)
-        _text("D%d  RISK %s  HOPS %d" % [int(selected_spec.distance), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 11, _system_route_color(int(selected_spec.danger)))
+        _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 645.0), 10, _system_route_color(int(selected_spec.danger)))
         _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 667.0), 10, Color("8ea9b8"))
         _text("FLIGHT %ds  L%d  NEXT %s" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper()], Vector2(126.0, 687.0), 10, Color("ffd166"))
         _text(_planet_law_summary(selected), Vector2(126.0, 702.0), 8, Color("bdeef4"))
