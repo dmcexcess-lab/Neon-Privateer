@@ -234,7 +234,7 @@ func _initialize() -> void:
     var base_lateral_speed: float = scene._lateral_control_speed()
     var base_dash_distance: float = scene._dash_distance()
     var base_dash_speed: float = scene._dash_speed()
-    scene.research_credits = 1000000
+    scene.research_credits = 5000000
     if not scene._buy_research("ship") or not scene._buy_research("dash") or not scene._buy_research("damage") or not scene._buy_research("hits") or not scene._buy_research("shield"):
         _fail("research purchase flow failed")
         return
@@ -262,14 +262,14 @@ func _initialize() -> void:
     var dash_first: int = scene._research_cost("dash")
     var damage_first: int = scene._research_cost("damage")
     var shield_first: int = scene._research_cost("shield")
-    if hits_first != 2500:
-        _fail("first permanent hit upgrade should cost 2500")
+    if hits_first != 5000:
+        _fail("first permanent hit upgrade should cost 5000")
         return
     if hits_first >= ship_first or hits_first >= dash_first or hits_first >= damage_first or hits_first >= shield_first:
         _fail("first hit is not the cheapest permanent upgrade")
         return
-    if ship_first < 7000 or dash_first < 8000 or damage_first < 10000 or shield_first < 12000:
-        _fail("permanent research was not raised enough")
+    if ship_first != 15000 or dash_first != 18000 or damage_first != 24000 or shield_first != 30000:
+        _fail("permanent research did not use the new doubled base costs")
         return
 
     scene.research_ship_speed = 1
@@ -285,20 +285,20 @@ func _initialize() -> void:
     var shield_second: int = scene._research_cost("shield")
     scene.research_shield = 2
     var shield_third: int = scene._research_cost("shield")
-    if shield_second != 37500 or shield_third != 93750 or shield_third <= shield_second * 2:
+    if shield_second != 75000 or shield_third != 187500 or shield_third <= shield_second * 2:
         _fail("shield research should remain a high-cost permanent track")
         return
 
     scene.research_hits = 1
     scene.research_shield = 1
     var credits_before_second_shield: int = scene.research_credits
-    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 37500:
+    if not scene._buy_research("shield") or scene.research_shield != 2 or scene.research_credits != credits_before_second_shield - 75000:
         _fail("second shield charge research purchase failed")
         return
 
-    # Starting-weapon permanent research costs 25x the normal run-shop price.
-    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 25     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 25     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 25     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 25     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 25:
-        _fail("starting weapon research is not 25x run price")
+    # Starting-weapon permanent research costs 50x the normal one-level run-shop rental.
+    if scene._weapon_research_cost("single") != scene.SHOP_SINGLE_COST * 50     or scene._weapon_research_cost("dual") != scene.SHOP_DUAL_COST * 50     or scene._weapon_research_cost("laser") != scene.SHOP_LASER_COST * 50     or scene._weapon_research_cost("cone") != scene.SHOP_CONE_COST * 50     or scene._weapon_research_cost("seeker") != scene.SHOP_SEEKER_COST * 50:
+        _fail("starting weapon research is not 50x run-shop rental price")
         return
     for weapon in ["single", "dual", "laser", "cone", "seeker"]:
         if not scene._buy_start_weapon_research(weapon):
@@ -1350,8 +1350,8 @@ func _initialize() -> void:
     if not scene._buy_weapon("single"):
         _fail("first shop could not buy single auto from unarmed state")
         return
-    if scene.current_weapon != "single" or scene.score != before_single - scene.SHOP_SINGLE_COST:
-        _fail("single auto shop cost/swap is incorrect")
+    if scene.current_weapon != "single" or scene.store_weapon_rental != "single" or scene.score != before_single - scene.SHOP_SINGLE_COST:
+        _fail("single auto shop rental cost/state is incorrect")
         return
     if scene._buy_weapon("single"):
         _fail("shop should not charge for currently equipped weapon")
@@ -1362,8 +1362,8 @@ func _initialize() -> void:
     if not scene._buy_weapon("dual"):
         _fail("shop dual purchase failed")
         return
-    if scene.current_weapon != "dual" or scene.score != before_weapon - scene.SHOP_DUAL_COST:
-        _fail("dual shop cost/swap is incorrect")
+    if scene.current_weapon != "dual" or scene.store_weapon_rental != "dual" or scene.score != before_weapon - scene.SHOP_DUAL_COST:
+        _fail("dual shop rental cost/state is incorrect")
         return
 
     # Insufficient score blocks a purchase.
@@ -1376,13 +1376,14 @@ func _initialize() -> void:
     scene.score = 777
     var hp_before_next: int = scene.hp
     var weapon_before_next: String = scene.current_weapon
+    var rental_before_next: String = scene.store_weapon_rental
     var difficulty_before_next: float = scene._level_difficulty()
     scene._start_next_level()
     if not scene.playing or scene.shop_open or scene.level != 2 or scene.elapsed != 0.0:
         _fail("next level did not start correctly")
         return
-    if scene.hp != hp_before_next or scene.current_weapon != weapon_before_next or scene.score != 777:
-        _fail("next level did not preserve run state")
+    if scene.hp != hp_before_next or scene.current_weapon != weapon_before_next or scene.store_weapon_rental != rental_before_next or scene.score != 777:
+        _fail("next level did not preserve the one-level weapon rental")
         return
     if scene.run_ship_speed != 1 or scene.run_dash != 1 or scene.run_damage != 1 or scene.run_hits != 1 or scene.run_shield != 1:
         _fail("next level did not preserve temporary run upgrades")
@@ -1405,6 +1406,9 @@ func _initialize() -> void:
     if not scene.shop_open or scene.game_over or scene.level != 2:
         _fail("level timer did not transition into shop")
         return
+    if not scene.store_weapon_rental.is_empty() or scene.current_weapon != scene._valid_starting_weapon():
+        _fail("store weapon did not expire after its single purchased level")
+        return
 
     # A brand-new run wipes store upgrades while permanent research remains separate.
     scene._start_game()
@@ -1425,15 +1429,30 @@ func _initialize() -> void:
     scene.level = 3
     scene.elapsed = 7.5
     scene.current_weapon = "dual"
+    scene.store_weapon_rental = "dual"
     scene._pause_run()
     if not scene._load_run_snapshot():
         _fail("saved run snapshot could not be reloaded")
         return
-    if scene.score != 432 or scene.level != 3 or absf(scene.elapsed - 7.5) > 0.01 or scene.current_weapon != "dual":
-        _fail("run snapshot did not preserve core run state")
+    if scene.score != 432 or scene.level != 3 or absf(scene.elapsed - 7.5) > 0.01 or scene.current_weapon != "dual" or scene.store_weapon_rental != "dual":
+        _fail("run snapshot did not preserve core run/rental state")
         return
     if scene.run_ship_speed != 2 or scene.run_dash != 1 or scene.run_damage != 3 or scene.run_hits != 1 or scene.run_shield != 2:
         _fail("run snapshot did not preserve temporary store upgrades")
+        return
+
+    # A field pickup replaces the rented weapon and is not itself tagged as a store rental.
+    scene.objects.clear()
+    scene.player_x = 195.0
+    scene.player_y = scene.PLAYER_Y
+    scene.objects.append({
+        "id": 881122, "type": "weapon", "weapon": "single", "hard": false,
+        "x": scene.player_x, "y": scene.player_y, "r": 14.0,
+        "speed": 0.0, "drift": 0.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+    })
+    scene._move_objects(0.0)
+    if scene.current_weapon != "single" or not scene.store_weapon_rental.is_empty():
+        _fail("field weapon pickup was incorrectly kept as a store rental")
         return
     scene.run_paused = false
     scene.run_ship_speed = 0

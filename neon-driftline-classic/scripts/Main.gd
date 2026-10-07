@@ -180,6 +180,7 @@ var neutral_spawn_clock := 0.0
 var fire_clock := 0.0
 var repair_clock := 0.0
 var current_weapon := "none"
+var store_weapon_rental := ""
 var weapon_banner_timer := 0.0
 var weapon_banner_text := ""
 var station_height := STATION_HEIGHT_BASE
@@ -556,6 +557,7 @@ func _start_game() -> void:
     fire_clock = 0.18
     repair_clock = 18.0
     current_weapon = _valid_starting_weapon()
+    store_weapon_rental = ""
     weapon_banner_timer = 0.0
     weapon_banner_text = ""
     dash_cooldown = 0.0
@@ -677,6 +679,9 @@ func _shop_weapon_cost(weapon: String) -> int:
 func _open_shop() -> void:
     if shop_open or game_over:
         return
+    if not store_weapon_rental.is_empty():
+        current_weapon = _valid_starting_weapon()
+        store_weapon_rental = ""
     playing = false
     shop_open = true
     shop_page = 0
@@ -714,6 +719,7 @@ func _buy_weapon(weapon: String) -> bool:
         return false
     score -= cost
     current_weapon = weapon
+    store_weapon_rental = weapon
     _play_sfx(buy_sfx)
     _save_run_snapshot()
     return true
@@ -910,15 +916,15 @@ func _research_cost(track: String) -> int:
     var lvl := _research_level(track)
     match track:
         "ship":
-            return int(round(7500.0 * pow(1.85, lvl)))
+            return int(round(15000.0 * pow(1.85, lvl)))
         "dash":
-            return int(round(9000.0 * pow(1.90, lvl)))
+            return int(round(18000.0 * pow(1.90, lvl)))
         "damage":
-            return int(round(12000.0 * pow(1.90, lvl)))
+            return int(round(24000.0 * pow(1.90, lvl)))
         "hits":
-            return int(round(2500.0 * pow(1.65, lvl)))
+            return int(round(5000.0 * pow(1.65, lvl)))
         "shield":
-            return int(round(15000.0 * pow(2.50, lvl)))
+            return int(round(30000.0 * pow(2.50, lvl)))
     return 99999999
 
 func _buy_research(track: String) -> bool:
@@ -945,7 +951,7 @@ func _buy_research(track: String) -> bool:
     return true
 
 func _weapon_research_cost(weapon: String) -> int:
-    return _shop_weapon_cost(weapon) * 25
+    return _shop_weapon_cost(weapon) * 50
 
 func _weapon_start_unlocked(weapon: String) -> bool:
     match weapon:
@@ -1180,6 +1186,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "dash_timer", dash_timer)
     cfg.set_value("run", "dash_score_timer", dash_score_timer)
     cfg.set_value("run", "current_weapon", current_weapon)
+    cfg.set_value("run", "store_weapon_rental", store_weapon_rental)
     cfg.set_value("run", "hard_lane_right", hard_lane_right)
     cfg.set_value("run", "lane_event_active", lane_event_active)
     cfg.set_value("run", "lane_event_timer", lane_event_timer)
@@ -1232,6 +1239,7 @@ func _load_run_snapshot() -> bool:
     dash_timer = float(cfg.get_value("run", "dash_timer", 0.0))
     dash_score_timer = float(cfg.get_value("run", "dash_score_timer", 0.0))
     current_weapon = String(cfg.get_value("run", "current_weapon", "none"))
+    store_weapon_rental = String(cfg.get_value("run", "store_weapon_rental", ""))
     hard_lane_right = bool(cfg.get_value("run", "hard_lane_right", true))
     lane_event_active = bool(cfg.get_value("run", "lane_event_active", false))
     lane_event_timer = float(cfg.get_value("run", "lane_event_timer", 0.0))
@@ -2083,6 +2091,7 @@ func _move_objects(delta: float) -> void:
         elif obj.type == "weapon":
             if absf(dy) < obj.r + 18.0 and dx < obj.r + 20.0:
                 current_weapon = String(obj.weapon)
+                store_weapon_rental = ""
                 fire_clock = 0.04
                 weapon_banner_text = _weapon_label(current_weapon)
                 weapon_banner_timer = 1.35
@@ -2632,7 +2641,7 @@ func _draw_shop() -> void:
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("b56cff"), false, 2.0)
         _text("WEAPONS / REPAIR", SHOP_PAGE_TOGGLE_RECT.position + Vector2(73, 34), 17, Color("f1dcff"))
     else:
-        _text("WEAPONS / REPAIR", Vector2(106, 203), 15, Color("b56cff"))
+        _text("WEAPONS / REPAIR • WEAPONS = 1 LEVEL", Vector2(49, 203), 13, Color("b56cff"))
         var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
         _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1 HIT", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
         _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")
@@ -2647,8 +2656,8 @@ func _draw_shop() -> void:
     draw_rect(SHOP_CONTINUE_RECT, Color("123544"), true)
     draw_rect(SHOP_CONTINUE_RECT, Color("77f7ff"), false, 3.0)
     _text("START LEVEL %d" % (level + 1), SHOP_CONTINUE_RECT.position + Vector2(71, 41), 21, Color("f0fbff"))
-    _text("STORE UPGRADES LAST THIS RUN ONLY", Vector2(63, 710), 14, Color("ffb347"))
-    _text("PERMANENT RESEARCH AUTO-SAVES", Vector2(69, 738), 14, Color("8ea9b8"))
+    _text("WEAPONS LAST NEXT LEVEL ONLY", Vector2(79, 710), 14, Color("ffb347"))
+    _text("RUN UPGRADES LAST RUN • RESEARCH PERMANENT", Vector2(35, 738), 12, Color("8ea9b8"))
 
 func _draw_results() -> void:
     draw_rect(Rect2(Vector2(30, 210), Vector2(330, 410)), Color(0.03,0.05,0.09,0.94), true)

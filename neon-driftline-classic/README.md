@@ -46,10 +46,7 @@ Each level permanently adds **+3% player weapon damage**.
 
 Fresh ships begin with **2 hits**.
 
-Hit research adds +1 starting hit per level, up to +5 extra hits. It deliberately starts expensive, but its price curve rises relatively gently:
-
-- first extra hit: **5,000 Research**
-- later hit costs grow by about **35% per level**
+Hit research adds +1 starting hit per level, up to +5 extra hits. It is the cheapest permanent track, but now starts at **5,000 Research** and retains its existing 1.65× growth curve.
 
 ### Shields
 
@@ -57,25 +54,25 @@ Fresh ships begin with **0 shield charges**.
 
 Each shield research level adds **one projectile block at the start of every run**, up to 5 charges. A charge absorbs one enemy projectile; it does not protect against enemy-body collisions or station walls.
 
-Shield pricing starts cheap but escalates sharply:
+Shield research is deliberately expensive and escalates sharply:
 
-- Shield 1: **500**
-- Shield 2: **2,500**
-- Shield 3: **12,500**
-- Shield 4: **62,500**
-- Shield 5: **312,500**
+- Shield 1: **30,000**
+- Shield 2: **75,000**
+- Shield 3: **187,500**
+- Shield 4: **468,750**
+- Shield 5: **1,171,875**
 
 ## Starting-weapon research
 
 The in-run weapon shop remains unchanged, but Research can permanently unlock weapons as **starting loadouts**.
 
-Each starting-weapon unlock costs exactly **10× its normal run-shop price**:
+Each starting-weapon unlock costs exactly **50× its normal one-level run-shop rental price**:
 
-- Single Auto D1: **3,000 Research**
-- Dual Auto D1x2: **10,000**
-- Thin Laser: **25,000**
-- Cone Cannon D3x3: **50,000**
-- Heat Seeker D7: **100,000**
+- Single Auto D1: **15,000 Research**
+- Dual Auto D1x2: **50,000**
+- Thin Laser: **125,000**
+- Cone Cannon D3x3: **250,000**
+- Heat Seeker D7: **500,000**
 
 Unlocked starting weapons can be selected from the Research menu before a run. **NONE** is always selectable, so an unlocked weapon never forces a loadout.
 
@@ -226,14 +223,14 @@ Weapon-fire sounds are intentionally short and quieter than impact/reward cues s
 
 Permanent research is now explicitly autosaved. Buying a permanent upgrade or starting-weapon unlock writes the meta save immediately, and starting a new run does **not** reset research.
 
-Permanent research has been re-priced as long-term progression:
+Permanent research has been pushed further into long-term progression:
 
-- **Hits:** starts at **2,500** research and is intentionally the cheapest/most obvious first permanent upgrade.
-- **Ship Speed:** starts at **7,500**.
-- **Dash:** starts at **9,000**.
-- **Damage:** starts at **12,000**.
-- **Shield:** starts at **15,000** and scales steeply.
-- Permanent starting-weapon unlocks cost **25×** their normal between-level run-shop price.
+- **Hits:** starts at **5,000** research and remains the cheapest first permanent upgrade.
+- **Ship Speed:** starts at **15,000**.
+- **Dash:** starts at **18,000**.
+- **Damage:** starts at **24,000**.
+- **Shield:** starts at **30,000** and scales steeply.
+- Permanent starting-weapon unlocks cost **50×** their normal one-level between-level store rental price.
 
 The research screen highlights the first +1 Hit upgrade as **BEST FIRST**.
 
@@ -257,4 +254,6 @@ The level-clear store now has two pages:
 
 Run upgrades use the current run's score, stack on top of permanent research, persist through later levels and durable pause/reload, and reset when a brand-new run begins.
 
-Permanent research remains permanent; store upgrades are run-only.
+Weapons bought on the **WEAPONS / REPAIR** page are different: they are **one-level rentals**. A purchased weapon equips for the immediately following level only, survives pause/reload during that level, then expires when that level clears. The ship returns to its selected permanent starting weapon (or NONE). Field weapon pickups are not tagged as store rentals.
+
+Permanent research remains permanent; non-weapon run upgrades remain run-only.
