@@ -74,7 +74,7 @@ Status thresholds:
 
 Future enforcement systems now have authoritative eligibility queries:
 
-- police hostility: heat 30+ or relation -50 or worse
+- police hostility: heat 30+ or HOSTILE relation (-60 or worse)
 - heavy/pentagon enforcement: heat 60+ or relation -75 or worse
 
 The hub, market, and system-map destination card expose current faction reputation/heat. Contested regions maintain separate state for both claimant factions. Uncontrolled space has no faction record.
@@ -123,13 +123,19 @@ The atlas remains menu-only; the arcade renderer does not reference it.
 
 ## Space travel
 
+Every direct lane has three separate route axes:
+
+- **Length / distance** controls total flight time. Danger and contract difficulty do not lengthen a lane.
+- **Danger** controls asteroid density during travel.
+- **Wealth** controls cargo-container density and modifies the random chance of patrol/pirate contacts. Wealth is generated from proximity to faction core worlds/capitals and from major traffic-lane centrality in the sparse route network.
+
 The arcade renderer uses shape as object identity:
 
 - **Circles — asteroids.** Environmental hazards and the only normal/dash near-miss objects. Destroying one gives no kill credits and has a rare 12% chance to release one Ore.
 - **Squares — basic cargo containers.** Stationary laterally, low durability, one random 1–2 unit commodity bundle.
 - **Diamonds — reinforced cargo containers.** Stationary laterally, tougher/rarer, two larger 2–3 unit bundles.
 - **Trapezoids — ships.** Pirates in CONTESTED/UNCONTROLLED space; faction patrol ships in CORE/CONTROLLED space.
-- **Pentagons — heavy government enforcement.** Random pentagons are faction-only and require the heavy criminal threshold. Pirate contacts never spawn them. Bounty bosses remain the explicit contract exception.
+- **Pentagons — heavy government enforcement.** Random pentagons are faction-only, require the heavy criminal threshold, and can spawn only while a faction patrol is already in active hostile combat with the player. Pirate contacts never spawn them. Bounty bosses remain the explicit contract exception.
 
 ### Territory contacts and enforcement
 
@@ -158,11 +164,11 @@ Container ownership, loot, asteroid salvage, LEFT/DASH/RIGHT controls, station s
 
 Police are **not guaranteed** by route difficulty.
 
-CORE/CONTROLLED space only makes the controlling faction eligible to appear. Each patrol opportunity then makes a random roll based on that faction's persistent level (1–5). Route danger, contract difficulty, and heat do not increase police-contact probability. Failed rolls can leave an entire flight with no police encounter.
+CORE/CONTROLLED space only makes the controlling faction eligible to appear. Each patrol opportunity then makes a random roll based on that faction's persistent level (1–5) and the lane's route wealth. Route danger, contract difficulty, and heat do not increase police-contact probability. Failed rolls can leave an entire flight with no police encounter.
 
-Faction level currently gives per-opportunity police chances from 19% at level 1 through 39% at level 5. Opportunity timing is randomized as well.
+Faction level contributes a 19%–39% base police chance before the route-wealth multiplier. Wealthy core/traffic lanes raise that chance; poor backwater lanes lower it. Opportunity timing is randomized as well.
 
-Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed.
+Pirate contacts remain random in CONTESTED/UNCONTROLLED space rather than guaranteed. Route wealth scales pirate-contact probability too, and every pirate contact is attack-on-sight.
 
 A lawful patrol may also randomly initiate a timed cargo scan. The HUD shows the scan countdown. The scan checks Arms and Narcotics against that **specific faction's** laws.
 
@@ -212,7 +218,7 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, crime schema 1, and enforcement schema 1, all 32 generated planets, factions, capitals, influence parameters, faction level/law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
 
-Generated political state is created once and never rerolled on reload.
+Generated political state is created once and never rerolled on reload. Existing generated careers missing route-wealth metadata derive it deterministically from their preserved capitals and route graph, without rerolling planets or lanes.
 
 Older four-world careers migrate once to political schema 2. Existing five-commodity saves also upgrade in place by adding Arms/Narcotics cargo keys and market entries without rerolling the political world. Existing political careers missing Slice 3 criminal-state fields receive clean heat/offense fields while preserving their faction relations and generated world. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
 
@@ -230,7 +236,7 @@ The active route snapshot remains separate and preserves exact in-flight state.
 
 `godot --headless --path . --script res://tests/SmokeTest.gd`
 
-The smoke test covers economy simulation, trading, political/crime state, faction-level enforcement migration, route scaling, probabilistic pirate/police opportunities, proof that police probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, heavy-enforcement pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
+The smoke test covers economy simulation, trading, political/crime state, faction-level and route-wealth migration, length-only travel duration, danger-driven asteroid density, wealth-driven container density, wealth-scaled pirate/police opportunities, proof that encounter probability ignores route danger, quiet-flight failed rolls, lawful patrol behavior, HOSTILE-tier attack-on-sight, faction-specific contraband scans, arrival scan cancellation, scan persistence, live criminal escalation, neutral auto-fire protection, active-combat pentagon gating, enforcement-kill consequences, route-boundary encounter changes, legacy pirate-run migration, asteroid salvage/containers, durable route restore, and core flight mechanics.
 
 
 ## Preserved arcade version
