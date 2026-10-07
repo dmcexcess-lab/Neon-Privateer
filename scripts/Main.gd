@@ -1133,6 +1133,34 @@ func _ensure_commodity_schema() -> bool:
         markets[planet] = planet_market
     return changed
 
+func _ensure_market_index_schema() -> bool:
+    var changed := false
+    for key in ["green", "grey"]:
+        if not market_index_holdings.has(key):
+            market_index_holdings[key] = 0
+            changed = true
+        if not market_indices.has(key):
+            market_indices[key] = {
+                "price": GREEN_INDEX_BASE if key == "green" else GREY_INDEX_BASE,
+                "volume": 0.0,
+                "last_volume": 0.0,
+                "basket": 0.0,
+                "last_basket": 0.0
+            }
+            changed = true
+        else:
+            var state: Dictionary = market_indices[key]
+            for field in ["price", "volume", "last_volume", "basket", "last_basket"]:
+                if not state.has(field):
+                    state[field] = (GREEN_INDEX_BASE if key == "green" else GREY_INDEX_BASE) if field == "price" else 0.0
+                    changed = true
+            market_indices[key] = state
+    for key in ["green_volume", "grey_volume", "cross_empire_volume", "shipments", "last_route", "last_commodity"]:
+        if not trade_ledger.has(key):
+            trade_ledger[key] = "" if key.begins_with("last_") else (0 if key == "shipments" else 0.0)
+            changed = true
+    return changed
+
 func _ensure_currency_schema() -> bool:
     var changed := false
     var live_ids: Dictionary = {}
@@ -1169,49 +1197,61 @@ func _init_privateer_world() -> void:
     _ensure_crime_schema()
     _ensure_enforcement_schema()
     PoliticalWorld.ensure_grey_law_schema(political_world)
+    PoliticalWorld.ensure_empire_schema(political_world)
     _ensure_commodity_schema()
+    _ensure_market_index_schema()
     _ensure_currency_schema()
     if contract_board.is_empty():
         _regenerate_contracts()
     if last_trip_summary == "Docked":
         last_trip_summary = "Docked at %s" % _planet_display_name(current_planet)
 
+func _planet_specialty(planet: String) -> String:
+    return PoliticalWorld.specialty_for_planet(political_world, planet)
+
 func _market_profile(planet: String, commodity: String) -> Vector2:
     var category := _commodity_category(commodity)
+    var flow := Vector2(4.0, 4.0)
     match _planet_type(planet):
         "LUSH":
             match category:
-                "food": return Vector2(9.0, 3.0)
-                "metal": return Vector2(2.0, 6.0)
-                "medicine": return Vector2(4.0, 4.0)
-                "weapons": return Vector2(1.0, 6.0)
-                "narcotics": return Vector2(8.0, 3.0)
-                "entertainment": return Vector2(5.0, 4.0)
+                "food": flow = Vector2(9.0, 3.0)
+                "metal": flow = Vector2(2.0, 6.0)
+                "medicine": flow = Vector2(4.0, 4.0)
+                "weapons": flow = Vector2(1.0, 6.0)
+                "narcotics": flow = Vector2(8.0, 3.0)
+                "entertainment": flow = Vector2(5.0, 4.0)
         "VOLCANIC":
             match category:
-                "food": return Vector2(1.0, 8.0)
-                "metal": return Vector2(10.0, 2.0)
-                "medicine": return Vector2(2.0, 6.0)
-                "weapons": return Vector2(6.0, 4.0)
-                "narcotics": return Vector2(1.0, 6.0)
-                "entertainment": return Vector2(2.0, 5.0)
+                "food": flow = Vector2(1.0, 8.0)
+                "metal": flow = Vector2(10.0, 2.0)
+                "medicine": flow = Vector2(2.0, 6.0)
+                "weapons": flow = Vector2(6.0, 4.0)
+                "narcotics": flow = Vector2(1.0, 6.0)
+                "entertainment": flow = Vector2(2.0, 5.0)
         "FROZEN":
             match category:
-                "food": return Vector2(4.0, 6.0)
-                "metal": return Vector2(3.0, 5.0)
-                "medicine": return Vector2(9.0, 2.0)
-                "weapons": return Vector2(2.0, 5.0)
-                "narcotics": return Vector2(4.0, 4.0)
-                "entertainment": return Vector2(3.0, 6.0)
+                "food": flow = Vector2(4.0, 6.0)
+                "metal": flow = Vector2(3.0, 5.0)
+                "medicine": flow = Vector2(9.0, 2.0)
+                "weapons": flow = Vector2(2.0, 5.0)
+                "narcotics": flow = Vector2(4.0, 4.0)
+                "entertainment": flow = Vector2(3.0, 6.0)
         "INDUSTRIAL":
             match category:
-                "food": return Vector2(2.0, 7.0)
-                "metal": return Vector2(8.0, 3.0)
-                "medicine": return Vector2(4.0, 4.0)
-                "weapons": return Vector2(10.0, 2.0)
-                "narcotics": return Vector2(2.0, 6.0)
-                "entertainment": return Vector2(8.0, 3.0)
-    return Vector2(4.0, 4.0)
+                "food": flow = Vector2(2.0, 7.0)
+                "metal": flow = Vector2(8.0, 3.0)
+                "medicine": flow = Vector2(4.0, 4.0)
+                "weapons": flow = Vector2(10.0, 2.0)
+                "narcotics": flow = Vector2(2.0, 6.0)
+                "entertainment": flow = Vector2(8.0, 3.0)
+
+    # Every world is a real specialist producer. Its one specialty is the
+    # commodity it contributes most strongly into local and imperial trade.
+    if commodity == _planet_specialty(planet):
+        flow.x += 7.0
+        flow.y = maxf(1.0, flow.y - 1.0)
+    return flow
 
 func _market_law_multiplier(planet: String, commodity: String) -> float:
     if not _is_grey_commodity(commodity):
@@ -1261,23 +1301,32 @@ func _market_buy_price(planet: String, commodity: String) -> int:
 func _market_sell_price(planet: String, commodity: String) -> int:
     return maxi(1, int(floor(float(_market_price(planet, commodity)) * 0.94)))
 
+func _faction_controlled_planet_count(faction_id: String) -> int:
+    var count := 0
+    for planet_id in planet_names:
+        if _planet_primary_faction(planet_id) == faction_id:
+            count += 1
+    return count
+
 func _faction_currency_base_price(faction_id: String) -> float:
     var faction := PoliticalWorld.faction_record(political_world, faction_id)
     if faction.is_empty():
         return 100.0
-    var controlled_worlds := 0
+    var controlled_worlds := _faction_controlled_planet_count(faction_id)
     var wealth_sum := 0.0
     for planet_id in planet_names:
         if _planet_primary_faction(planet_id) == faction_id:
-            controlled_worlds += 1
-            var neighbors := PoliticalWorld.neighbors(political_world, planet_id)
-            for neighbor in neighbors:
+            for neighbor in PoliticalWorld.neighbors(political_world, planet_id):
                 var route := PoliticalWorld.direct_route(political_world, planet_id, neighbor)
                 wealth_sum += float(route.get("wealth", 1))
-    var level_component := float(_faction_level(faction_id)) * 12.0
-    var territory_component := float(controlled_worlds) * 2.5
-    var traffic_component := minf(22.0, wealth_sum * 0.35)
-    return 55.0 + level_component + territory_component + traffic_component
+    var level_component := float(_faction_level(faction_id)) * 10.0
+    var territory_component := float(controlled_worlds) * 2.8
+    var traffic_component := minf(24.0, wealth_sum * 0.30)
+    var treasury_component := minf(28.0, sqrt(maxf(0.0, float(faction.get("treasury", 0.0)))) * 0.45)
+    var military_component := minf(22.0, sqrt(maxf(0.0, float(faction.get("military", 0.0)))) * 1.15)
+    var trade_component := minf(24.0, sqrt(maxf(0.0, float(faction.get("trade_volume", 0.0)))) * 0.25)
+    var war_penalty := 14.0 if not PoliticalWorld.active_war_for_faction(political_world, faction_id).is_empty() else 0.0
+    return maxf(20.0, 35.0 + level_component + territory_component + traffic_component + treasury_component + military_component + trade_component - war_penalty)
 
 func _faction_currency_price(faction_id: String) -> int:
     var market: Dictionary = currency_markets.get(faction_id, {"price_factor": 1.0})
@@ -1289,28 +1338,347 @@ func _currency_buy_price(faction_id: String) -> int:
 func _currency_sell_price(faction_id: String) -> int:
     return maxi(1, int(floor(float(_faction_currency_price(faction_id)) * 0.98)))
 
+func _market_index_price(kind: String) -> int:
+    var state: Dictionary = market_indices.get(kind, {})
+    var fallback := GREEN_INDEX_BASE if kind == "green" else GREY_INDEX_BASE
+    return maxi(1, int(round(float(state.get("price", fallback)))))
+
+func _market_index_buy_price(kind: String) -> int:
+    var spread := 1.01 if kind == "green" else 1.025
+    return maxi(1, int(ceil(float(_market_index_price(kind)) * spread)))
+
+func _market_index_sell_price(kind: String) -> int:
+    var spread := 0.99 if kind == "green" else 0.975
+    return maxi(1, int(floor(float(_market_index_price(kind)) * spread)))
+
+func _buy_market_index(kind: String) -> bool:
+    if kind != "green" and kind != "grey":
+        return false
+    var price := _market_index_buy_price(kind)
+    if research_credits < price:
+        return false
+    research_credits -= price
+    market_index_holdings[kind] = int(market_index_holdings.get(kind, 0)) + 1
+    _play_sfx(buy_sfx, 1.04, -3.0)
+    _save_all_state()
+    return true
+
+func _sell_market_index(kind: String) -> bool:
+    if int(market_index_holdings.get(kind, 0)) <= 0:
+        return false
+    research_credits += _market_index_sell_price(kind)
+    market_index_holdings[kind] = int(market_index_holdings.get(kind, 0)) - 1
+    _play_sfx(buy_sfx, 0.95, -3.0)
+    _save_all_state()
+    return true
+
+func _aggregate_market_basket(goods: Array[String]) -> float:
+    if planet_names.is_empty() or goods.is_empty():
+        return 0.0
+    var total := 0.0
+    var count := 0
+    for planet_id in planet_names:
+        for commodity in goods:
+            total += float(_market_price(planet_id, commodity))
+            count += 1
+    return total / float(maxi(1, count))
+
+func _record_simulated_trade(origin: String, destination: String, commodity: String, quantity: float, value: float) -> void:
+    if quantity <= 0.0 or value <= 0.0:
+        return
+    var ledger_key := "grey_volume" if _is_grey_commodity(commodity) else "green_volume"
+    trade_ledger[ledger_key] = float(trade_ledger.get(ledger_key, 0.0)) + value
+    trade_ledger["shipments"] = int(trade_ledger.get("shipments", 0)) + 1
+    trade_ledger["last_route"] = "%s>%s" % [origin, destination]
+    trade_ledger["last_commodity"] = commodity
+
+    var origin_faction := _planet_primary_faction(origin)
+    var destination_faction := _planet_primary_faction(destination)
+    if not origin_faction.is_empty():
+        var source_record := PoliticalWorld.faction_record(political_world, origin_faction).duplicate(true)
+        source_record["treasury"] = float(source_record.get("treasury", 0.0)) + value * 0.018
+        source_record["trade_volume"] = float(source_record.get("trade_volume", 0.0)) + value
+        PoliticalWorld._replace_faction(political_world, origin_faction, source_record)
+    if not destination_faction.is_empty() and destination_faction != origin_faction:
+        trade_ledger["cross_empire_volume"] = float(trade_ledger.get("cross_empire_volume", 0.0)) + value
+        var destination_record := PoliticalWorld.faction_record(political_world, destination_faction).duplicate(true)
+        destination_record["treasury"] = float(destination_record.get("treasury", 0.0)) + value * 0.008
+        destination_record["trade_volume"] = float(destination_record.get("trade_volume", 0.0)) + value
+        PoliticalWorld._replace_faction(political_world, destination_faction, destination_record)
+
+func _trade_specialty_along_route(origin: String, destination: String, route: Dictionary) -> float:
+    var commodity := _planet_specialty(origin)
+    if commodity.is_empty() or not markets.has(origin) or not markets.has(destination):
+        return 0.0
+    if not markets[origin].has(commodity) or not markets[destination].has(commodity):
+        return 0.0
+
+    var origin_faction := _planet_primary_faction(origin)
+    var destination_faction := _planet_primary_faction(destination)
+    if not origin_faction.is_empty() and not destination_faction.is_empty() and origin_faction != destination_faction:
+        if PoliticalWorld.factions_at_war(political_world, origin_faction, destination_faction):
+            return 0.0
+
+    var source: Dictionary = markets[origin][commodity]
+    var target: Dictionary = markets[destination][commodity]
+    var source_stock := float(source.get("stock", 0.0))
+    var target_stock := float(target.get("stock", 0.0))
+    var source_floor := 48.0 + float(source.get("consumption", 4.0)) * 2.0
+    var target_need := 58.0 + float(target.get("consumption", 4.0)) * 3.0
+    var surplus := maxf(0.0, source_stock - source_floor)
+    var deficit := maxf(0.0, target_need - target_stock)
+    var price_pull := maxf(0.0, float(_market_price(destination, commodity) - _market_price(origin, commodity))) / maxf(1.0, float(_commodity_base_price(commodity)))
+    var route_capacity := 0.65 + float(route.get("wealth", 1)) * 0.32
+
+    var quantity := minf(3.5, minf(surplus * 0.18, maxf(0.0, deficit * 0.16 + price_pull * 1.4)))
+    quantity = minf(quantity, route_capacity)
+    if _is_grey_commodity(commodity):
+        var legality := String(_planet_commodity_legality(destination, commodity).get("status", "LEGAL"))
+        if legality == "ILLEGAL":
+            quantity *= 0.38
+        elif legality == "MIXED":
+            quantity *= 0.68
+    if quantity < 0.15:
+        return 0.0
+
+    source["stock"] = maxf(2.0, source_stock - quantity)
+    target["stock"] = minf(140.0, target_stock + quantity)
+    markets[origin][commodity] = source
+    markets[destination][commodity] = target
+    var transaction_price := (float(_market_price(origin, commodity)) + float(_market_price(destination, commodity))) * 0.5
+    var trade_value := quantity * transaction_price
+    _record_simulated_trade(origin, destination, commodity, quantity, trade_value)
+    return trade_value
+
+func _simulate_route_trade() -> void:
+    trade_ledger["green_volume"] = 0.0
+    trade_ledger["grey_volume"] = 0.0
+    trade_ledger["cross_empire_volume"] = 0.0
+    trade_ledger["shipments"] = 0
+    for route_variant in political_world.get("routes", []):
+        var route: Dictionary = route_variant
+        var a := String(route.get("a", ""))
+        var b := String(route.get("b", ""))
+        _trade_specialty_along_route(a, b, route)
+        _trade_specialty_along_route(b, a, route)
+
+func _update_market_index(kind: String, goods: Array[String], volume: float) -> void:
+    var state: Dictionary = market_indices.get(kind, {}).duplicate(true)
+    var fallback := GREEN_INDEX_BASE if kind == "green" else GREY_INDEX_BASE
+    var price := float(state.get("price", fallback))
+    var last_volume := float(state.get("volume", 0.0))
+    var last_basket := float(state.get("basket", 0.0))
+    var basket := _aggregate_market_basket(goods)
+
+    var volume_change := 0.0
+    if last_volume > 1.0:
+        volume_change = clampf((volume - last_volume) / last_volume, -1.0, 1.0)
+    var basket_change := 0.0
+    if last_basket > 0.0:
+        basket_change = clampf((basket - last_basket) / last_basket, -0.30, 0.30)
+
+    var move := 0.0
+    if kind == "green":
+        move = basket_change * 0.35 + volume_change * 0.025 + rng.randf_range(-0.0025, 0.0025)
+        move = clampf(move, -0.012, 0.012)
+    else:
+        var war_pressure := float(political_world.get("wars", []).size()) * 0.004
+        move = basket_change * 0.62 + volume_change * 0.065 + rng.randf_range(-0.025, 0.025) + war_pressure
+        move = clampf(move, -0.085, 0.085)
+
+    state["last_volume"] = last_volume
+    state["volume"] = volume
+    state["last_basket"] = last_basket
+    state["basket"] = basket
+    state["price"] = maxf(10.0, price * (1.0 + move))
+    market_indices[kind] = state
+
+func _update_aggregate_market_indices() -> void:
+    _update_market_index("green", legal_commodity_names, float(trade_ledger.get("green_volume", 0.0)))
+    _update_market_index("grey", grey_commodity_names, float(trade_ledger.get("grey_volume", 0.0)))
+
+func _frontier_pairs() -> Dictionary:
+    var pairs: Dictionary = {}
+    for route_variant in political_world.get("routes", []):
+        var route: Dictionary = route_variant
+        for segment_variant in route.get("segments", []):
+            var segment: Dictionary = segment_variant
+            if String(segment.get("state", "")) != "CONTESTED":
+                continue
+            var a := String(segment.get("strongest_faction_id", ""))
+            var b := String(segment.get("second_faction_id", ""))
+            if a.is_empty() or b.is_empty() or a == b:
+                continue
+            var key := PoliticalWorld.war_key(a, b)
+            pairs[key] = int(pairs.get(key, 0)) + 1
+    return pairs
+
+func _simulate_empire_macro_tick() -> void:
+    PoliticalWorld.ensure_empire_schema(political_world)
+    political_world["macro_tick"] = int(political_world.get("macro_tick", 0)) + 1
+    var wars: Array = political_world.get("wars", [])
+    var changed_influence := false
+    var active_ids: Dictionary = {}
+
+    # Wars consume money and military strength while directly pushing the
+    # shared influence field. The stronger side expands the frontier; the
+    # weaker side contracts. There is no separate ownership authority.
+    var surviving_wars: Array = []
+    for war_variant in wars:
+        var war: Dictionary = war_variant.duplicate(true)
+        var a := String(war.get("a", ""))
+        var b := String(war.get("b", ""))
+        var fa := PoliticalWorld.faction_record(political_world, a).duplicate(true)
+        var fb := PoliticalWorld.faction_record(political_world, b).duplicate(true)
+        if fa.is_empty() or fb.is_empty():
+            continue
+        active_ids[a] = true
+        active_ids[b] = true
+        var spend_a := minf(float(fa.get("treasury", 0.0)) * 0.035, 70.0 + float(fa.get("military", 0.0)) * 0.08)
+        var spend_b := minf(float(fb.get("treasury", 0.0)) * 0.035, 70.0 + float(fb.get("military", 0.0)) * 0.08)
+        fa["treasury"] = maxf(0.0, float(fa.get("treasury", 0.0)) - spend_a)
+        fb["treasury"] = maxf(0.0, float(fb.get("treasury", 0.0)) - spend_b)
+
+        var power_a := float(fa.get("military", 0.0)) + spend_a * 0.75 + float(fa.get("trade_volume", 0.0)) * 0.006
+        var power_b := float(fb.get("military", 0.0)) + spend_b * 0.75 + float(fb.get("trade_volume", 0.0)) * 0.006
+        var total_power := maxf(1.0, power_a + power_b)
+        var edge := clampf((power_a - power_b) / total_power, -0.28, 0.28)
+
+        fa["military"] = maxf(18.0, float(fa.get("military", 0.0)) - 2.2 - maxf(0.0, -edge) * 7.0)
+        fb["military"] = maxf(18.0, float(fb.get("military", 0.0)) - 2.2 - maxf(0.0, edge) * 7.0)
+        fa["war_weariness"] = minf(1.5, float(fa.get("war_weariness", 0.0)) + 0.035 + spend_a / 9000.0)
+        fb["war_weariness"] = minf(1.5, float(fb.get("war_weariness", 0.0)) + 0.035 + spend_b / 9000.0)
+
+        fa["strength"] = clampf(float(fa.get("strength", 1.0)) + edge * 0.010, 0.72, 1.42)
+        fb["strength"] = clampf(float(fb.get("strength", 1.0)) - edge * 0.010, 0.72, 1.42)
+        fa["radius"] = clampf(float(fa.get("radius", 900.0)) + edge * 15.0, 620.0, 1320.0)
+        fb["radius"] = clampf(float(fb.get("radius", 900.0)) - edge * 15.0, 620.0, 1320.0)
+        changed_influence = true
+
+        war["age"] = int(war.get("age", 0)) + 1
+        war["last_edge"] = edge
+        PoliticalWorld._replace_faction(political_world, a, fa)
+        PoliticalWorld._replace_faction(political_world, b, fb)
+
+        var end_war := int(war.age) >= 18 or (int(war.age) >= 6 and absf(edge) >= 0.10)
+        end_war = end_war or float(fa.get("war_weariness", 0.0)) >= 1.0 or float(fb.get("war_weariness", 0.0)) >= 1.0
+        if end_war:
+            fa = PoliticalWorld.faction_record(political_world, a).duplicate(true)
+            fb = PoliticalWorld.faction_record(political_world, b).duplicate(true)
+            fa["war_cooldown"] = 8
+            fb["war_cooldown"] = 8
+            fa["war_weariness"] = maxf(0.0, float(fa.get("war_weariness", 0.0)) - 0.35)
+            fb["war_weariness"] = maxf(0.0, float(fb.get("war_weariness", 0.0)) - 0.35)
+            PoliticalWorld._replace_faction(political_world, a, fa)
+            PoliticalWorld._replace_faction(political_world, b, fb)
+            active_ids.erase(a)
+            active_ids.erase(b)
+        else:
+            surviving_wars.append(war)
+
+    political_world["wars"] = surviving_wars
+
+    # Peaceful powers convert surplus trade/treasury into slow frontier growth
+    # and military replacement. Expansion therefore depends on a functioning
+    # economy rather than a free random territory roll.
+    for faction_variant in political_world.get("factions", []):
+        var faction: Dictionary = faction_variant.duplicate(true)
+        var faction_id := String(faction.get("id", ""))
+        var cooldown := maxi(0, int(faction.get("war_cooldown", 0)) - 1)
+        faction["war_cooldown"] = cooldown
+        var trade_volume := float(faction.get("trade_volume", 0.0))
+        var treasury := float(faction.get("treasury", 0.0))
+        if not active_ids.has(faction_id):
+            var replacement := minf(7.0, 0.4 + trade_volume / 4500.0)
+            faction["military"] = minf(260.0, float(faction.get("military", 0.0)) + replacement)
+            faction["war_weariness"] = maxf(0.0, float(faction.get("war_weariness", 0.0)) - 0.06)
+            if treasury > 1150.0:
+                var expansion_cost := minf(65.0, 24.0 + float(_faction_controlled_planet_count(faction_id)) * 2.0)
+                faction["treasury"] = treasury - expansion_cost
+                faction["radius"] = clampf(float(faction.get("radius", 900.0)) + 0.9 + minf(2.3, trade_volume / 7000.0), 620.0, 1320.0)
+                faction["strength"] = clampf(float(faction.get("strength", 1.0)) + 0.0008 + minf(0.0015, trade_volume / 900000.0), 0.72, 1.42)
+                changed_influence = true
+        faction["trade_volume"] = trade_volume * 0.35
+        PoliticalWorld._replace_faction(political_world, faction_id, faction)
+
+    # A war can start only across an actual contested frontier, only after a
+    # cooldown, and only when both powers have enough economic/military depth.
+    var frontier_pairs := _frontier_pairs()
+    for key in frontier_pairs.keys():
+        var parts := String(key).split("|")
+        if parts.size() != 2:
+            continue
+        var a := String(parts[0])
+        var b := String(parts[1])
+        if PoliticalWorld.factions_at_war(political_world, a, b):
+            continue
+        if not PoliticalWorld.active_war_for_faction(political_world, a).is_empty() or not PoliticalWorld.active_war_for_faction(political_world, b).is_empty():
+            continue
+        var fa := PoliticalWorld.faction_record(political_world, a)
+        var fb := PoliticalWorld.faction_record(political_world, b)
+        if int(fa.get("war_cooldown", 0)) > 0 or int(fb.get("war_cooldown", 0)) > 0:
+            continue
+        if float(fa.get("treasury", 0.0)) < 700.0 or float(fb.get("treasury", 0.0)) < 700.0:
+            continue
+        var frontier_pressure := clampf(float(frontier_pairs[key]) / 8.0, 0.0, 1.0)
+        var chance := 0.025 + frontier_pressure * 0.055
+        if rng.randf() < chance:
+            var new_wars: Array = political_world.get("wars", [])
+            new_wars.append({"key": String(key), "a": a, "b": b, "age": 0, "last_edge": 0.0})
+            political_world["wars"] = new_wars
+            break
+
+    if changed_influence:
+        PoliticalWorld.refresh_route_politics(political_world)
+        _rebuild_political_map_overlay()
+
 func _simulate_economy(ticks: int) -> void:
+    PoliticalWorld.ensure_empire_schema(political_world)
+    _ensure_market_index_schema()
     _ensure_currency_schema()
     for step in maxi(1, ticks):
         economy_tick += 1
+
+        # Local production/consumption is real stock. A planet's specialty
+        # receives the strongest production surplus and feeds actual shipments.
         for planet in planet_names:
             var planet_market: Dictionary = markets[planet]
+            var specialty := _planet_specialty(planet)
             for commodity in commodity_names:
                 var data: Dictionary = planet_market[commodity]
                 var noise := rng.randf_range(-1.4, 1.4)
-                data["stock"] = clampf(float(data.get("stock", 52.0)) + float(data.get("production", 4.0)) - float(data.get("consumption", 4.0)) + noise, 2.0, 140.0)
+                var specialty_bonus := 1.8 if commodity == specialty else 0.0
+                data["stock"] = clampf(float(data.get("stock", 52.0)) + float(data.get("production", 4.0)) + specialty_bonus - float(data.get("consumption", 4.0)) + noise, 2.0, 140.0)
                 var volatility := float(data.get("volatility", _commodity_volatility(commodity)))
                 var factor := float(data.get("price_factor", 1.0))
                 var mean_reversion := (1.0 - factor) * 0.08
                 data["price_factor"] = clampf(factor + mean_reversion + rng.randf_range(-volatility, volatility), 0.62, 1.60)
                 planet_market[commodity] = data
             markets[planet] = planet_market
+
+            var owner := _planet_primary_faction(planet)
+            if not owner.is_empty():
+                var contribution := float(_commodity_base_price(specialty)) * 0.012
+                var owner_record := PoliticalWorld.faction_record(political_world, owner).duplicate(true)
+                owner_record["treasury"] = float(owner_record.get("treasury", 0.0)) + contribution
+                PoliticalWorld._replace_faction(political_world, owner, owner_record)
+
+        _simulate_route_trade()
+        _update_aggregate_market_indices()
+
+        # Currency prices have independent market noise but their base value
+        # now comes from real empire treasury, military, territory and trade.
         for faction_id in currency_markets.keys():
             var currency: Dictionary = currency_markets[faction_id]
             var factor := float(currency.get("price_factor", 1.0))
             var volatility := float(currency.get("volatility", 0.02))
-            currency["price_factor"] = clampf(factor + (1.0 - factor) * 0.06 + rng.randf_range(-volatility, volatility), 0.68, 1.50)
+            var at_war := not PoliticalWorld.active_war_for_faction(political_world, String(faction_id)).is_empty()
+            var shock := rng.randf_range(-volatility * (1.5 if at_war else 1.0), volatility * (1.5 if at_war else 1.0))
+            currency["price_factor"] = clampf(factor + (1.0 - factor) * 0.06 + shock, 0.68, 1.50)
             currency_markets[faction_id] = currency
+
+        if economy_tick % EMPIRE_MACRO_INTERVAL == 0:
+            _simulate_empire_macro_tick()
 
 func _cargo_used() -> int:
     var used := 0
