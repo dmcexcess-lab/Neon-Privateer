@@ -7,7 +7,7 @@ const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 4
 const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
-const CONTRACT_SCHEMA_VERSION := 2
+const CONTRACT_SCHEMA_VERSION := 3
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 
 # Generated-menu-art atlas regions. These are used only while docked/in menus;
@@ -120,6 +120,10 @@ const JUMP_RANGE_MAX := 6
 const ROUTE_TIME_RANDOM_MIN := 0.93
 const ROUTE_TIME_RANDOM_MAX := 1.07
 const ROUTE_TIME_MAX := 30.0
+const SPECIAL_DELIVERY_MIN_HOPS := 2
+const SPECIAL_DELIVERY_BASE_TIME := 90.0
+const SPECIAL_DELIVERY_TIME_PER_HOP := 45.0
+const PASSENGER_ABANDON_SECONDS := 900.0
 const DASH_COOLDOWN := 2.4
 const DASH_DURATION := 0.30
 const DASH_FORWARD_SPEED := 700.0
@@ -1975,6 +1979,9 @@ func _best_passenger_profile(profiles: Array, issuer_faction: String) -> Diction
     var best_score := -INF
     for profile_variant in profiles:
         var profile: Dictionary = profile_variant
+        var jump_spec := _jump_route_spec(current_planet, String(profile.get("destination", "")))
+        if jump_spec.get("path", []).size() < 3:
+            continue
         var destination_faction := String(profile.get("destination_faction", ""))
         var destination_state := String(profile.get("destination_state", "UNCONTROLLED"))
         var political_value := 0.0
@@ -1984,12 +1991,46 @@ func _best_passenger_profile(profiles: Array, issuer_faction: String) -> Diction
             political_value += 60.0
         if destination_state == "UNCONTROLLED":
             political_value += 30.0
-        var spec: Dictionary = profile.spec
-        var score := political_value + float(spec.get("distance", 1)) * 8.0 + rng.randf_range(0.0, 35.0)
+        var score := political_value + float(jump_spec.get("distance", 1)) * 8.0 + rng.randf_range(0.0, 35.0)
         if score > best_score:
             best_score = score
             best = profile.duplicate(true)
+            best["jump_spec"] = jump_spec
     return best
+
+func _best_special_delivery_profile(profiles: Array) -> Dictionary:
+    var best: Dictionary = {}
+    var best_score := -INF
+    for profile_variant in profiles:
+        var profile: Dictionary = profile_variant
+        var destination := String(profile.get("destination", ""))
+        var jump_spec := _jump_route_spec(current_planet, destination)
+        if int(jump_spec.get("hops", 0)) < SPECIAL_DELIVERY_MIN_HOPS:
+            continue
+        var commodity := ""
+        var commodity_score := -INF
+        for candidate in legal_commodity_names:
+            var margin := _market_sell_price(destination, candidate) - _market_buy_price(current_planet, candidate)
+            var score := float(margin) + float(_commodity_base_price(candidate)) * 0.15
+            if score > commodity_score:
+                commodity_score = score
+                commodity = candidate
+        if commodity.is_empty():
+            continue
+        var route_score := float(jump_spec.get("distance", 1)) * 18.0 + float(jump_spec.get("hops", 1)) * 45.0 + commodity_score
+        if route_score > best_score:
+            best_score = route_score
+            best = profile.duplicate(true)
+            best["commodity"] = commodity
+            best["jump_spec"] = jump_spec
+    return best
+
+func _bounty_archetype_for_difficulty(difficulty: int) -> String:
+    if difficulty >= 5:
+        return "octagon"
+    if difficulty >= 3:
+        return "pentagon" if rng.randf() < 0.55 else "trapezoid"
+    return "trapezoid"
 
 func _best_bounty_profiles(profiles: Array, count: int) -> Array:
     var ranked: Array = []
