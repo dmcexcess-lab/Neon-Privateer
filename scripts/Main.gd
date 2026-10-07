@@ -2570,6 +2570,9 @@ func _save_privateer_state() -> void:
     cfg.set_value("world", "planet", current_planet)
     cfg.set_value("world", "markets", markets)
     cfg.set_value("world", "cargo", cargo)
+    cfg.set_value("world", "market_index_holdings", market_index_holdings)
+    cfg.set_value("world", "market_indices", market_indices)
+    cfg.set_value("world", "trade_ledger", trade_ledger)
     cfg.set_value("world", "currency_holdings", currency_holdings)
     cfg.set_value("world", "currency_markets", currency_markets)
     cfg.set_value("world", "bank_interest_cycles", bank_interest_cycles)
@@ -2629,11 +2632,16 @@ func _load_privateer_state() -> void:
     var enforcement_schema_changed: bool = _ensure_enforcement_schema()
     var route_wealth_schema_changed: bool = _ensure_route_wealth_schema()
     var grey_law_schema_changed: bool = PoliticalWorld.ensure_grey_law_schema(political_world)
+    var empire_schema_changed: bool = PoliticalWorld.ensure_empire_schema(political_world)
     cargo = cfg.get_value("world", "cargo", cargo)
+    market_index_holdings = cfg.get_value("world", "market_index_holdings", {"green": 0, "grey": 0})
+    market_indices = cfg.get_value("world", "market_indices", market_indices)
+    trade_ledger = cfg.get_value("world", "trade_ledger", trade_ledger)
     currency_holdings = cfg.get_value("world", "currency_holdings", {})
     currency_markets = cfg.get_value("world", "currency_markets", {})
     bank_interest_cycles = int(cfg.get_value("world", "bank_interest_cycles", 0))
     var commodity_schema_changed: bool = _ensure_commodity_schema()
+    var market_index_schema_changed: bool = _ensure_market_index_schema()
     var currency_schema_changed: bool = _ensure_currency_schema()
     contract_board.clear()
     for contract in cfg.get_value("world", "contracts", []):
@@ -2663,7 +2671,7 @@ func _load_privateer_state() -> void:
         _regenerate_contracts()
     if migrated_world:
         last_trip_summary = "Migrated to %s" % _planet_display_name(current_planet)
-    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or grey_law_schema_changed or commodity_schema_changed or currency_schema_changed or contract_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION or int(cfg.get_value("world", "contract_schema", 0)) < CONTRACT_SCHEMA_VERSION:
+    if migrated_world or crime_schema_changed or enforcement_schema_changed or route_wealth_schema_changed or grey_law_schema_changed or empire_schema_changed or commodity_schema_changed or market_index_schema_changed or currency_schema_changed or contract_schema_changed or int(cfg.get_value("world", "economy_schema", 0)) < ECONOMY_SCHEMA_VERSION or int(cfg.get_value("world", "crime_schema", 0)) < CRIME_SCHEMA_VERSION or int(cfg.get_value("world", "enforcement_schema", 0)) < ENFORCEMENT_SCHEMA_VERSION or int(cfg.get_value("world", "contract_schema", 0)) < CONTRACT_SCHEMA_VERSION:
         _save_privateer_state()
 
 
