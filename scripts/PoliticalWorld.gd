@@ -33,7 +33,7 @@ const HEAT_MIN := 0
 const HEAT_MAX := 100
 const CRIMINAL_HEAT_THRESHOLD := 30
 const HEAVY_HEAT_THRESHOLD := 60
-const CRIMINAL_RELATION_THRESHOLD := -50
+const CRIMINAL_RELATION_THRESHOLD := -60
 const HEAVY_RELATION_THRESHOLD := -75
 const FACTION_LEVEL_MIN := 1
 const FACTION_LEVEL_MAX := 5
@@ -665,6 +665,7 @@ static func _build_route_network(world: Dictionary) -> Array:
             continue
         _append_route(world, routes, edge_ids, degree, a, b)
 
+    _assign_route_wealth(world, routes)
     return routes
 
 static func _append_route(world: Dictionary, routes: Array, edge_ids: Dictionary, degree: Dictionary, a: String, b: String) -> void:
@@ -688,6 +689,123 @@ static func _append_route(world: Dictionary, routes: Array, edge_ids: Dictionary
     edge_ids[eid] = true
     degree[a] = int(degree.get(a, 0)) + 1
     degree[b] = int(degree.get(b, 0)) + 1
+
+static func _distance_point_to_segment(point: Vector2, start: Vector2, finish: Vector2) -> float:
+    var delta := finish - start
+    var length_sq := delta.length_squared()
+    if length_sq <= 0.0001:
+        return point.distance_to(start)
+    var t := clampf((point - start).dot(delta) / length_sq, 0.0, 1.0)
+    return point.distance_to(start + delta * t)
+
+static func _route_core_proximity(world: Dictionary, route: Dictionary) -> float:
+    var start := planet_position(world, String(route.get("a", "")))
+    var finish := planet_position(world, String(route.get("b", "")))
+    var best := 0.0
+    for faction in world.get("factions", []):
+        var capital := planet_position(world, String(faction.get("capital_id", "")))
+        var core_reach := maxf(175.0, float(faction.get("radius", 1.0)) * 0.34)
+        var distance := _distance_point_to_segment(capital, start, finish)
+        best = maxf(best, 1.0 - clampf(distance / core_reach, 0.0, 1.0))
+    return clampf(best, 0.0, 1.0)
+
+static func _route_traffic_counts(world: Dictionary, routes: Array) -> Dictionary:
+    var adjacency: Dictionary = {}
+    var planet_ids: Array[String] = []
+    var counts: Dictionary = {}
+    for planet in world.get("planets", []):
+        var pid := String(planet.get("id", ""))
+        planet_ids.append(pid)
+        adjacency[pid] = []
+    planet_ids.sort()
+    for route in routes:
+        var a := String(route.get("a", ""))
+        var b := String(route.get("b", ""))
+        var eid := String(route.get("id", _edge_id(a, b)))
+        var weight := maxf(1.0, float(route.get("distance", 1)))
+        counts[eid] = 0.0
+        var a_edges: Array = adjacency.get(a, [])
+        a_edges.append({"to": b, "id": eid, "weight": weight})
+        adjacency[a] = a_edges
+        var b_edges: Array = adjacency.get(b, [])
+        b_edges.append({"to": a, "id": eid, "weight": weight})
+        adjacency[b] = b_edges
+
+    for source_index in range(planet_ids.size()):
+        var source := String(planet_ids[source_index])
+        var dist: Dictionary = {}
+        var previous_node: Dictionary = {}
+        var previous_edge: Dictionary = {}
+        var unvisited: Dictionary = {}
+        for pid in planet_ids:
+            dist[pid] = INF
+            unvisited[pid] = true
+        dist[source] = 0.0
+
+        while not unvisited.is_empty():
+            var current := ""
+            var best := INF
+            for pid in unvisited.keys():
+                var candidate := float(dist.get(pid, INF))
+                if candidate < best:
+                    best = candidate
+                    current = String(pid)
+            if current.is_empty() or best == INF:
+                break
+            unvisited.erase(current)
+            for edge in adjacency.get(current, []):
+                var next_id := String(edge.get("to", ""))
+                if not unvisited.has(next_id):
+                    continue
+                var alt := best + float(edge.get("weight", 1.0))
+                if alt < float(dist.get(next_id, INF)):
+                    dist[next_id] = alt
+                    previous_node[next_id] = current
+                    previous_edge[next_id] = String(edge.get("id", ""))
+
+        for target_index in range(source_index + 1, planet_ids.size()):
+            var cursor := String(planet_ids[target_index])
+            var guard := 0
+            while cursor != source and previous_node.has(cursor) and guard < planet_ids.size():
+                var eid := String(previous_edge.get(cursor, ""))
+                if not eid.is_empty():
+                    counts[eid] = float(counts.get(eid, 0.0)) + 1.0
+                cursor = String(previous_node[cursor])
+                guard += 1
+
+    return counts
+
+static func _assign_route_wealth(world: Dictionary, routes: Array) -> void:
+    if routes.is_empty():
+        return
+    var traffic_counts := _route_traffic_counts(world, routes)
+    var max_traffic := 1.0
+    for value in traffic_counts.values():
+        max_traffic = maxf(max_traffic, float(value))
+
+    for route in routes:
+        var eid := String(route.get("id", ""))
+        var core_proximity := _route_core_proximity(world, route)
+        var traffic_score := clampf(float(traffic_counts.get(eid, 0.0)) / max_traffic, 0.0, 1.0)
+        var wealth_signal := maxf(core_proximity, traffic_score)
+        route["core_proximity"] = core_proximity
+        route["traffic_score"] = traffic_score
+        route["wealth"] = clampi(1 + int(round(wealth_signal * 4.0)), 1, 5)
+
+static func ensure_route_wealth(world: Dictionary) -> bool:
+    var routes: Array = world.get("routes", [])
+    var changed := false
+    for route in routes:
+        if not route.has("wealth") or not route.has("core_proximity") or not route.has("traffic_score"):
+            changed = true
+            break
+        if int(route.get("wealth", 0)) < 1 or int(route.get("wealth", 0)) > 5:
+            changed = true
+            break
+    if changed:
+        _assign_route_wealth(world, routes)
+        world["routes"] = routes
+    return changed
 
 static func _segment_route(world: Dictionary, a: String, b: String) -> Array:
     var start := planet_position(world, a)
@@ -753,12 +871,13 @@ static func neighbors(world: Dictionary, planet_id: String) -> Array[String]:
 
 static func route_spec(world: Dictionary, origin: String, destination: String) -> Dictionary:
     if origin == destination:
-        return {"distance": 0, "danger": 1, "path": [origin], "hops": 0, "direct": true}
+        return {"distance": 0, "danger": 1, "wealth": 1, "path": [origin], "hops": 0, "direct": true}
     var direct := direct_route(world, origin, destination)
     if not direct.is_empty():
         return {
             "distance": int(direct.distance),
             "danger": int(direct.danger),
+            "wealth": int(direct.get("wealth", 1)),
             "path": [origin, destination],
             "hops": 1,
             "direct": true,
@@ -796,7 +915,7 @@ static func route_spec(world: Dictionary, origin: String, destination: String) -
                 prev[next_id] = current
 
     if not prev.has(destination):
-        return {"distance": 2, "danger": 2, "path": [], "hops": 0, "direct": false}
+        return {"distance": 2, "danger": 2, "wealth": 1, "path": [], "hops": 0, "direct": false}
 
     var path: Array[String] = [destination]
     var cursor := destination
@@ -807,16 +926,23 @@ static func route_spec(world: Dictionary, origin: String, destination: String) -
     var total_distance := 0
     var danger_sum := 0.0
     var max_danger := 1
+    var wealth_sum := 0.0
+    var wealth_weight := 0.0
     for i in range(path.size() - 1):
         var edge := direct_route(world, path[i], path[i + 1])
-        total_distance += int(edge.distance)
+        var edge_distance := maxi(1, int(edge.distance))
+        total_distance += edge_distance
         danger_sum += float(edge.danger)
         max_danger = maxi(max_danger, int(edge.danger))
+        wealth_sum += float(edge.get("wealth", 1)) * float(edge_distance)
+        wealth_weight += float(edge_distance)
     var avg_danger := danger_sum / maxf(1.0, float(path.size() - 1))
     var final_danger := clampi(int(round(avg_danger * 0.7 + float(max_danger) * 0.3)), 1, 5)
+    var final_wealth := clampi(int(round(wealth_sum / maxf(1.0, wealth_weight))), 1, 5)
     return {
         "distance": total_distance,
         "danger": final_danger,
+        "wealth": final_wealth,
         "path": path,
         "hops": path.size() - 1,
         "direct": false
