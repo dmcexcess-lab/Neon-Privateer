@@ -61,6 +61,26 @@ Trading itself is not blocked yet. Police scans, confiscation, fines, criminal h
 
 Player trades alter local stock immediately. Travel advances every planet's economy, so markets continue producing and consuming goods while the player moves through the system.
 
+## Faction reputation and criminal state
+
+Each superpower now tracks persistent player **Relation** and **Heat** independently.
+
+Relation is long-term reputation from -100 to +100. Heat is current criminal attention from 0 to 100. A faction can dislike the player without actively hunting them, and a normally friendly player can acquire acute heat from a recent crime.
+
+Status thresholds:
+
+- Relation: ALLIED / FRIENDLY / NEUTRAL / UNFRIENDLY / HOSTILE
+- Heat: CLEAR / WATCHED / WANTED / HUNTED
+
+Future enforcement systems now have authoritative eligibility queries:
+
+- police hostility: heat 30+ or relation -50 or worse
+- heavy/pentagon enforcement: heat 60+ or relation -75 or worse
+
+The hub, market, and system-map destination card expose current faction reputation/heat. Contested regions maintain separate state for both claimant factions. Uncontrolled space has no faction record.
+
+Slice 3 does **not** yet cause police or defense platforms to spawn or attack. It provides the persistent state and APIs those later slices will use.
+
 
 ## Contracts
 
@@ -141,11 +161,11 @@ Internally some legacy variable/function names still use `research_*` for compat
 
 ## Persistence
 
-Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2, all 32 generated planets, factions, capitals, influence parameters, faction law fields, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
+Three career slots are maintained. The persistent Privateer world save now includes political schema/seed plus economy schema 2 and crime schema 1, all 32 generated planets, factions, capitals, influence parameters, faction law fields, per-faction relation/heat/offense state, sparse route graph and political segments, current location, markets, cargo, contracts, passengers, and economy tick.
 
 Generated political state is created once and never rerolled on reload.
 
-Older four-world careers migrate once to political schema 2. Existing five-commodity saves also upgrade in place by adding Arms/Narcotics cargo keys and market entries without rerolling the political world. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
+Older four-world careers migrate once to political schema 2. Existing five-commodity saves also upgrade in place by adding Arms/Narcotics cargo keys and market entries without rerolling the political world. Existing political careers missing Slice 3 criminal-state fields receive clean heat/offense fields while preserving their faction relations and generated world. Their old location maps to a generated planet of the corresponding archetype, practical player state is preserved, and the migrated world is saved immediately.
 
 The active route snapshot remains separate and preserves exact in-flight state.
 
