@@ -128,13 +128,29 @@ const ENERGY_ORB_BASE_SCORE := 2
 const ENERGY_ORB_DASH_MULT := 3.0
 const KILL_ORB_DROP_CHANCE := 0.08
 const KILL_REPAIR_DROP_CHANCE := 0.02
-const ASTEROID_ORE_DROP_CHANCE := 0.12
-const BASIC_CONTAINER_RELATION_LOSS := 4
-const REINFORCED_CONTAINER_RELATION_LOSS := 8
-const POLICE_SHIP_KILL_RELATION_LOSS := 12
-const POLICE_SHIP_KILL_HEAT_GAIN := 15
-const HEAVY_ENFORCEMENT_KILL_RELATION_LOSS := 20
-const HEAVY_ENFORCEMENT_KILL_HEAT_GAIN := 25
+const ASTEROID_ORE_DROP_CHANCE := 0.10
+
+# Slice 10 production balance knobs. Keep these centralized so encounter/penalty
+# tuning cannot silently drift across gameplay and regression coverage.
+const ENCOUNTER_WEALTH_MULT_MIN := 0.65
+const ENCOUNTER_WEALTH_MULT_MAX := 1.35
+const PIRATE_UNCONTROLLED_BASE_CHANCE := 0.32
+const PIRATE_CONTESTED_BASE_CHANCE := 0.22
+const POLICE_ENCOUNTER_BASE_CHANCE := 0.12
+const POLICE_ENCOUNTER_LEVEL_STEP := 0.045
+const POLICE_SCAN_BASE_CHANCE := 0.10
+const POLICE_SCAN_LEVEL_STEP := 0.045
+const POLICE_OPPORTUNITY_MIN := 11.0
+const POLICE_OPPORTUNITY_MAX := 16.0
+const PIRATE_OPPORTUNITY_MIN := 9.5
+const PIRATE_OPPORTUNITY_MAX := 14.5
+
+const BASIC_CONTAINER_RELATION_LOSS := 3
+const REINFORCED_CONTAINER_RELATION_LOSS := 7
+const POLICE_SHIP_KILL_RELATION_LOSS := 15
+const POLICE_SHIP_KILL_HEAT_GAIN := 20
+const HEAVY_ENFORCEMENT_KILL_RELATION_LOSS := 25
+const HEAVY_ENFORCEMENT_KILL_HEAT_GAIN := 35
 const POLICE_SCAN_RELATION_BASE_LOSS := 6
 const POLICE_SCAN_HEAT_BASE_GAIN := 30
 const POLICE_SCAN_FINE_BASE := 50
@@ -1531,27 +1547,27 @@ func _current_encounter_eligibility() -> Dictionary:
     return _encounter_eligibility_for_context(_current_flight_political_context())
 
 func _route_wealth_encounter_multiplier() -> float:
-    return lerpf(0.65, 1.45, float(clampi(route_wealth, 1, 5) - 1) / 4.0)
+    return lerpf(ENCOUNTER_WEALTH_MULT_MIN, ENCOUNTER_WEALTH_MULT_MAX, float(clampi(route_wealth, 1, 5) - 1) / 4.0)
 
 func _encounter_roll_chance(eligibility: Dictionary) -> float:
     var mode := String(eligibility.get("mode", ""))
     var wealth_multiplier := _route_wealth_encounter_multiplier()
     if mode == "pirate":
-        var base := 0.34 if String(eligibility.get("state", "UNCONTROLLED")) == "UNCONTROLLED" else 0.25
+        var base := PIRATE_UNCONTROLLED_BASE_CHANCE if String(eligibility.get("state", "UNCONTROLLED")) == "UNCONTROLLED" else PIRATE_CONTESTED_BASE_CHANCE
         return clampf(base * wealth_multiplier, 0.0, 0.90)
     if mode == "police":
         var faction_id := String(eligibility.get("faction_id", ""))
         # Police occurrence is faction level + route wealth + RNG. Danger, contract pressure, and heat are excluded.
-        var base := 0.14 + float(_faction_level(faction_id)) * 0.05
+        var base := POLICE_ENCOUNTER_BASE_CHANCE + float(_faction_level(faction_id)) * POLICE_ENCOUNTER_LEVEL_STEP
         return clampf(base * wealth_multiplier, 0.0, 0.90)
     return 0.0
 
 func _encounter_opportunity_interval(eligibility: Dictionary) -> float:
     var mode := String(eligibility.get("mode", ""))
     if mode == "police":
-        return rng.randf_range(10.0, 15.0)
+        return rng.randf_range(POLICE_OPPORTUNITY_MIN, POLICE_OPPORTUNITY_MAX)
     if mode == "pirate":
-        return rng.randf_range(8.5, 13.5)
+        return rng.randf_range(PIRATE_OPPORTUNITY_MIN, PIRATE_OPPORTUNITY_MAX)
     return 999.0
 
 func _encounter_cooldown(eligibility: Dictionary) -> float:
@@ -1568,7 +1584,7 @@ func _try_start_route_encounter(eligibility: Dictionary, roll: float = -1.0) -> 
     return false
 
 func _police_scan_chance(faction_id: String) -> float:
-    return clampf(0.14 + float(_faction_level(faction_id)) * 0.05, 0.0, 0.95)
+    return clampf(POLICE_SCAN_BASE_CHANCE + float(_faction_level(faction_id)) * POLICE_SCAN_LEVEL_STEP, 0.0, 0.95)
 
 func _police_scan_duration_for_faction(faction_id: String) -> float:
     return clampf(6.2 - float(_faction_level(faction_id)) * 0.4, 4.2, 5.8)
