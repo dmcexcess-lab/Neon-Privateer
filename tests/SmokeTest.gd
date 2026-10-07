@@ -2206,6 +2206,8 @@ func _initialize() -> void:
     scene.market_index_holdings["green"] = 2
     scene.market_index_holdings["grey"] = 3
     scene.currency_holdings[currency_faction] = 4
+    scene.research_jump_range = 2
+    scene.ship_fuel = 2
     scene.research_ship_speed = 2
     scene.research_dash = 3
     scene.research_damage = 4
@@ -2235,8 +2237,11 @@ func _initialize() -> void:
     if scene.bank_balance != 1234 or int(scene.market_index_holdings.get("green", 0)) != 2 or int(scene.market_index_holdings.get("grey", 0)) != 3 or int(scene.currency_holdings.get(currency_faction, 0)) != 4:
         _fail("ship loss destroyed protected financial assets")
         return
-    if scene.research_ship_speed != 0 or scene.research_dash != 0 or scene.research_damage != 0 or scene.research_hits != 0 or scene.research_shield != 0:
+    if scene.research_jump_range != 0 or scene.research_ship_speed != 0 or scene.research_dash != 0 or scene.research_damage != 0 or scene.research_hits != 0 or scene.research_shield != 0:
         _fail("ship loss did not remove all ship upgrades")
+        return
+    if scene.ship_fuel != scene.FUEL_CAPACITY:
+        _fail("replacement ship did not respawn with a full fuel tank")
         return
     if scene.research_start_single or scene.research_start_dual or scene.research_start_laser or scene.research_start_cone or scene.research_start_seeker or scene.starting_weapon != "none" or scene.current_weapon != "none":
         _fail("ship loss did not remove all weapon unlocks/loadout")
@@ -2519,25 +2524,75 @@ func _initialize() -> void:
         _fail("Slice 9 contract schema did not persist")
         return
 
-    # Route length alone controls travel time; danger/contract pressure do not extend the lane.
+    # Jump logistics: route length drives time, every baseline flight stays
+    # under 30s before ship-speed acceleration, and ±7% route variance matters.
     var min_distance := 99
     var max_distance := 0
     for route in scene.political_world.routes:
         min_distance = mini(min_distance, int(route.distance))
         max_distance = maxi(max_distance, int(route.distance))
-    if max_distance > min_distance and scene._route_duration_for(max_distance, 1, 0) <= scene._route_duration_for(min_distance, 5, 5):
+    if max_distance > min_distance and scene._route_duration_for(max_distance, 1, 0, 1.0) <= scene._route_duration_for(min_distance, 5, 5, 1.0):
         _fail("longer route did not produce longer travel time")
         return
-    var fixed_length_time: float = float(scene._route_duration_for(3, 1, 0))
-    if absf(fixed_length_time - scene._route_duration_for(3, 5, 5)) > 0.0001:
+    var fixed_length_time: float = float(scene._route_duration_for(3, 1, 0, 1.0))
+    if absf(fixed_length_time - scene._route_duration_for(3, 5, 5, 1.0)) > 0.0001:
         _fail("danger or contract difficulty changed travel time for the same route length")
+        return
+    if scene._route_duration_for(6, 1, 0, scene.ROUTE_TIME_RANDOM_MAX) > 30.0001:
+        _fail("longest baseline route exceeds 30 seconds")
+        return
+    if absf(scene._route_duration_for(4, 1, 0, scene.ROUTE_TIME_RANDOM_MIN) - scene._route_duration_for(4, 1, 0, scene.ROUTE_TIME_RANDOM_MAX)) < 0.1:
+        _fail("route-time randomness is not affecting travel duration")
+        return
+    scene.research_ship_speed = 0
+    var slow_wall_time := scene._route_duration_for(5, 1, 0, 1.0) / scene._ship_speed_multiplier()
+    scene.research_ship_speed = 5
+    var fast_wall_time := scene._route_duration_for(5, 1, 0, 1.0) / scene._ship_speed_multiplier()
+    if fast_wall_time >= slow_wall_time:
+        _fail("ship speed upgrade does not reduce wall-clock travel time")
+        return
+    scene.research_ship_speed = 0
+
+    # Refueling is paid, partial/full as cash allows, and jump range is an
+    # actual edge constraint rather than display-only metadata.
+    scene.ship_fuel = 5
+    scene.research_credits = 1000
+    var refuel_cash_before := scene.research_credits
+    var refueled_units := int(scene._refuel_ship())
+    if refueled_units != scene.FUEL_CAPACITY - 5 or scene.ship_fuel != scene.FUEL_CAPACITY:
+        _fail("refueling did not fill missing tank units")
+        return
+    if scene.research_credits != refuel_cash_before - refueled_units * scene.FUEL_COST_PER_UNIT:
+        _fail("refueling did not charge per fuel unit")
+        return
+    scene.research_jump_range = 0
+    if scene._jump_range() != scene.JUMP_RANGE_BASE:
+        _fail("base jump range is wrong")
+        return
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    if scene._jump_range() != scene.JUMP_RANGE_MAX:
+        _fail("max jump-range upgrade does not reach configured maximum")
         return
 
     scene.current_planet = scene.planet_names[0]
     neighbor_list = scene.PoliticalWorld.neighbors(scene.political_world, scene.current_planet)
-    neighbor = neighbor_list[0]
+    neighbor = ""
+    for candidate in neighbor_list:
+        var candidate_edge: Dictionary = scene.PoliticalWorld.direct_route(scene.political_world, scene.current_planet, candidate)
+        if int(candidate_edge.get("distance", 999)) <= scene._jump_range():
+            neighbor = candidate
+            break
+    if neighbor.is_empty():
+        _fail("max jump range found no launchable generated neighbor")
+        return
+    var launch_edge: Dictionary = scene.PoliticalWorld.direct_route(scene.political_world, scene.current_planet, neighbor)
+    scene.ship_fuel = scene.FUEL_CAPACITY
+    var fuel_before_launch := scene.ship_fuel
     if not scene._start_route(neighbor):
-        _fail("could not launch generated direct lane")
+        _fail("could not launch generated jump-range-valid direct lane")
+        return
+    if scene.ship_fuel != fuel_before_launch - scene._fuel_required_for_jump(int(launch_edge.distance)):
+        _fail("launch did not consume fuel equal to jump distance")
         return
     if not scene.playing or not scene.route_active or scene.destination_planet != neighbor:
         _fail("generated direct lane did not enter flight mode")
