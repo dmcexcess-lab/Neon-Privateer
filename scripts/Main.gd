@@ -3555,7 +3555,7 @@ func _move_objects(delta: float) -> void:
                 if bool(obj.get("boss", false)):
                     motion_y = 0.0
                 else:
-                    # Random pirate pentagons are fixed in world-space and scroll past with the route.
+                    # Heavy enforcement platforms are fixed in world-space and scroll past with the route.
                     motion_y = float(obj.speed)
                 obj.shoot_clock = float(obj.shoot_clock) - delta
                 if float(obj.shoot_clock) <= 0.0 and float(obj.y) > 55.0 and float(obj.y) < player_y - 85.0:
@@ -3786,7 +3786,7 @@ func _draw() -> void:
 
     if weapon_banner_timer > 0.0:
         draw_rect(Rect2(Vector2(68, 244), Vector2(254, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" else "WEAPON: "
+        var banner_prefix := "" if weapon_banner_text == "PIRATE CONTACT" or weapon_banner_text == "BOUNTY TARGET" or weapon_banner_text.ends_with(" PATROL") else "WEAPON: "
         _text(banner_prefix + weapon_banner_text, Vector2(82, 270), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
@@ -3987,31 +3987,53 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
 
     elif kind == 3:
         var r3 := float(obj.r)
-        draw_circle(p, r3 + 6.0, Color(0.70, 0.38, 1.0, 0.10))
+        var role3 := String(obj.get("encounter_role", ""))
+        var body3 := Color("66527d")
+        var glow3 := Color(0.70, 0.38, 1.0, 0.10)
+        var accent3 := Color("c9a5ff")
+        if role3 == "pirate":
+            body3 = Color("7f4032")
+            glow3 = Color(1.0, 0.30, 0.16, 0.12)
+            accent3 = Color("ff9b68")
+        elif role3 == "police":
+            var police3 := _faction_color(String(obj.get("encounter_faction_id", "")))
+            body3 = Color(police3.r * 0.58, police3.g * 0.58, police3.b * 0.58, 1.0)
+            glow3 = Color(police3.r, police3.g, police3.b, 0.13)
+            accent3 = police3
+        draw_circle(p, r3 + 6.0, glow3)
         draw_colored_polygon(PackedVector2Array([
             p + Vector2(-r3 * 0.72, -r3 * 0.72),
             p + Vector2(r3 * 0.72, -r3 * 0.72),
             p + Vector2(r3 * 1.18, r3 * 0.70),
             p + Vector2(-r3 * 1.18, r3 * 0.70)
-        ]), Color("66527d"))
-        draw_line(p + Vector2(0, 3), p + Vector2(0, r3 + 8.0), Color("c9a5ff"), 3.0)
-        draw_circle(p, 4.0, Color("e7d2ff"))
+        ]), body3)
+        draw_line(p + Vector2(0, 3), p + Vector2(0, r3 + 8.0), accent3, 3.0)
+        draw_circle(p, 4.0, accent3)
 
     else:
         var r4 := float(obj.r)
-        draw_circle(p, r4 + 8.0, Color(1.0, 0.24, 0.18, 0.10))
+        var role4 := String(obj.get("encounter_role", ""))
+        var body4 := Color("88413b")
+        var glow4 := Color(1.0, 0.24, 0.18, 0.10)
+        var accent4 := Color("ffb27c")
+        if role4 == "police":
+            var police4 := _faction_color(String(obj.get("encounter_faction_id", "")))
+            body4 = Color(police4.r * 0.52, police4.g * 0.52, police4.b * 0.52, 1.0)
+            glow4 = Color(police4.r, police4.g, police4.b, 0.16)
+            accent4 = police4
+        draw_circle(p, r4 + 8.0, glow4)
         var pent := PackedVector2Array()
         for i in 5:
             var a := -PI * 0.5 + TAU * float(i) / 5.0
             pent.append(p + Vector2(cos(a), sin(a)) * r4)
-        draw_colored_polygon(pent, Color("88413b"))
+        draw_colored_polygon(pent, body4)
         var inner := PackedVector2Array()
         for i in 5:
             var a2 := -PI * 0.5 + TAU * float(i) / 5.0
             inner.append(p + Vector2(cos(a2), sin(a2)) * r4 * 0.56)
         draw_colored_polygon(inner, Color("271719"))
-        draw_circle(p, 5.0, Color("ff9b68"))
-        draw_line(p + Vector2(0, 2), p + Vector2(0, r4 + 9.0), Color("ffb27c"), 4.0)
+        draw_circle(p, 5.0, accent4)
+        draw_line(p + Vector2(0, 2), p + Vector2(0, r4 + 9.0), accent4, 4.0)
 
     if (kind == 1 or kind == 2) and not String(obj.get("owner_faction", "")).is_empty():
         var owner_color := _faction_color(String(obj.owner_faction))
