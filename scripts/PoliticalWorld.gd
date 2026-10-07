@@ -27,6 +27,15 @@ const DANGER_WEIGHT := {
 
 const RESTRICTED_COMMODITIES := ["Arms", "Narcotics"]
 
+const RELATION_MIN := -100
+const RELATION_MAX := 100
+const HEAT_MIN := 0
+const HEAT_MAX := 100
+const CRIMINAL_HEAT_THRESHOLD := 30
+const HEAVY_HEAT_THRESHOLD := 60
+const CRIMINAL_RELATION_THRESHOLD := -50
+const HEAVY_RELATION_THRESHOLD := -75
+
 const FACTION_COLORS := [
     Color("5dd7ff"),
     Color("ff6b91"),
@@ -236,6 +245,9 @@ static func _generate_factions(rng: RandomNumberGenerator, planets: Array) -> Ar
             "radius": influence_radius,
             "strength": rng.randf_range(0.98, 1.16),
             "relation": 0,
+            "heat": 0,
+            "offenses": 0,
+            "last_offense": "",
             "laws": {
                 "arms_legal": combo == 0 or combo == 2,
                 "narcotics_legal": combo == 0 or combo == 1
@@ -269,6 +281,127 @@ static func faction_record(world: Dictionary, faction_id: String) -> Dictionary:
         if String(faction.get("id", "")) == faction_id:
             return faction
     return {}
+
+static func ensure_crime_schema(world: Dictionary) -> bool:
+    var changed := false
+    var factions: Array = world.get("factions", [])
+    for i in factions.size():
+        var faction: Dictionary = factions[i]
+        if not faction.has("relation"):
+            faction["relation"] = 0
+            changed = true
+        if not faction.has("heat"):
+            faction["heat"] = 0
+            changed = true
+        if not faction.has("offenses"):
+            faction["offenses"] = 0
+            changed = true
+        if not faction.has("last_offense"):
+            faction["last_offense"] = ""
+            changed = true
+        faction["relation"] = clampi(int(faction.get("relation", 0)), RELATION_MIN, RELATION_MAX)
+        faction["heat"] = clampi(int(faction.get("heat", 0)), HEAT_MIN, HEAT_MAX)
+        factions[i] = faction
+    world["factions"] = factions
+    return changed
+
+static func faction_relation(world: Dictionary, faction_id: String) -> int:
+    return clampi(int(faction_record(world, faction_id).get("relation", 0)), RELATION_MIN, RELATION_MAX)
+
+static func faction_heat(world: Dictionary, faction_id: String) -> int:
+    return clampi(int(faction_record(world, faction_id).get("heat", 0)), HEAT_MIN, HEAT_MAX)
+
+static func relation_label(relation: int) -> String:
+    if relation >= 60:
+        return "ALLIED"
+    if relation >= 25:
+        return "FRIENDLY"
+    if relation > -25:
+        return "NEUTRAL"
+    if relation > -60:
+        return "UNFRIENDLY"
+    return "HOSTILE"
+
+static func heat_label(heat: int) -> String:
+    if heat >= HEAVY_HEAT_THRESHOLD:
+        return "HUNTED"
+    if heat >= CRIMINAL_HEAT_THRESHOLD:
+        return "WANTED"
+    if heat >= 10:
+        return "WATCHED"
+    return "CLEAR"
+
+static func faction_crime_state(world: Dictionary, faction_id: String) -> Dictionary:
+    var relation := faction_relation(world, faction_id)
+    var heat := faction_heat(world, faction_id)
+    var criminal := heat >= CRIMINAL_HEAT_THRESHOLD or relation <= CRIMINAL_RELATION_THRESHOLD
+    var heavy := heat >= HEAVY_HEAT_THRESHOLD or relation <= HEAVY_RELATION_THRESHOLD
+    return {
+        "faction_id": faction_id,
+        "relation": relation,
+        "relation_label": relation_label(relation),
+        "heat": heat,
+        "heat_label": heat_label(heat),
+        "criminal": criminal,
+        "police_hostile": criminal,
+        "heavy_enforcement": heavy
+    }
+
+static func _replace_faction(world: Dictionary, faction_id: String, updated: Dictionary) -> bool:
+    var factions: Array = world.get("factions", [])
+    for i in factions.size():
+        if String(factions[i].get("id", "")) == faction_id:
+            factions[i] = updated
+            world["factions"] = factions
+            return true
+    return false
+
+static func adjust_faction_relation(world: Dictionary, faction_id: String, delta: int) -> int:
+    var faction := faction_record(world, faction_id).duplicate(true)
+    if faction.is_empty():
+        return 0
+    var value := clampi(int(faction.get("relation", 0)) + delta, RELATION_MIN, RELATION_MAX)
+    faction["relation"] = value
+    _replace_faction(world, faction_id, faction)
+    return value
+
+static func adjust_faction_heat(world: Dictionary, faction_id: String, delta: int) -> int:
+    var faction := faction_record(world, faction_id).duplicate(true)
+    if faction.is_empty():
+        return 0
+    var value := clampi(int(faction.get("heat", 0)) + delta, HEAT_MIN, HEAT_MAX)
+    faction["heat"] = value
+    _replace_faction(world, faction_id, faction)
+    return value
+
+static func record_crime(world: Dictionary, faction_id: String, relation_loss: int, heat_gain: int, offense: String = "") -> Dictionary:
+    var faction := faction_record(world, faction_id).duplicate(true)
+    if faction.is_empty():
+        return {}
+    faction["relation"] = clampi(int(faction.get("relation", 0)) - absi(relation_loss), RELATION_MIN, RELATION_MAX)
+    faction["heat"] = clampi(int(faction.get("heat", 0)) + absi(heat_gain), HEAT_MIN, HEAT_MAX)
+    faction["offenses"] = maxi(0, int(faction.get("offenses", 0))) + 1
+    faction["last_offense"] = offense
+    _replace_faction(world, faction_id, faction)
+    return faction_crime_state(world, faction_id)
+
+static func decay_all_heat(world: Dictionary, amount: int) -> bool:
+    var decay := maxi(0, amount)
+    if decay <= 0:
+        return false
+    var changed := false
+    var factions: Array = world.get("factions", [])
+    for i in factions.size():
+        var faction: Dictionary = factions[i]
+        var before := clampi(int(faction.get("heat", 0)), HEAT_MIN, HEAT_MAX)
+        var after := maxi(HEAT_MIN, before - decay)
+        if after != before:
+            faction["heat"] = after
+            factions[i] = faction
+            changed = true
+    if changed:
+        world["factions"] = factions
+    return changed
 
 static func commodity_law_key(commodity: String) -> String:
     match commodity:
