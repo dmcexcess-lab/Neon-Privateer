@@ -2149,7 +2149,8 @@ func _make_contract(kind: String, origin: String, profile: Dictionary, commodity
         "smuggling": smuggling,
         "special_delivery": special_delivery,
         "elapsed_seconds": 0.0,
-        "planned_hops": hops
+        "planned_hops": hops,
+        "planned_distance": int(jump_spec.get("distance", 1))
     }
     if special_delivery:
         contract_record["role"] = "SPECIAL DELIVERY"
@@ -2185,7 +2186,9 @@ func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> 
     upgraded["cargo_premium"] = int(upgraded.get("cargo_premium", 0))
     upgraded["political_premium"] = int(upgraded.get("political_premium", 0))
     upgraded["elapsed_seconds"] = float(upgraded.get("elapsed_seconds", 0.0))
-    upgraded["planned_hops"] = int(upgraded.get("planned_hops", _jump_route_spec(origin, destination).get("hops", 1) if planet_names.has(destination) else 1))
+    var upgraded_jump_spec := _jump_route_spec(origin, destination) if planet_names.has(destination) else {}
+    upgraded["planned_hops"] = int(upgraded.get("planned_hops", upgraded_jump_spec.get("hops", 1)))
+    upgraded["planned_distance"] = int(upgraded.get("planned_distance", upgraded_jump_spec.get("distance", 1)))
     upgraded["special_delivery"] = bool(upgraded.get("special_delivery", false))
     if kind == "delivery" and bool(upgraded.get("special_delivery", false)):
         upgraded["time_limit"] = float(upgraded.get("time_limit", SPECIAL_DELIVERY_BASE_TIME + float(maxi(SPECIAL_DELIVERY_MIN_HOPS, int(upgraded["planned_hops"]))) * SPECIAL_DELIVERY_TIME_PER_HOP))
@@ -3565,7 +3568,7 @@ func _contract_status_suffix(contract: Dictionary) -> String:
         var elapsed_contract := float(contract.get("elapsed_seconds", 0.0))
         return "H%d  WAIT %dm" % [hops, int(floor(elapsed_contract / 60.0))]
     if kind == "bounty":
-        return String(contract.get("boss_archetype", "target")).to_upper()
+        return "%s D%d" % [String(contract.get("boss_archetype", "target")).to_upper(), int(contract.get("planned_distance", 1))]
     return "H%d" % hops
 
 func _handle_hub_tap(pos: Vector2) -> void:
