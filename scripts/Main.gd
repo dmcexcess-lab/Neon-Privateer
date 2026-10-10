@@ -6554,9 +6554,9 @@ func _draw_trade_menu() -> void:
     _text("CASH %d    CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(28.0, 100.0), 14, Color("ffd166"))
 
     for tab in ["green", "grey"]:
-        var rect := TRADE_GREEN_TAB_RECT if tab == "green" else TRADE_GREY_TAB_RECT
-        var selected := trade_view == tab
-        var border_color := Color("6bffb0") if tab == "green" else Color("ffb347")
+        var rect: Rect2 = TRADE_GREEN_TAB_RECT if tab == "green" else TRADE_GREY_TAB_RECT
+        var selected: bool = trade_view == tab
+        var border_color: Color = Color("6bffb0") if tab == "green" else Color("ffb347")
         draw_rect(rect, Color(0.035, 0.16, 0.12, 0.95) if selected else Color(0.035, 0.07, 0.10, 0.92), true)
         draw_rect(rect, border_color if selected else Color("465f72"), false, 2.0)
         _text_center("GREEN GOODS" if tab == "green" else "GREY GOODS", rect.position.y + 31.0, 15, Color("f0fbff"), rect.position.x, rect.end.x)

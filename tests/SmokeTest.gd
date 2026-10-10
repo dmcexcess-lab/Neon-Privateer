@@ -2372,8 +2372,9 @@ func _initialize() -> void:
     scene._handle_trade_tap(scene.TRADE_GREEN_TAB_RECT.get_center())
     var ui_cash_before: int = scene.research_credits
     var ui_stock_before: float = float(scene.markets[lush]["Grain"].stock)
+    var ui_buy_quote: int = scene._market_buy_price(lush, "Grain")
     scene._handle_trade_tap(scene._trade_buy_rect(0).get_center())
-    if int(scene.cargo.get("Grain", 0)) != 1 or scene.research_credits != ui_cash_before - scene._market_buy_price(lush, "Grain") or float(scene.markets[lush]["Grain"].stock) >= ui_stock_before:
+    if int(scene.cargo.get("Grain", 0)) != 1 or scene.research_credits != ui_cash_before - ui_buy_quote or float(scene.markets[lush]["Grain"].stock) >= ui_stock_before:
         _fail("docked BUY tap did not execute physical commodity purchase")
         return
     scene._handle_trade_tap(scene._trade_sell_rect(0).get_center())
