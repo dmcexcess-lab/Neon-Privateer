@@ -1407,12 +1407,18 @@ func _initialize() -> void:
         return
     scene._reset_system_map_view()
 
-    # Contract target is favored for selection, tapping selects without launch, drag does not launch.
+    # Only reachable contract destinations are auto-selected for launch.
+    # A distant contract remains inspectable but cannot plot chained jumps.
     scene.current_planet = scene.planet_names[0]
     var contract_target: String = String(scene.planet_names[-1])
     scene.active_contract = {"type": "delivery", "destination": contract_target, "difficulty": 2, "reward": 500}
-    if scene._default_travel_selection() != contract_target:
-        _fail("map did not prioritize active contract destination")
+    var contract_direct: Dictionary = scene._direct_route_spec(scene.current_planet, contract_target)
+    var chosen_default: String = scene._default_travel_selection()
+    if not contract_direct.is_empty() and chosen_default != contract_target:
+        _fail("map failed to select directly reachable contract destination")
+        return
+    if contract_direct.is_empty() and (chosen_default == contract_target or scene._direct_route_spec(scene.current_planet, chosen_default).is_empty()):
+        _fail("map default plotted unreachable contract or selected unreachable jump")
         return
     var neighbor_list: Array[String] = scene.PoliticalWorld.neighbors(scene.political_world, scene.current_planet)
     if neighbor_list.is_empty():
