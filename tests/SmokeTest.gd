@@ -283,7 +283,7 @@ func _initialize() -> void:
         "_best_legal_delivery_profile", "_best_smuggling_profile", "_best_passenger_profile", "_best_special_delivery_profile",
         "_best_bounty_profiles", "_bounty_archetype_for_difficulty", "_contract_reward_breakdown", "_contract_role",
         "_contract_relation_reward", "_make_contract", "_upgrade_contract_record",
-        "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract", "_fail_active_contract", "_update_active_contract_clock",
+        "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract", "_contract_blocker", "_fail_active_contract", "_update_active_contract_clock",
         "_route_level_for", "_route_duration_for", "_start_route",
         "_direct_jump_distance", "_draw_map_direct_jump", "_draw_map_jump_range",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
@@ -343,6 +343,7 @@ func _initialize() -> void:
     var primary_touch_rects: Array = [
         scene.PROFILE_CONTINUE_RECT, scene.PROFILE_NEW_RECT,
         scene.HUB_TRAVEL_RECT, scene.HUB_TRADE_RECT, scene.HUB_MARKET_RECT, scene.HUB_CONTRACTS_RECT, scene.HUB_UPGRADES_RECT, scene.HUB_CAREERS_RECT,
+        scene.CONTRACT_ABANDON_RECT,
         scene.SUBMENU_BACK_RECT, scene.SYSTEM_MAP_BACK_RECT, scene.SYSTEM_FLY_RECT, scene.SYSTEM_REFUEL_RECT,
         scene.LEFT_CONTROL_RECT, scene.DASH_RECT, scene.RIGHT_CONTROL_RECT,
         scene.PAUSE_RESUME_RECT, scene.PAUSE_QUIT_RECT,
@@ -394,8 +395,8 @@ func _initialize() -> void:
         if not viewport_rect.encloses(scene._contract_row_rect(contract_index)):
             _fail("contract row extends outside phone viewport")
             return
-    if scene._contract_row_rect(4).end.y >= scene.SUBMENU_BACK_RECT.position.y:
-        _fail("contract board overlaps BACK on phone")
+    if scene._contract_row_rect(4).end.y >= scene.CONTRACT_ABANDON_RECT.position.y or scene.CONTRACT_ABANDON_RECT.end.y >= scene.SUBMENU_BACK_RECT.position.y:
+        _fail("contract rows, ABANDON, and BACK overlap on phone")
         return
     if scene._market_sell_rect(scene.BANK_MARKET_ROWS_PER_PAGE - 1).end.y >= scene.BANK_PAGE_PREV_RECT.position.y:
         _fail("six-row bank market overlaps pagination controls")
@@ -2629,6 +2630,98 @@ func _initialize() -> void:
     if not saw_delivery or not saw_passenger or not saw_bounty:
         _fail("contract board lost required job classes")
         return
+    # Acceptance regression: docked taps must provide visible feedback rather
+    # than silently failing, and persisted active jobs must be abandonable.
+    var previous_board: Array = scene.contract_board.duplicate(true)
+    var previous_cargo: Dictionary = scene.cargo.duplicate(true)
+    var previous_passengers: int = scene.passengers
+    var previous_starting_weapon: String = scene.starting_weapon
+    var previous_single_unlock: bool = scene.research_start_single
+    var freight_job := {"id": 9811, "type": "delivery", "destination": volcanic, "difficulty": 1, "reward": 450, "commodity": "Grain"}
+    var passenger_job := {"id": 9812, "type": "passenger", "destination": industrial, "difficulty": 1, "reward": 600}
+    var bounty_job := {"id": 9813, "type": "bounty", "destination": volcanic, "difficulty": 3, "reward": 900}
+    scene.contract_board = [freight_job.duplicate(true), passenger_job.duplicate(true), bounty_job.duplicate(true)]
+    scene.active_contract.clear()
+    scene.passengers = 0
+    for item_name in scene.commodity_names:
+        scene.cargo[item_name] = 0
+    scene.research_start_single = false
+    scene.starting_weapon = "none"
+    scene.profile_menu_open = false
+    scene.career_slots_open = false
+    scene.run_paused = false
+    scene.playing = false
+    scene.game_over = false
+    scene.travel_open = false
+    scene.trade_open = false
+    scene.market_open = false
+    scene.contracts_open = false
+    scene.research_open = false
+    scene.weapon_research_open = false
+    scene.shop_open = false
+    scene.hub_open = true
+    scene._handle_tap(scene.HUB_CONTRACTS_RECT.get_center())
+    if not scene.contracts_open or scene.hub_open:
+        _fail("tapping docked CONTRACTS did not open the contract board")
+        return
+    scene._handle_tap(scene._contract_row_rect(2).get_center())
+    if not scene.active_contract.is_empty() or not scene.contract_notice.contains("WEAPON"):
+        _fail("unarmed bounty tap failed without visible weapon explanation")
+        return
+    scene.cargo["Grain"] = scene._cargo_capacity()
+    scene._handle_tap(scene._contract_row_rect(0).get_center())
+    if not scene.active_contract.is_empty() or scene.contract_notice != "CARGO HOLD FULL":
+        _fail("full cargo contract tap failed without visible hold explanation")
+        return
+    scene.cargo["Grain"] = 0
+    scene._handle_tap(scene._contract_row_rect(0).get_center())
+    if int(scene.active_contract.get("id", 0)) != 9811 or not scene.contract_notice.contains("ACCEPTED") or scene._cargo_used() != 1:
+        _fail("docked delivery tap did not accept contract and reserve cargo")
+        return
+    var accepted_saved := ConfigFile.new()
+    if accepted_saved.load(scene._active_world_path()) != OK or int(accepted_saved.get_value("world", "active_contract", {}).get("id", 0)) != 9811:
+        _fail("tapped contract acceptance did not persist to career")
+        return
+    scene._handle_tap(scene._contract_row_rect(0).get_center())
+    if int(scene.active_contract.get("id", 0)) != 9811 or not scene.contract_notice.contains("ABANDON FIRST"):
+        _fail("second contract tap did not report existing active job")
+        return
+    scene._handle_tap(scene.CONTRACT_ABANDON_RECT.get_center())
+    if not scene.contract_abandon_confirm or int(scene.active_contract.get("id", 0)) != 9811:
+        _fail("first ABANDON tap should require confirmation")
+        return
+    scene._handle_tap(scene.CONTRACT_ABANDON_RECT.get_center())
+    if not scene.active_contract.is_empty() or scene.contract_abandon_confirm or scene._cargo_used() != 0:
+        _fail("confirmed ABANDON did not free active freight slot")
+        return
+    scene._handle_tap(scene._contract_row_rect(0).get_center())
+    if int(scene.active_contract.get("id", 0)) != 9812 or scene.passengers != 1:
+        _fail("could not accept passenger job after abandoning previous job")
+        return
+    scene._handle_tap(scene.CONTRACT_ABANDON_RECT.get_center())
+    scene._handle_tap(scene.CONTRACT_ABANDON_RECT.get_center())
+    if not scene.active_contract.is_empty() or scene.passengers != 0:
+        _fail("abandoned passenger job did not free reserved berth")
+        return
+    scene.research_start_single = true
+    scene.starting_weapon = "single"
+    scene._handle_tap(scene._contract_row_rect(0).get_center())
+    if int(scene.active_contract.get("id", 0)) != 9813:
+        _fail("armed bounty contract could not be selected from board")
+        return
+    scene._handle_tap(scene.SUBMENU_BACK_RECT.get_center())
+    if scene.contracts_open or not scene.hub_open or scene.contract_abandon_confirm:
+        _fail("contract board BACK did not return to dock")
+        return
+    scene.active_contract.clear()
+    scene.contract_board = previous_board
+    scene.cargo = previous_cargo
+    scene.passengers = previous_passengers
+    scene.starting_weapon = previous_starting_weapon
+    scene.research_start_single = previous_single_unlock
+    scene.contract_notice = ""
+    scene._save_all_state()
+
     scene._save_all_state()
     var slice9_saved := ConfigFile.new()
     if slice9_saved.load(scene._active_world_path()) != OK or int(slice9_saved.get_value("world", "contract_schema", 0)) != scene.CONTRACT_SCHEMA_VERSION:

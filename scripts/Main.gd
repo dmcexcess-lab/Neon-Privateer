@@ -106,6 +106,7 @@ const TRADE_PREV_RECT := Rect2(22.0, 668.0, 144.0, 50.0)
 const TRADE_NEXT_RECT := Rect2(224.0, 668.0, 144.0, 50.0)
 const TRADE_ROWS_PER_PAGE := 6
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
+const CONTRACT_ABANDON_RECT := Rect2(26.0, 682.0, 338.0, 50.0)
 const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
 const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 582.0, 342.0, 156.0)
 const SYSTEM_MAP_BACK_RECT := Rect2(24.0, 756.0, 158.0, 54.0)
@@ -253,6 +254,8 @@ var hub_open := false
 var market_open := false
 var trade_open := false
 var contracts_open := false
+var contract_notice := ""
+var contract_abandon_confirm := false
 var travel_open := false
 var travel_selected_planet := ""
 var active_route_segments: Array = []
@@ -645,6 +648,8 @@ func _reset_career_state() -> void:
     cargo.clear()
     contract_board.clear()
     active_contract.clear()
+    contract_notice = ""
+    contract_abandon_confirm = false
     passengers = 0
     economy_tick = 0
 
@@ -2269,21 +2274,33 @@ func _regenerate_contracts() -> void:
         if not alternate.is_empty():
             contract_board.append(_make_contract("delivery", current_planet, alternate, String(alternate.get("commodity", "Grain")), false))
 
+func _contract_blocker(contract: Dictionary) -> String:
+    if not active_contract.is_empty():
+        return "ACTIVE JOB — ABANDON FIRST"
+    var kind := String(contract.get("type", ""))
+    if kind == "delivery" and _cargo_used() >= _cargo_capacity():
+        return "CARGO HOLD FULL"
+    if kind == "passenger" and passengers >= _passenger_capacity():
+        return "PASSENGER BERTHS FULL"
+    if kind == "bounty" and _valid_starting_weapon() == "none":
+        return "BOUNTY NEEDS STARTING WEAPON"
+    return ""
+
 func _accept_contract(index: int) -> bool:
-    if not active_contract.is_empty() or index < 0 or index >= contract_board.size():
+    if index < 0 or index >= contract_board.size():
+        contract_notice = "NO CONTRACT AT THIS POSITION"
+        return false
+    var blocker := _contract_blocker(contract_board[index])
+    if not blocker.is_empty():
+        contract_notice = blocker
         return false
     var contract: Dictionary = _upgrade_contract_record(contract_board[index], current_planet)
-    var kind := String(contract.type)
-    if kind == "delivery" and _cargo_used() >= _cargo_capacity():
-        return false
-    if kind == "passenger" and passengers >= _passenger_capacity():
-        return false
-    if kind == "bounty" and _valid_starting_weapon() == "none":
-        return false
     active_contract = contract.duplicate(true)
-    if kind == "passenger":
+    if String(contract.type) == "passenger":
         passengers += 1
     contract_board.remove_at(index)
+    contract_notice = "CONTRACT ACCEPTED — OPEN TRAVEL TO DEPART"
+    contract_abandon_confirm = false
     _play_sfx(buy_sfx, 1.10)
     _save_all_state()
     return true
@@ -3647,6 +3664,8 @@ func _handle_hub_tap(pos: Vector2) -> void:
     elif HUB_CONTRACTS_RECT.has_point(pos):
         contracts_open = true
         hub_open = false
+        contract_notice = ""
+        contract_abandon_confirm = false
     elif HUB_UPGRADES_RECT.has_point(pos):
         research_open = true
         hub_open = false
@@ -3790,11 +3809,24 @@ func _handle_market_tap(pos: Vector2) -> void:
 func _handle_contracts_tap(pos: Vector2) -> void:
     if SUBMENU_BACK_RECT.has_point(pos):
         contracts_open = false
+        contract_abandon_confirm = false
         hub_open = true
+        queue_redraw()
+        return
+    if CONTRACT_ABANDON_RECT.has_point(pos) and not active_contract.is_empty():
+        if not contract_abandon_confirm:
+            contract_abandon_confirm = true
+            contract_notice = "TAP CONFIRM TO FORFEIT CURRENT CONTRACT"
+        else:
+            _fail_active_contract("CONTRACT ABANDONED")
+            contract_abandon_confirm = false
+            contract_notice = "CONTRACT ABANDONED — CHOOSE ANOTHER"
+            _save_all_state()
         queue_redraw()
         return
     for i in contract_board.size():
         if _contract_row_rect(i).has_point(pos):
+            contract_abandon_confirm = false
             _accept_contract(i)
             queue_redraw()
             return
@@ -6732,11 +6764,14 @@ func _draw_contracts_menu() -> void:
         _text("ACTIVE: %s > %s  %s" % [active_label, _planet_display_name(String(active_contract.destination)), _contract_status_suffix(active_contract)], Vector2(30, 94), 11, Color("6bffb0"))
     else:
         _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
+    if not contract_notice.is_empty():
+        _text_center(contract_notice, 137.0, 9, Color("ffb347"), 22.0, 368.0)
     for i in contract_board.size():
         var contract: Dictionary = contract_board[i]
         var rect := _contract_row_rect(i)
+        var blocker := _contract_blocker(contract)
         draw_rect(rect, Color(0.035, 0.065, 0.10, 0.91), true)
-        draw_rect(rect, Color("465f72"), false, 2.0)
+        draw_rect(rect, Color("465f72") if not blocker.is_empty() else Color("6bffb0"), false, 2.0)
         var smuggling := bool(contract.get("smuggling", false))
         var role := String(contract.get("role", String(contract.type).to_upper()))
         _text(role, rect.position + Vector2(12, 23), 15, Color("ffb347") if smuggling else Color("f0fbff"))
@@ -6755,6 +6790,13 @@ func _draw_contracts_menu() -> void:
             _text(_contract_status_suffix(contract), rect.position + Vector2(238, 23), 9, Color("bdeef4"))
         else:
             _text(_contract_status_suffix(contract), rect.position + Vector2(230, 23), 9, Color("ff8fa6"))
+        _text(_short_map_label(blocker, 32) if not blocker.is_empty() else "AVAILABLE — TAP TO ACCEPT", rect.position + Vector2(12, 88), 8, Color("ffb347") if not blocker.is_empty() else Color("6bffb0"))
+    if not active_contract.is_empty():
+        draw_rect(CONTRACT_ABANDON_RECT, Color(0.24, 0.085, 0.10, 0.96), true)
+        draw_rect(CONTRACT_ABANDON_RECT, Color("ff8fa6"), false, 2.0)
+        _text_center("CONFIRM ABANDON CONTRACT" if contract_abandon_confirm else "ABANDON ACTIVE CONTRACT", CONTRACT_ABANDON_RECT.position.y + 32.0, 16, Color("f0fbff"), CONTRACT_ABANDON_RECT.position.x, CONTRACT_ABANDON_RECT.end.x)
+    else:
+        _text_center("BOUNTIES REQUIRE AN UNLOCKED STARTING WEAPON", 708.0, 10, Color("8ea9b8"), 22.0, 368.0)
     _draw_submenu_back()
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)

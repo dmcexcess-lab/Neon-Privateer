@@ -152,7 +152,7 @@ Slice 3 established the persistent criminal-state authority. Later encounter/enf
 
 ## Contracts
 
-The contract board regenerates at each arrival and is now integrated with the generated economy and political map.
+The contract board regenerates at each arrival and is now integrated with the generated economy and political map. Tap an available card while docked to accept a job; the card and status banner show eligibility and acceptance feedback. Only one contract may be active at once. To take another, use **ABANDON ACTIVE CONTRACT** followed by **CONFIRM ABANDON CONTRACT** (this forfeits the old job and frees its freight/passenger reservation). Freight jobs need one free cargo slot; passenger jobs need a free passenger berth; bounties require an unlocked, equipped starting weapon. Blocked selections now explain their reason on-screen instead of silently doing nothing.
 
 Every contract stores its origin, destination, issuer, route pirate exposure, payout breakdown, relation reward, and political role. Legitimate faction jobs improve relation with the issuing faction when completed; underworld smuggling jobs do not grant faction reputation.
 
