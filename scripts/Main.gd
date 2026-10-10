@@ -126,7 +126,7 @@ const JUMP_RANGE_BASE := 3
 const JUMP_RANGE_MAX := 6
 const ROUTE_TIME_RANDOM_MIN := 0.93
 const ROUTE_TIME_RANDOM_MAX := 1.07
-const ROUTE_TIME_MAX := 30.0
+const ROUTE_TIME_MAX := 75.0
 const SPECIAL_DELIVERY_MIN_HOPS := 2
 const SPECIAL_DELIVERY_BASE_TIME := 90.0
 const SPECIAL_DELIVERY_TIME_PER_HOP := 45.0
@@ -255,6 +255,7 @@ var trade_open := false
 var contracts_open := false
 var travel_open := false
 var travel_selected_planet := ""
+var active_route_segments: Array = []
 var political_world: Dictionary = {}
 var world_seed := 0
 var system_map_zoom := 1.0
@@ -1028,21 +1029,24 @@ func _planet_jurisdiction_label(planet_id: String) -> String:
     return "%s • %s" % [String(faction.get("name", "UNKNOWN")), state]
 
 func _route_political_segment_at_progress(origin: String, destination: String, progress: float) -> Dictionary:
-    var route := PoliticalWorld.direct_route(political_world, origin, destination)
-    if route.is_empty():
-        return {}
+    var segments: Array = active_route_segments if route_active and origin == route_origin and destination == destination_planet and not active_route_segments.is_empty() else PoliticalWorld.ship_jump_route(political_world, origin, destination).get("segments", [])
     var t := clampf(progress, 0.0, 1.0)
-    for segment in route.get("segments", []):
+    for segment in segments:
         if t >= float(segment.start_t) and t <= float(segment.end_t) + 0.0001:
             return segment.duplicate(true)
     return {}
 
 func _direct_route_spec(origin: String, destination: String) -> Dictionary:
-    var route := PoliticalWorld.direct_route(political_world, origin, destination)
+    if origin == destination or not planet_names.has(origin) or not planet_names.has(destination):
+        return {}
+    # Strict geometric drive radius, independent of economic trade lanes.
+    if _direct_jump_distance(origin, destination) > _jump_range():
+        return {}
+    var route := PoliticalWorld.ship_jump_route(political_world, origin, destination)
     if route.is_empty():
         return {}
     return {
-        "distance": int(route.distance),
+        "distance": _direct_jump_distance(origin, destination),
         "danger": int(route.danger),
         "wealth": int(route.get("wealth", 1)),
         "segments": route.segments,
@@ -1056,7 +1060,7 @@ func _route_political_percentages_for_spec(spec: Dictionary) -> Dictionary:
     var path: Array = spec.get("path", [])
     var total_weight := 0.0
     for i in range(maxi(0, path.size() - 1)):
-        var route := PoliticalWorld.direct_route(political_world, String(path[i]), String(path[i + 1]))
+        var route := PoliticalWorld.ship_jump_route(political_world, String(path[i]), String(path[i + 1]))
         var length := float(route.get("length", 1.0))
         for segment in route.get("segments", []):
             var weight := length * maxf(0.0, float(segment.end_t) - float(segment.start_t))
@@ -1812,6 +1816,12 @@ func _route_spec(origin: String, dest: String) -> Dictionary:
 func _jump_range() -> int:
     return clampi(JUMP_RANGE_BASE + research_jump_range, JUMP_RANGE_BASE, JUMP_RANGE_MAX)
 
+func _direct_jump_distance(origin: String, destination: String) -> int:
+    if origin == destination or not planet_names.has(origin) or not planet_names.has(destination):
+        return 0
+    var length_px := _system_planet_world_position(origin).distance_to(_system_planet_world_position(destination))
+    return maxi(1, int(ceil(length_px / 155.0)))
+
 func _fuel_required_for_jump(distance: int) -> int:
     return maxi(1, distance)
 
@@ -1833,22 +1843,26 @@ func _refuel_ship() -> int:
     return affordable
 
 func _jump_route_spec(origin: String, destination: String) -> Dictionary:
+    # Multi-flight contract planning may span the system; the displayed FLY
+    # command can launch only one direct hop, never an automatic chain.
+    if not planet_names.has(origin) or not planet_names.has(destination):
+        return {"distance": 0, "danger": 1, "wealth": 1, "path": [], "hops": 0, "direct": false}
     if origin == destination:
         return {"distance": 0, "danger": 1, "wealth": 1, "path": [origin], "hops": 0, "direct": true}
     var max_jump := _jump_range()
     var unvisited: Dictionary = {}
-    var dist: Dictionary = {}
-    var prev: Dictionary = {}
+    var distances: Dictionary = {}
+    var previous: Dictionary = {}
     for planet in planet_names:
         unvisited[planet] = true
-        dist[planet] = INF
-    dist[origin] = 0.0
+        distances[planet] = INF
+    distances[origin] = 0.0
 
     while not unvisited.is_empty():
         var current := ""
         var best := INF
         for pid in unvisited.keys():
-            var candidate := float(dist.get(pid, INF))
+            var candidate := float(distances.get(pid, INF))
             if candidate < best:
                 best = candidate
                 current = String(pid)
@@ -1857,45 +1871,41 @@ func _jump_route_spec(origin: String, destination: String) -> Dictionary:
         unvisited.erase(current)
         if current == destination:
             break
-        for next_id in PoliticalWorld.neighbors(political_world, current):
+        for next_id in planet_names:
             if not unvisited.has(next_id):
                 continue
-            var edge := PoliticalWorld.direct_route(political_world, current, next_id)
-            var edge_distance := int(edge.get("distance", 999))
-            if edge_distance > max_jump:
+            var edge_distance := _direct_jump_distance(current, next_id)
+            if edge_distance <= 0 or edge_distance > max_jump:
                 continue
             var alt := best + float(edge_distance)
-            if alt < float(dist.get(next_id, INF)):
-                dist[next_id] = alt
-                prev[next_id] = current
+            if alt < float(distances.get(next_id, INF)):
+                distances[next_id] = alt
+                previous[next_id] = current
 
-    if not prev.has(destination):
+    if not previous.has(destination):
         return {"distance": 0, "danger": 1, "wealth": 1, "path": [], "hops": 0, "direct": false}
-
     var path: Array[String] = [destination]
     var cursor := destination
     while cursor != origin:
-        cursor = String(prev[cursor])
+        cursor = String(previous[cursor])
         path.push_front(cursor)
 
     var total_distance := 0
     var danger_sum := 0.0
     var max_danger := 1
     var wealth_sum := 0.0
-    var wealth_weight := 0.0
-    for i in range(path.size() - 1):
-        var edge := PoliticalWorld.direct_route(political_world, path[i], path[i + 1])
-        var edge_distance := maxi(1, int(edge.get("distance", 1)))
+    for idx in range(path.size() - 1):
+        var edge_distance := _direct_jump_distance(path[idx], path[idx + 1])
+        var edge := PoliticalWorld.ship_jump_route(political_world, path[idx], path[idx + 1])
         total_distance += edge_distance
         danger_sum += float(edge.get("danger", 1))
         max_danger = maxi(max_danger, int(edge.get("danger", 1)))
         wealth_sum += float(edge.get("wealth", 1)) * float(edge_distance)
-        wealth_weight += float(edge_distance)
     var avg_danger := danger_sum / maxf(1.0, float(path.size() - 1))
     return {
         "distance": total_distance,
         "danger": clampi(int(round(avg_danger * 0.7 + float(max_danger) * 0.3)), 1, 5),
-        "wealth": clampi(int(round(wealth_sum / maxf(1.0, wealth_weight))), 1, 5),
+        "wealth": clampi(int(round(wealth_sum / maxf(1.0, float(total_distance)))), 1, 5),
         "path": path,
         "hops": path.size() - 1,
         "direct": path.size() == 2
@@ -2312,8 +2322,9 @@ func _route_level_for(distance: int, danger: int, contract_difficulty: int = 0) 
 func _route_duration_for(distance: int, danger: int, contract_difficulty: int = 0, variance: float = 1.0) -> float:
     # Route length + bounded ±7% variation sets the baseline. Ship speed
     # reduces real wall-clock travel through _ship_speed_multiplier().
-    var base := clampf(7.0 + float(maxi(1, distance)) * 3.5, 10.0, 28.0)
-    return clampf(base * clampf(variance, ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX), 8.0, ROUTE_TIME_MAX)
+    # 23 seconds for a short hop; a six-unit direct flight is about 68s.
+    var base := 14.0 + float(clampi(distance, 1, JUMP_RANGE_MAX)) * 9.0
+    return clampf(base * clampf(variance, ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX), 20.0, ROUTE_TIME_MAX)
 
 func _start_route(destination: String) -> bool:
     if destination == current_planet or not planet_names.has(destination):
@@ -2341,6 +2352,7 @@ func _start_route(destination: String) -> bool:
     _start_game()
     level = _route_level_for(route_distance, route_danger, contract_difficulty)
     route_active = true
+    active_route_segments = spec.get("segments", []).duplicate(true)
     easy_spawn_clock = _route_object_spawn_interval(false, true)
     hard_spawn_clock = _route_object_spawn_interval(true, true)
     neutral_spawn_clock = _route_object_spawn_interval(false, false)
@@ -2750,6 +2762,7 @@ func _arrive_at_destination() -> void:
     _cancel_police_scan("SCAN ENDED — ARRIVAL")
     playing = false
     route_active = false
+    active_route_segments.clear()
     boss_active = false
     boss_defeated_pending = false
     current_planet = destination_planet
@@ -2823,6 +2836,7 @@ func _reset_destroyed_ship() -> Dictionary:
 
 func _fail_route(reason: String, ship_destroyed: bool = false) -> void:
     _cancel_police_scan()
+    active_route_segments.clear()
     var losses := {"cash": 0, "cargo": 0, "passengers": 0, "upgrades": 0, "weapons": 0}
     if ship_destroyed:
         losses = _reset_destroyed_ship()
@@ -3468,16 +3482,19 @@ func _system_route_pairs() -> Array:
 func _default_travel_selection() -> String:
     if not active_contract.is_empty():
         var contract_dest := String(active_contract.get("destination", ""))
-        if planet_names.has(contract_dest) and contract_dest != current_planet and not _jump_route_spec(current_planet, contract_dest).get("path", []).is_empty():
+        if not _direct_route_spec(current_planet, contract_dest).is_empty():
             return contract_dest
-    for neighbor in PoliticalWorld.neighbors(political_world, current_planet):
-        var edge := PoliticalWorld.direct_route(political_world, current_planet, neighbor)
-        if int(edge.get("distance", 999)) <= _jump_range():
-            return neighbor
+    var nearest := ""
+    var nearest_distance := INF
     for planet in planet_names:
-        if planet != current_planet and not _jump_route_spec(current_planet, planet).get("path", []).is_empty():
-            return planet
-    return current_planet
+        var units := _direct_jump_distance(current_planet, planet)
+        if units <= 0 or units > _jump_range():
+            continue
+        var pixels := _system_planet_world_position(current_planet).distance_to(_system_planet_world_position(planet))
+        if pixels < nearest_distance:
+            nearest_distance = pixels
+            nearest = planet
+    return nearest if not nearest.is_empty() else current_planet
 
 func _set_travel_selection(planet: String) -> bool:
     if not planet_names.has(planet):
@@ -3639,13 +3656,8 @@ func _handle_hub_tap(pos: Vector2) -> void:
     queue_redraw()
 
 func _next_hop_toward(destination: String) -> String:
-    if destination == current_planet:
-        return ""
-    var spec := _jump_route_spec(current_planet, destination)
-    var path: Array = spec.get("path", [])
-    if path.size() < 2:
-        return ""
-    return String(path[1])
+    # FLY never substitutes an intermediate trade-lane waypoint.
+    return destination if not _direct_route_spec(current_planet, destination).is_empty() else ""
 
 func _handle_travel_tap(pos: Vector2) -> void:
     if SYSTEM_REFUEL_RECT.has_point(pos):
@@ -3670,10 +3682,8 @@ func _handle_travel_tap(pos: Vector2) -> void:
             return
 
     if SYSTEM_FLY_RECT.has_point(pos):
-        if planet_names.has(travel_selected_planet) and travel_selected_planet != current_planet:
-            var next_hop := _next_hop_toward(travel_selected_planet)
-            if not next_hop.is_empty():
-                _start_route(next_hop)
+        if not _direct_route_spec(current_planet, travel_selected_planet).is_empty():
+            _start_route(travel_selected_planet)
         return
 
 
@@ -4504,6 +4514,7 @@ func _load_run_snapshot() -> bool:
     route_danger = int(cfg.get_value("run", "route_danger", 1))
     route_wealth = clampi(int(cfg.get_value("run", "route_wealth", 1)), 1, 5)
     route_duration = float(cfg.get_value("run", "route_duration", 18.0))
+    active_route_segments = PoliticalWorld.ship_jump_route(political_world, route_origin, destination_planet).get("segments", []).duplicate(true) if route_active else []
     boss_active = bool(cfg.get_value("run", "boss_active", false))
     boss_defeated_pending = bool(cfg.get_value("run", "boss_defeated_pending", false))
     bounty_completed_this_route = bool(cfg.get_value("run", "bounty_completed", false))
@@ -6375,6 +6386,30 @@ func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SUBMENU_BACK_RECT.position.y + 37.0, 20, Color("f0fbff"), SUBMENU_BACK_RECT.position.x, SUBMENU_BACK_RECT.end.x)
+func _draw_map_direct_jump(origin: String, destination: String, spec: Dictionary, line_color: Color, width: float) -> void:
+    if spec.is_empty():
+        return
+    var wa := _system_planet_world_position(origin)
+    var wb := _system_planet_world_position(destination)
+    for segment in spec.get("segments", []):
+        var start := _map_world_to_screen(wa.lerp(wb, float(segment.start_t)))
+        var finish := _map_world_to_screen(wa.lerp(wb, float(segment.end_t)))
+        var faction_tint := _territory_color(String(segment.state), String(segment.get("faction_id", segment.get("strongest_faction_id", ""))))
+        var shade := line_color.lerp(Color(faction_tint.r, faction_tint.g, faction_tint.b, line_color.a), 0.38)
+        draw_line(start, finish, Color(0.0, 0.0, 0.0, 0.87), width + 2.8, true)
+        draw_line(start, finish, shade, width, true)
+
+func _draw_map_jump_range() -> void:
+    var center := _system_planet_position(current_planet)
+    var radius := _system_map_fit_scale() * system_map_zoom * float(_jump_range()) * 155.0
+    var previous := center + Vector2(radius, 0.0)
+    for step in range(1, 97):
+        var angle := TAU * float(step) / 96.0
+        var position := center + Vector2(cos(angle), sin(angle)) * radius
+        if SYSTEM_MAP_RECT.has_point(previous) and SYSTEM_MAP_RECT.has_point(position):
+            draw_line(previous, position, Color(0.43, 0.98, 0.72, 0.58), 1.5, true)
+        previous = position
+
 func _draw_travel_menu() -> void:
     _draw_menu_art(ART_BG_OPS, 0.78)
     _draw_menu_panel(Rect2(16.0, 14.0, 358.0, 78.0), 0.80)
@@ -6402,28 +6437,18 @@ func _draw_travel_menu() -> void:
         draw_circle(star, 11.0, Color("ffd166"))
         draw_circle(star, 5.0, Color("fff4c2"))
 
-    # Resolve each highlighted path once per draw. With ~50 lanes this avoids
-    # rerunning shortest-path search for every line segment on phone/browser.
-    var selected_path: Array = _jump_route_spec(current_planet, travel_selected_planet).get("path", []) if not travel_selected_planet.is_empty() else []
-    var contract_path: Array = _jump_route_spec(current_planet, String(active_contract.get("destination", ""))).get("path", []) if not active_contract.is_empty() else []
+    # Trade lanes are shown for economic context, not as required flight stops.
+    # Flight previews consist of exactly one range-limited direct jump.
+    var selected_jump_spec := _direct_route_spec(current_planet, travel_selected_planet) if not travel_selected_planet.is_empty() else {}
+    var contract_destination := String(active_contract.get("destination", "")) if not active_contract.is_empty() else ""
+    var contract_jump_spec := _direct_route_spec(current_planet, contract_destination) if not contract_destination.is_empty() and contract_destination != travel_selected_planet else {}
 
-    # Every generated trade lane is drawn segment-by-segment from the same political data gameplay queries.
+    # Generated trade lanes still display authoritative political segmentation.
     for route in political_world.get("routes", []):
         var origin := String(route.a)
         var dest := String(route.b)
         var wa := _system_planet_world_position(origin)
         var wb := _system_planet_world_position(dest)
-        var on_selected_path := false
-        for i in range(maxi(0, selected_path.size() - 1)):
-            if (String(selected_path[i]) == origin and String(selected_path[i + 1]) == dest) or (String(selected_path[i]) == dest and String(selected_path[i + 1]) == origin):
-                on_selected_path = true
-                break
-        var on_contract_path := false
-        for i in range(maxi(0, contract_path.size() - 1)):
-            if (String(contract_path[i]) == origin and String(contract_path[i + 1]) == dest) or (String(contract_path[i]) == dest and String(contract_path[i + 1]) == origin):
-                on_contract_path = true
-                break
-
         for segment in route.get("segments", []):
             var t0 := float(segment.start_t)
             var t1 := float(segment.end_t)
@@ -6432,10 +6457,14 @@ func _draw_travel_menu() -> void:
             var state := String(segment.state)
             var faction_id := String(segment.get("faction_id", segment.get("strongest_faction_id", "")))
             var rc := _territory_color(state, faction_id)
-            var alpha := 0.92 if on_selected_path else (0.72 if on_contract_path else 0.43)
-            var width := 4.0 if on_selected_path else (2.8 if on_contract_path else 1.5)
-            draw_line(a, b, Color(0.0, 0.0, 0.0, 0.72), width + 2.2, true)
-            draw_line(a, b, Color(rc.r, rc.g, rc.b, alpha), width, true)
+            draw_line(a, b, Color(0.0, 0.0, 0.0, 0.65), 3.3, true)
+            draw_line(a, b, Color(rc.r, rc.g, rc.b, 0.42), 1.3, true)
+
+    _draw_map_jump_range()
+    if not contract_jump_spec.is_empty():
+        _draw_map_direct_jump(current_planet, contract_destination, contract_jump_spec, Color("6bffb0"), 2.2)
+    if not selected_jump_spec.is_empty():
+        _draw_map_direct_jump(current_planet, travel_selected_planet, selected_jump_spec, Color("77f7ff"), 3.6)
 
     # Planet nodes.
     for planet in planet_names:
@@ -6461,7 +6490,8 @@ func _draw_travel_menu() -> void:
         if is_contract:
             draw_arc(center, portrait_size * 0.82, 0.0, TAU, 32, Color("6bffb0"), 1.8, true)
 
-        _draw_planet_art(planet, portrait_rect, 1.0)
+        var jump_reachable := is_current or _direct_jump_distance(current_planet, planet) <= _jump_range()
+        _draw_planet_art(planet, portrait_rect, 1.0 if jump_reachable else 0.50)
 
         var is_capital := false
         for faction in political_world.get("factions", []):
@@ -6505,21 +6535,24 @@ func _draw_travel_menu() -> void:
             _text(String(status_lines[status_index]), Vector2(126.0, 695.0 + float(status_index) * 13.0), 7, status_color)
         _text("TAP WORLD • DRAG/PINCH MAP", Vector2(126.0, 727.0), 8, Color("8ea9b8"))
     else:
-        var selected_spec := _jump_route_spec(current_planet, selected)
+        var selected_spec: Dictionary = _direct_route_spec(current_planet, selected)
         next_hop = _next_hop_toward(selected)
-        var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
-        var selected_level := _route_level_for(int(selected_spec.get("distance", 0)), int(selected_spec.get("danger", 1)), contract_diff)
-        var selected_duration := _route_duration_for(int(selected_spec.get("distance", 1)), int(selected_spec.get("danger", 1)), contract_diff) / _ship_speed_multiplier()
-        var pct := _route_political_percentages_for_spec(selected_spec)
-        if selected_spec.get("path", []).is_empty():
-            _text("OUT OF JUMP RANGE  •  MAX J%d" % _jump_range(), Vector2(126.0, 646.0), 9, Color("ff8fa6"))
+        var requested_distance := _direct_jump_distance(current_planet, selected)
+        if selected_spec.is_empty():
+            _text("D%d  OUTSIDE MAX J%d" % [requested_distance, _jump_range()], Vector2(126.0, 646.0), 10, Color("ff8fa6"))
+            _text("NO ROUTE PLOTTED", Vector2(126.0, 665.0), 11, Color("ff8fa6"))
+            _text("CHOOSE A PLANET INSIDE THE RING", Vector2(126.0, 682.0), 8, Color("8ea9b8"))
+            _text("SPEC %s" % _short_map_label(_planet_specialty(selected).to_upper(), 18), Vector2(126.0, 698.0), 9, Color("bdeef4"))
         else:
-            _text("D%d  W%d  RISK %s  HOPS %d" % [int(selected_spec.distance), int(selected_spec.get("wealth", 1)), _political_risk_label(int(selected_spec.danger)), int(selected_spec.hops)], Vector2(126.0, 646.0), 9, _system_route_color(int(selected_spec.danger)))
-        _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 662.0), 9, Color("8ea9b8"))
-        var next_jump := PoliticalWorld.direct_route(political_world, current_planet, next_hop) if not next_hop.is_empty() else {}
-        var next_fuel := _fuel_required_for_jump(int(next_jump.get("distance", 0))) if not next_jump.is_empty() else 0
-        _text("FLIGHT ~%ds  L%d  NEXT %s  F%d" % [int(selected_duration), selected_level, _planet_display_name(next_hop).to_upper(), next_fuel], Vector2(126.0, 678.0), 8, Color("ffd166"))
-        _text("SPEC %s  •  %s" % [_short_map_label(_planet_specialty(selected).to_upper(), 12), _planet_law_summary(selected)], Vector2(126.0, 697.0), 7, Color("bdeef4"))
+            var contract_diff := int(active_contract.get("difficulty", 0)) if _contract_target_matches(selected) else 0
+            var selected_level := _route_level_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff)
+            var selected_duration := _route_duration_for(int(selected_spec.distance), int(selected_spec.danger), contract_diff) / _ship_speed_multiplier()
+            var pct := _route_political_percentages_for_spec(selected_spec)
+            var fuel_cost := _fuel_required_for_jump(int(selected_spec.distance))
+            _text("DIRECT D%d  W%d  %s" % [int(selected_spec.distance), int(selected_spec.wealth), _political_risk_label(int(selected_spec.danger))], Vector2(126.0, 646.0), 10, _system_route_color(int(selected_spec.danger)))
+            _text("C%d%%  X%d%%  U%d%%" % [int(round(float(pct.CONTROLLED + pct.CORE) * 100.0)), int(round(float(pct.CONTESTED) * 100.0)), int(round(float(pct.UNCONTROLLED) * 100.0))], Vector2(126.0, 662.0), 9, Color("8ea9b8"))
+            _text("FLIGHT ~%ds  L%d  FUEL %d" % [int(selected_duration), selected_level, fuel_cost], Vector2(126.0, 678.0), 9, Color("ffd166") if ship_fuel >= fuel_cost else Color("ff8fa6"))
+            _text("SPEC %s  •  %s" % [_short_map_label(_planet_specialty(selected).to_upper(), 12), _planet_law_summary(selected)], Vector2(126.0, 697.0), 7, Color("bdeef4"))
         for status_index in range(status_lines.size()):
             if status_index >= 2:
                 break
@@ -6532,7 +6565,7 @@ func _draw_travel_menu() -> void:
     draw_rect(SYSTEM_MAP_BACK_RECT, Color("77f7ff"), false, 2.0)
     _text_center("BACK", SYSTEM_MAP_BACK_RECT.position.y + 35.0, 18, Color("f0fbff"), SYSTEM_MAP_BACK_RECT.position.x, SYSTEM_MAP_BACK_RECT.end.x)
 
-    var next_jump_spec := PoliticalWorld.direct_route(political_world, current_planet, next_hop) if not next_hop.is_empty() else {}
+    var next_jump_spec := _direct_route_spec(current_planet, next_hop) if not next_hop.is_empty() else {}
     var next_jump_fuel := _fuel_required_for_jump(int(next_jump_spec.get("distance", 0))) if not next_jump_spec.is_empty() else 0
     var can_fly := not next_hop.is_empty() and ship_fuel >= next_jump_fuel
     draw_rect(SYSTEM_FLY_RECT, Color(0.04, 0.18, 0.15, 0.96) if can_fly else Color(0.05, 0.06, 0.08, 0.96), true)

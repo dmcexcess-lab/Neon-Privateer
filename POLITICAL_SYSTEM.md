@@ -432,10 +432,12 @@ Direct jump time is:
 
 - derived from lane distance;
 - multiplied by bounded route variance (0.93x–1.07x);
-- capped at **30 seconds baseline**;
+- approximately **23 seconds at distance 1**, rising to **68 seconds at distance 6**, with a 75-second baseline ceiling;
 - then traversed faster in real time by the Ship Speed multiplier.
 
-The player's jump drive has a baseline maximum edge distance of **3**, upgradeable to **6**. `_jump_route_spec(origin, destination)` runs shortest-path planning while excluding edges longer than the current drive range. A destination can therefore be connected in the raw graph but unreachable by the current ship.
+The player's jump drive has a baseline geometric radius of **3** distance units (155 world-position units per jump unit), upgradeable to **6**. A jump can connect **any two planets within that radius**, even without a generated trade lane. Distance is rounded *up* from the actual straight-line separation, enforcing a hard radial limit. Trade lanes remain the distinct sparse network for economic stock transfers and traffic metadata.
+
+`_direct_route_spec(origin, destination)` authorizes a single straight-line jump. `_jump_route_spec` computes a multi-flight itinerary over possible free-flight hops only for contracts and reachability; the map never plots or launches that entire itinerary in one FLY action. Selecting a remote planet outside the current radius is allowed for inspection, but shows no plotted jump and cannot launch.
 
 Fuel is hull state rather than commodity cargo:
 
@@ -449,7 +451,9 @@ Fuel is hull state rather than commodity cargo:
 
 `_route_spec(origin, destination)` remains the raw graph specification used by world/economic systems.
 
-Player travel, contract reachability, selected-route rendering, and contract route rendering use `_jump_route_spec(origin, destination)`, so they respect the current drive. Actual execution still launches one direct edge at a time; a multi-hop route therefore becomes several normal flights and landings.
+Player travel uses the single-hop `_direct_route_spec` and draws a straight, politically segmented course to a planet inside the drive radius. The map also displays a radius ring and dims out-of-range planets; those worlds remain inspectable, but neither an out-of-range route line nor a chained path is drawn. FLY goes **directly to the selected in-range planet**, with fuel and time based on straight-line distance, not to a hidden intermediate trade-lane node.
+
+Multi-flight contract destinations remain possible: `_jump_route_spec` calculates a reachability itinerary across free-flight hops, but players manually choose and launch each jump. No trade-lane intermediate is mandatory when the final destination is directly in range. The original sparse trade-lane graph remains unchanged and continues to drive the simulated commodity economy.
 
 ## System map model
 

@@ -37,7 +37,7 @@ The 32 worlds are connected by a sparse generated trade-lane network rather than
 
 Every lane is sampled through the authoritative political influence model and compressed into political segments. Route political danger is derived from those segments rather than assigned by a fixed route table. A short contested section therefore remains meaningful even on an otherwise safer route.
 
-The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/reset, direct planet selection, route planning, capitals, an authoritative political field, visible political borders, faction/state legend, and segment-colored trade lanes. CORE/CONTROLLED areas are faction-colored, CONTESTED bands are distinctly hatched/tinted, and UNCONTROLLED space remains visibly dark/open. Selecting a world opens jurisdiction, applicable law, and per-faction relation/heat inspection; selecting a distant world plans a multi-hop route, while pressing **FLY** launches the next real lane on that path.
+The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/reset, direct planet selection, capitals, an authoritative political field, visible political borders, a drive-range ring, faction/state legend, and segment-colored economic trade lanes. CORE/CONTROLLED areas are faction-colored, CONTESTED bands are hatched/tinted, and UNCONTROLLED space remains dark/open. Selecting a world opens jurisdiction, laws, and relation/heat inspection. A valid in-range selection draws **one direct ship route**, whether or not a trade lane exists between the planets; FLY travels straight to that destination. Out-of-range planets are inspectable but do not produce a route line or activate FLY. Longer contract journeys require separate player-chosen jumps rather than an automatically chained map route.
 
 See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, route generation/segmentation, danger derivation, persistence, and migration contract.
 
@@ -221,10 +221,10 @@ The visual overhaul intentionally changes presentation only; flight rules, econo
 
 Every direct lane has separate route axes:
 
-- **Length / distance** controls baseline flight time and fuel consumption.
-- **Jump range** gates which direct lanes the current ship can cross. The navigator finds the shortest path using only edges within the current drive range, so range upgrades can open new regions and shortcuts.
-- **Fuel** is ship state, not cargo. A jump burns fuel equal to that direct lane's distance; refueling is paid while docked at 20 credits per fuel unit. The tank holds 12 units.
-- **Travel time** has bounded ±7% variation. Even the longest baseline jump is capped at 30 seconds, and the Ship Speed upgrade reduces real wall-clock travel time.
+- **Length / distance** is computed from straight-line planetary separation, independently of trade-lane adjacency. This sets flight time and fuel use.
+- **Jump range** is a strict radius of 3–6 units around the current planet. Any planet within range is a valid direct destination; navigation never forces an intermediate trade-lane planet.
+- **Fuel** is ship state, not cargo. A jump burns fuel equal to its direct geometric distance; refueling costs 20 credits per unit while docked. The tank holds 12 units.
+- **Travel time** has bounded ±7% variation. Baseline direct jumps now take approximately 23–68 seconds for distances 1–6 (75-second cap), and Ship Speed upgrades reduce actual wall-clock flight time.
 - **Danger** controls asteroid density during travel.
 - **Wealth** controls cargo-container density and modifies random patrol/pirate contact probability.
 

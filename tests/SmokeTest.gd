@@ -285,6 +285,7 @@ func _initialize() -> void:
         "_contract_relation_reward", "_make_contract", "_upgrade_contract_record",
         "_ensure_contract_schema", "_regenerate_contracts", "_accept_contract", "_fail_active_contract", "_update_active_contract_clock",
         "_route_level_for", "_route_duration_for", "_start_route",
+        "_direct_jump_distance", "_draw_map_direct_jump", "_draw_map_jump_range",
         "_encounter_eligibility_for_context", "_current_encounter_eligibility",
         "_route_wealth_encounter_multiplier", "_encounter_roll_chance", "_encounter_opportunity_interval", "_encounter_cooldown",
         "_try_start_route_encounter", "_encounter_duration", "_sync_legacy_pirate_state",
@@ -2756,8 +2757,8 @@ func _initialize() -> void:
     scene.enemy_shots.clear()
     scene.current_weapon = "none"
 
-    # Jump logistics: route length drives time, every baseline flight stays
-    # under 30s before ship-speed acceleration, and ±7% route variance matters.
+    # Free-flight jumps are substantially longer than old short lanes:
+    # ~23s for distance 1 and ~68s for 6; ±7% variance remains meaningful.
     var min_distance := 99
     var max_distance := 0
     for route in scene.political_world.routes:
@@ -2770,8 +2771,14 @@ func _initialize() -> void:
     if absf(fixed_length_time - scene._route_duration_for(3, 5, 5, 1.0)) > 0.0001:
         _fail("danger or contract difficulty changed travel time for the same route length")
         return
-    if scene._route_duration_for(6, 1, 0, scene.ROUTE_TIME_RANDOM_MAX) > 30.0001:
-        _fail("longest baseline route exceeds 30 seconds")
+    if scene._route_duration_for(1, 1, 0, scene.ROUTE_TIME_RANDOM_MIN) < 20.0:
+        _fail("short direct jumps are still too brief")
+        return
+    if scene._route_duration_for(6, 1, 0, scene.ROUTE_TIME_RANDOM_MAX) > scene.ROUTE_TIME_MAX + 0.0001:
+        _fail("longest baseline free-flight jump exceeds new flight ceiling")
+        return
+    if scene._route_duration_for(6, 1, 0, 1.0) < scene._route_duration_for(1, 1, 0, 1.0) * 2.5:
+        _fail("long-range flight is not meaningfully longer than short hops")
         return
     if absf(scene._route_duration_for(4, 1, 0, scene.ROUTE_TIME_RANDOM_MIN) - scene._route_duration_for(4, 1, 0, scene.ROUTE_TIME_RANDOM_MAX)) < 0.1:
         _fail("route-time randomness is not affecting travel duration")
@@ -2805,6 +2812,61 @@ func _initialize() -> void:
     if scene._jump_range() != scene.JUMP_RANGE_MAX:
         _fail("max jump-range upgrade does not reach configured maximum")
         return
+
+    # Direct navigation is based on radial world-space range, not the sparse
+    # trade graph. Players may inspect remote worlds but cannot plot/Fly them.
+    scene.current_planet = scene.planet_names[0]
+    scene.research_jump_range = 0
+    var freeflight_origin: String = String(scene.current_planet)
+    var unlinked_target := ""
+    var distant_target := ""
+    for candidate in scene.planet_names:
+        var candidate_distance: int = scene._direct_jump_distance(freeflight_origin, candidate)
+        if candidate_distance > scene._jump_range() and distant_target.is_empty():
+            distant_target = candidate
+        if candidate_distance > 0 and candidate_distance <= scene.JUMP_RANGE_MAX and scene.PoliticalWorld.direct_route(scene.political_world, freeflight_origin, candidate).is_empty() and unlinked_target.is_empty():
+            unlinked_target = candidate
+    if distant_target.is_empty() or unlinked_target.is_empty():
+        _fail("test galaxy is missing distant or off-lane free-flight destinations")
+        return
+    if not scene._direct_route_spec(freeflight_origin, distant_target).is_empty() or scene._next_hop_toward(distant_target) != "":
+        _fail("map plotted chained route beyond current direct-jump limit")
+        return
+    scene.travel_selected_planet = distant_target
+    scene.travel_open = true
+    scene.ship_fuel = scene.FUEL_CAPACITY
+    var blocked_fuel: int = scene.ship_fuel
+    scene._handle_travel_tap(scene.SYSTEM_FLY_RECT.get_center())
+    if scene.route_active or scene.playing or scene.ship_fuel != blocked_fuel:
+        _fail("map FLY button launched unreachable world via an intermediate planet")
+        return
+    scene.travel_open = false
+    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    var unlinked_distance: int = scene._direct_jump_distance(freeflight_origin, unlinked_target)
+    var unlinked_spec: Dictionary = scene._direct_route_spec(freeflight_origin, unlinked_target)
+    if unlinked_spec.is_empty() or int(unlinked_spec.distance) != unlinked_distance or int(unlinked_spec.hops) != 1:
+        _fail("free flight failed to build a one-hop direct route off the trade network")
+        return
+    if not scene._next_hop_toward(unlinked_target) == unlinked_target:
+        _fail("map changed a direct off-lane destination into chained waypoints")
+        return
+    var contract_jump_plan: Dictionary = scene._jump_route_spec(freeflight_origin, unlinked_target)
+    if int(contract_jump_plan.get("hops", 0)) != 1:
+        _fail("contract route planner ignored in-range direct off-lane jump")
+        return
+    scene.ship_fuel = scene.FUEL_CAPACITY
+    if not scene._start_route(unlinked_target) or scene.destination_planet != unlinked_target or scene.route_distance != unlinked_distance:
+        _fail("could not launch direct flight to an unconnected planet")
+        return
+    if scene.ship_fuel != scene.FUEL_CAPACITY - unlinked_distance or scene.active_route_segments.is_empty():
+        _fail("virtual jump did not consume geometric fuel or preserve political segments")
+        return
+    var virtual_segment: Dictionary = scene._route_political_segment_at_progress(freeflight_origin, unlinked_target, 0.5)
+    if virtual_segment.is_empty():
+        _fail("unlinked flight lost live political encounter context")
+        return
+    scene._fail_route("DIRECT JUMP TEST ABORT")
+    scene.current_planet = freeflight_origin
 
     scene.current_planet = scene.planet_names[0]
     neighbor_list = scene.PoliticalWorld.neighbors(scene.political_world, scene.current_planet)

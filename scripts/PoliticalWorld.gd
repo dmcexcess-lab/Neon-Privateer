@@ -1036,7 +1036,41 @@ static func direct_route(world: Dictionary, a: String, b: String) -> Dictionary:
             return route.duplicate(true)
     return {}
 
-static func neighbors(world: Dictionary, planet_id: String) -> Array[String]:
+static func ship_jump_route(world: Dictionary, origin: String, destination: String) -> Dictionary:
+    # Free-flight routes are derived from planet positions; the sparse trade
+    # lane graph is preserved solely for trade, traffic, and economic simulation.
+    if origin == destination or planet_record(world, origin).is_empty() or planet_record(world, destination).is_empty():
+        return {}
+    var lane := direct_route(world, origin, destination)
+    if not lane.is_empty():
+        return lane
+    var start := planet_position(world, origin)
+    var finish := planet_position(world, destination)
+    var length_px := start.distance_to(finish)
+    var segments := _segment_route(world, origin, destination)
+    var midpoint := start.lerp(finish, 0.5)
+    var nearest_traffic := INF
+    var wealth := 1
+    for candidate in world.get("routes", []):
+        var a := planet_position(world, String(candidate.a))
+        var b := planet_position(world, String(candidate.b))
+        var separation := _distance_point_to_segment(midpoint, a, b)
+        if separation < nearest_traffic:
+            nearest_traffic = separation
+            wealth = clampi(int(candidate.get("wealth", 1)), 1, 5)
+    return {
+        "id": _edge_id(origin, destination),
+        "a": origin,
+        "b": destination,
+        "length": length_px,
+        "distance": maxi(1, int(ceil(length_px / 155.0))),
+        "segments": segments,
+        "danger": _danger_from_segments(segments),
+        "wealth": wealth,
+        "virtual": true
+    }
+
+static func neighbors(world: Dictionary, planet_id: String): Array[String]:
     var result: Array[String] = []
     for route in world.get("routes", []):
         if String(route.a) == planet_id:
