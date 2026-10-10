@@ -2640,7 +2640,10 @@ func _initialize() -> void:
     var freight_job := {"id": 9811, "type": "delivery", "destination": volcanic, "difficulty": 1, "reward": 450, "commodity": "Grain"}
     var passenger_job := {"id": 9812, "type": "passenger", "destination": industrial, "difficulty": 1, "reward": 600}
     var bounty_job := {"id": 9813, "type": "bounty", "destination": volcanic, "difficulty": 3, "reward": 900}
-    scene.contract_board = [freight_job.duplicate(true), passenger_job.duplicate(true), bounty_job.duplicate(true)]
+    scene.contract_board.clear()
+    scene.contract_board.append(freight_job.duplicate(true))
+    scene.contract_board.append(passenger_job.duplicate(true))
+    scene.contract_board.append(bounty_job.duplicate(true))
     scene.active_contract.clear()
     scene.passengers = 0
     for item_name in scene.commodity_names:
@@ -2714,7 +2717,9 @@ func _initialize() -> void:
         _fail("contract board BACK did not return to dock")
         return
     scene.active_contract.clear()
-    scene.contract_board = previous_board
+    scene.contract_board.clear()
+    for saved_offer in previous_board:
+        scene.contract_board.append(saved_offer.duplicate(true))
     scene.cargo = previous_cargo
     scene.passengers = previous_passengers
     scene.starting_weapon = previous_starting_weapon
