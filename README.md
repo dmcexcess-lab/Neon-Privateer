@@ -41,6 +41,19 @@ The system map supports touch pan, pinch zoom, mouse drag/wheel zoom, center/res
 
 See `POLITICAL_SYSTEM.md` for the authoritative world schema, influence rules, route generation/segmentation, danger derivation, persistence, and migration contract.
 
+## Physical commodity trading
+
+Dock at any world and choose **COMMODITY TRADE** (separate from **BANK**).
+The trade terminal shows all 24 physical commodities in Green and Grey
+tabs, with six items per page. Each item displays local stock, current
+legality, units held, and a separate BUY/SELL quote. Each tap trades one
+unit immediately, updates cash/cargo/local market stock, and saves the
+career. Purchases require available stock, enough carried cash, and room
+in the eight-unit ship hold (delivery cargo reserves a slot); sales
+require cargo on hand. Grey-market legality follows the current planet's
+faction rules. The Bank still handles deposits, system indices, and
+faction currency positions and does not move physical goods.
+
 ## Bank, markets, and economy
 
 Every docked world exposes investing through the **Bank**. ACCOUNT is the cash/savings screen; the Bank then offers exactly **three investment markets**:

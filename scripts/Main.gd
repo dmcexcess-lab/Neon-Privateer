@@ -78,9 +78,10 @@ const PROFILE_CONTINUE_RECT := Rect2(54.0, 352.0, 282.0, 64.0)
 const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
 const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
 const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
-const HUB_CAREERS_RECT := Rect2(35.0, 700.0, 320.0, 58.0)
-const HUB_TRAVEL_RECT := Rect2(35.0, 404.0, 320.0, 58.0)
-const HUB_MARKET_RECT := Rect2(35.0, 478.0, 320.0, 58.0)
+const HUB_CAREERS_RECT := Rect2(35.0, 710.0, 320.0, 54.0)
+const HUB_TRAVEL_RECT := Rect2(35.0, 390.0, 320.0, 54.0)
+const HUB_TRADE_RECT := Rect2(35.0, 454.0, 320.0, 54.0)
+const HUB_MARKET_RECT := Rect2(35.0, 518.0, 320.0, 54.0)
 const BANK_ACCOUNT_TAB_RECT := Rect2(18.0, 126.0, 84.0, 42.0)
 const BANK_GREEN_TAB_RECT := Rect2(106.0, 126.0, 84.0, 42.0)
 const BANK_GREY_TAB_RECT := Rect2(194.0, 126.0, 84.0, 42.0)
@@ -97,8 +98,13 @@ const DOCKED_MARKET_TICK_SECONDS := 10.0
 const EMPIRE_MACRO_INTERVAL := 4
 const GREEN_INDEX_BASE := 100.0
 const GREY_INDEX_BASE := 100.0
-const HUB_CONTRACTS_RECT := Rect2(35.0, 552.0, 320.0, 58.0)
-const HUB_UPGRADES_RECT := Rect2(35.0, 626.0, 320.0, 58.0)
+const HUB_CONTRACTS_RECT := Rect2(35.0, 582.0, 320.0, 54.0)
+const HUB_UPGRADES_RECT := Rect2(35.0, 646.0, 320.0, 54.0)
+const TRADE_GREEN_TAB_RECT := Rect2(22.0, 140.0, 168.0, 48.0)
+const TRADE_GREY_TAB_RECT := Rect2(200.0, 140.0, 168.0, 48.0)
+const TRADE_PREV_RECT := Rect2(22.0, 668.0, 144.0, 50.0)
+const TRADE_NEXT_RECT := Rect2(224.0, 668.0, 144.0, 50.0)
+const TRADE_ROWS_PER_PAGE := 6
 const SUBMENU_BACK_RECT := Rect2(55.0, 742.0, 280.0, 56.0)
 const SYSTEM_MAP_RECT := Rect2(16.0, 106.0, 358.0, 466.0)
 const SYSTEM_ROUTE_INFO_RECT := Rect2(24.0, 582.0, 342.0, 156.0)
@@ -219,6 +225,8 @@ var bank_interest_cycles := 0
 var bank_last_interest := 0
 var bank_view := "account"
 var bank_market_page := 0
+var trade_view := "green"
+var trade_page := 0
 var docked_market_clock := 0.0
 var ship_fuel := FUEL_CAPACITY
 var research_jump_range := 0
@@ -243,6 +251,7 @@ var active_career_slot := 0
 var last_career_slot := 0
 var hub_open := false
 var market_open := false
+var trade_open := false
 var contracts_open := false
 var travel_open := false
 var travel_selected_planet := ""
@@ -577,6 +586,8 @@ func _reset_career_state() -> void:
     bank_last_interest = 0
     bank_view = "account"
     bank_market_page = 0
+    trade_view = "green"
+    trade_page = 0
     docked_market_clock = 0.0
     ship_fuel = FUEL_CAPACITY
     research_jump_range = 0
@@ -661,6 +672,7 @@ func _reset_career_state() -> void:
     research_open = false
     weapon_research_open = false
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     _clear_control_holds()
@@ -751,6 +763,7 @@ func _open_profile_menu() -> void:
     pending_overwrite_slot = 0
     hub_open = false
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     research_open = false
@@ -2333,6 +2346,7 @@ func _start_route(destination: String) -> bool:
     neutral_spawn_clock = _route_object_spawn_interval(false, false)
     hub_open = false
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     boss_active = false
@@ -2751,6 +2765,7 @@ func _arrive_at_destination() -> void:
     last_trip_summary = "ARRIVED %s  CASH +%d  BANK +%d" % [_planet_display_name(current_planet), flight_bonus + contract_reward, bank_interest]
     hub_open = true
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     game_over = false
@@ -2833,6 +2848,7 @@ func _fail_route(reason: String, ship_destroyed: bool = false) -> void:
         last_trip_summary = reason + " — CONTRACT LOST"
     hub_open = true
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     game_over = false
@@ -3125,9 +3141,10 @@ func _input(event: InputEvent) -> void:
 func _hub_button_rect(index: int) -> Rect2:
     match index:
         0: return HUB_TRAVEL_RECT
-        1: return HUB_MARKET_RECT
-        2: return HUB_CONTRACTS_RECT
-        3: return HUB_UPGRADES_RECT
+        1: return HUB_TRADE_RECT
+        2: return HUB_MARKET_RECT
+        3: return HUB_CONTRACTS_RECT
+        4: return HUB_UPGRADES_RECT
     return Rect2()
 
 func _career_slot_rect(index: int) -> Rect2:
@@ -3512,6 +3529,27 @@ func _political_risk_label(danger: int) -> String:
             return "SEVERE"
 
 
+func _trade_row_rect(index: int) -> Rect2:
+    return Rect2(22.0, 236.0 + float(index) * 69.0, 346.0, 64.0)
+
+func _trade_buy_rect(index: int) -> Rect2:
+    return Rect2(203.0, 243.0 + float(index) * 69.0, 76.0, 50.0)
+
+func _trade_sell_rect(index: int) -> Rect2:
+    return Rect2(287.0, 243.0 + float(index) * 69.0, 81.0, 50.0)
+
+func _trade_page_count() -> int:
+    var goods: Array[String] = legal_commodity_names if trade_view == "green" else grey_commodity_names
+    return maxi(1, int(ceil(float(goods.size()) / float(TRADE_ROWS_PER_PAGE))))
+
+func _trade_visible_goods() -> Array[String]:
+    var goods: Array[String] = legal_commodity_names if trade_view == "green" else grey_commodity_names
+    var visible: Array[String] = []
+    var start_index := trade_page * TRADE_ROWS_PER_PAGE
+    for i in range(start_index, mini(goods.size(), start_index + TRADE_ROWS_PER_PAGE)):
+        visible.append(String(goods[i]))
+    return visible
+
 func _market_buy_rect(index: int) -> Rect2:
     return Rect2(22.0, 204.0 + float(index) * 72.0, 165.0, 56.0)
 
@@ -3578,6 +3616,11 @@ func _handle_hub_tap(pos: Vector2) -> void:
         _reset_system_map_view()
         travel_open = true
         hub_open = false
+    elif HUB_TRADE_RECT.has_point(pos):
+        trade_view = "green"
+        trade_page = 0
+        trade_open = true
+        hub_open = false
     elif HUB_MARKET_RECT.has_point(pos):
         bank_view = "account"
         bank_market_page = 0
@@ -3633,6 +3676,44 @@ func _handle_travel_tap(pos: Vector2) -> void:
                 _start_route(next_hop)
         return
 
+
+func _handle_trade_tap(pos: Vector2) -> void:
+    if SUBMENU_BACK_RECT.has_point(pos):
+        trade_open = false
+        hub_open = true
+        queue_redraw()
+        return
+
+    if TRADE_GREEN_TAB_RECT.has_point(pos):
+        trade_view = "green"
+        trade_page = 0
+        queue_redraw()
+        return
+    if TRADE_GREY_TAB_RECT.has_point(pos):
+        trade_view = "grey"
+        trade_page = 0
+        queue_redraw()
+        return
+
+    if TRADE_PREV_RECT.has_point(pos):
+        trade_page = maxi(0, trade_page - 1)
+        queue_redraw()
+        return
+    if TRADE_NEXT_RECT.has_point(pos):
+        trade_page = mini(_trade_page_count() - 1, trade_page + 1)
+        queue_redraw()
+        return
+
+    var goods := _trade_visible_goods()
+    for i in goods.size():
+        if _trade_buy_rect(i).has_point(pos):
+            _buy_commodity(goods[i])
+            queue_redraw()
+            return
+        if _trade_sell_rect(i).has_point(pos):
+            _sell_commodity(goods[i])
+            queue_redraw()
+            return
 
 func _handle_market_tap(pos: Vector2) -> void:
     if SUBMENU_BACK_RECT.has_point(pos):
@@ -3720,6 +3801,9 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         return
     if travel_open:
         _handle_travel_tap(pos)
+        return
+    if trade_open:
+        _handle_trade_tap(pos)
         return
     if market_open:
         _handle_market_tap(pos)
@@ -4242,6 +4326,7 @@ func _return_to_menu() -> void:
     research_open = false
     weapon_research_open = false
     market_open = false
+    trade_open = false
     contracts_open = false
     travel_open = false
     hub_open = true
@@ -5531,6 +5616,9 @@ func _draw() -> void:
         _draw_travel_menu()
         return
 
+    if trade_open:
+        _draw_trade_menu()
+        return
     if market_open:
         _draw_market_menu()
         return
@@ -6273,11 +6361,11 @@ func _draw_title() -> void:
     _text_center(last_trip_summary, 370.0, 11, Color("8ea9b8"), 35.0, 355.0)
     _text("CAREER %d" % active_career_slot, Vector2(292, 38), 11, Color("8ea9b8"))
 
-    var labels := ["TRAVEL", "BANK", "CONTRACTS", "SHIP UPGRADES"]
-    for i in 4:
+    var labels := ["TRAVEL", "COMMODITY TRADE", "BANK", "CONTRACTS", "SHIP UPGRADES"]
+    for i in labels.size():
         var rect := _hub_button_rect(i)
         draw_rect(rect, Color(0.04, 0.12, 0.17, 0.91), true)
-        draw_rect(rect, Color("77f7ff") if i != 2 else Color("6bffb0"), false, 3.0)
+        draw_rect(rect, Color("6bffb0") if i == 1 or i == 3 else Color("77f7ff"), false, 3.0)
         _text_center(labels[i], rect.position.y + 38.0, 21, Color("f0fbff"), rect.position.x, rect.end.x)
 
     draw_rect(HUB_CAREERS_RECT, Color(0.07, 0.08, 0.16, 0.92), true)
@@ -6456,6 +6544,61 @@ func _draw_bank_tab(rect: Rect2, label: String, key: String) -> void:
     draw_rect(rect, Color(0.04, 0.18, 0.14, 0.96) if selected else Color(0.035, 0.07, 0.10, 0.92), true)
     draw_rect(rect, Color("6bffb0") if selected else Color("465f72"), false, 2.0)
     _text_center(label, rect.position.y + 27.0, 12, Color("f0fbff"), rect.position.x, rect.end.x)
+
+func _draw_trade_menu() -> void:
+    _draw_menu_art(ART_BG_MARKET, 0.72)
+    _draw_menu_panel(Rect2(18.0, 15.0, 354.0, 112.0), 0.84)
+    _draw_planet_art(current_planet, Rect2(310.0, 20.0, 54.0, 54.0), 0.96)
+    _text("COMMODITY TRADE", Vector2(28.0, 44.0), 23, Color("77f7ff"))
+    _text(_short_map_label(_planet_display_name(current_planet).to_upper(), 27), Vector2(28.0, 70.0), 13, Color("bdeef4"))
+    _text("CASH %d    CARGO %d/%d" % [research_credits, _cargo_used(), _cargo_capacity()], Vector2(28.0, 100.0), 14, Color("ffd166"))
+
+    for tab in ["green", "grey"]:
+        var rect := TRADE_GREEN_TAB_RECT if tab == "green" else TRADE_GREY_TAB_RECT
+        var selected := trade_view == tab
+        var border_color := Color("6bffb0") if tab == "green" else Color("ffb347")
+        draw_rect(rect, Color(0.035, 0.16, 0.12, 0.95) if selected else Color(0.035, 0.07, 0.10, 0.92), true)
+        draw_rect(rect, border_color if selected else Color("465f72"), false, 2.0)
+        _text_center("GREEN GOODS" if tab == "green" else "GREY GOODS", rect.position.y + 31.0, 15, Color("f0fbff"), rect.position.x, rect.end.x)
+
+    _text("LOCAL STOCK / LEGALITY", Vector2(29.0, 222.0), 11, Color("8ea9b8"))
+    _text("ONE UNIT PER TAP", Vector2(252.0, 222.0), 9, Color("8ea9b8"))
+    var goods := _trade_visible_goods()
+    for i in goods.size():
+        var commodity := goods[i]
+        var row := _trade_row_rect(i)
+        var buy_rect := _trade_buy_rect(i)
+        var sell_rect := _trade_sell_rect(i)
+        var market_data: Dictionary = markets[current_planet][commodity]
+        var stock := float(market_data.get("stock", 0.0))
+        var held := int(cargo.get(commodity, 0))
+        var buy_price := _market_buy_price(current_planet, commodity)
+        var sell_price := _market_sell_price(current_planet, commodity)
+        var buy_ready := stock >= 1.0 and research_credits >= buy_price and _cargo_used() < _cargo_capacity()
+        var sell_ready := held > 0
+        var legality := String(_planet_commodity_legality(current_planet, commodity).get("status", "LEGAL"))
+        _draw_menu_panel(row, 0.88, Color("6bffb0") if trade_view == "green" else Color("ffb347"))
+        _text(_short_map_label(commodity.to_upper(), 17), row.position + Vector2(8.0, 20.0), 12, Color("f0fbff"))
+        _text("STOCK %d  HELD %d" % [int(floor(stock)), held], row.position + Vector2(8.0, 39.0), 10, Color("bdeef4"))
+        _text(_commodity_legality_short(current_planet, commodity), row.position + Vector2(8.0, 55.0), 9, _commodity_legality_color(legality))
+
+        draw_rect(buy_rect, Color(0.04, 0.18, 0.14, 0.97) if buy_ready else Color(0.04, 0.06, 0.07, 0.94), true)
+        draw_rect(buy_rect, Color("6bffb0") if buy_ready else Color("46515c"), false, 1.5)
+        _text_center("BUY", buy_rect.position.y + 20.0, 12, Color("f0fbff") if buy_ready else Color("73808a"), buy_rect.position.x, buy_rect.end.x)
+        _text_center("%d CR" % buy_price, buy_rect.position.y + 38.0, 11, Color("ffd166") if buy_ready else Color("73808a"), buy_rect.position.x, buy_rect.end.x)
+
+        draw_rect(sell_rect, Color(0.17, 0.07, 0.11, 0.97) if sell_ready else Color(0.04, 0.06, 0.07, 0.94), true)
+        draw_rect(sell_rect, Color("ff8fa6") if sell_ready else Color("46515c"), false, 1.5)
+        _text_center("SELL", sell_rect.position.y + 20.0, 12, Color("f0fbff") if sell_ready else Color("73808a"), sell_rect.position.x, sell_rect.end.x)
+        _text_center("%d CR" % sell_price, sell_rect.position.y + 38.0, 11, Color("ffd166") if sell_ready else Color("73808a"), sell_rect.position.x, sell_rect.end.x)
+
+    for page_button in [TRADE_PREV_RECT, TRADE_NEXT_RECT]:
+        draw_rect(page_button, Color(0.04, 0.12, 0.17, 0.94), true)
+        draw_rect(page_button, Color("77f7ff"), false, 2.0)
+    _text_center("PREV", TRADE_PREV_RECT.position.y + 33.0, 16, Color("f0fbff"), TRADE_PREV_RECT.position.x, TRADE_PREV_RECT.end.x)
+    _text_center("NEXT", TRADE_NEXT_RECT.position.y + 33.0, 16, Color("f0fbff"), TRADE_NEXT_RECT.position.x, TRADE_NEXT_RECT.end.x)
+    _text_center("PAGE %d / %d" % [trade_page + 1, _trade_page_count()], 734.0, 11, Color("8ea9b8"), 22.0, 368.0)
+    _draw_submenu_back()
 
 func _draw_market_menu() -> void:
     _draw_menu_art(ART_BG_MARKET, 0.67)

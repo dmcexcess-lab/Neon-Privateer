@@ -276,7 +276,8 @@ func _initialize() -> void:
         "_queue_container_loot", "_handle_container_break", "_collect_cargo_pickup",
         "_route_political_segment_at_progress", "_direct_route_spec",
         "_route_political_percentages_for_spec", "_route_political_percentages", "_route_pirate_exposure",
-        "_market_price", "_simulate_economy", "_buy_commodity", "_sell_commodity", "_route_spec",
+        "_market_price", "_simulate_economy", "_buy_commodity", "_sell_commodity",
+        "_trade_visible_goods", "_trade_page_count", "_handle_trade_tap", "_draw_trade_menu", "_route_spec",
         "_jump_range", "_fuel_required_for_jump", "_refuel_cost", "_refuel_ship", "_jump_route_spec",
         "_planet_primary_faction", "_contract_issuer_name", "_contract_destination_profiles",
         "_best_legal_delivery_profile", "_best_smuggling_profile", "_best_passenger_profile", "_best_special_delivery_profile",
@@ -340,7 +341,7 @@ func _initialize() -> void:
     var viewport_rect := Rect2(0.0, 0.0, 390.0, 844.0)
     var primary_touch_rects: Array = [
         scene.PROFILE_CONTINUE_RECT, scene.PROFILE_NEW_RECT,
-        scene.HUB_TRAVEL_RECT, scene.HUB_MARKET_RECT, scene.HUB_CONTRACTS_RECT, scene.HUB_UPGRADES_RECT, scene.HUB_CAREERS_RECT,
+        scene.HUB_TRAVEL_RECT, scene.HUB_TRADE_RECT, scene.HUB_MARKET_RECT, scene.HUB_CONTRACTS_RECT, scene.HUB_UPGRADES_RECT, scene.HUB_CAREERS_RECT,
         scene.SUBMENU_BACK_RECT, scene.SYSTEM_MAP_BACK_RECT, scene.SYSTEM_FLY_RECT, scene.SYSTEM_REFUEL_RECT,
         scene.LEFT_CONTROL_RECT, scene.DASH_RECT, scene.RIGHT_CONTROL_RECT,
         scene.PAUSE_RESUME_RECT, scene.PAUSE_QUIT_RECT,
@@ -355,6 +356,31 @@ func _initialize() -> void:
         if control_rect.size.x < 44.0 or control_rect.size.y < 44.0:
             _fail("primary phone control is smaller than 44px touch target")
             return
+    for trade_rect in [scene.TRADE_GREEN_TAB_RECT, scene.TRADE_GREY_TAB_RECT, scene.TRADE_PREV_RECT, scene.TRADE_NEXT_RECT]:
+        if not viewport_rect.encloses(Rect2(trade_rect)) or Rect2(trade_rect).size.y < 44.0:
+            _fail("physical trade navigation has invalid phone hitbox")
+            return
+    if scene.TRADE_ROWS_PER_PAGE != 6 or scene._trade_page_count() != 2:
+        _fail("physical trade pagination did not expose two six-row pages")
+        return
+    for trade_index in scene.TRADE_ROWS_PER_PAGE:
+        for trade_rect in [scene._trade_row_rect(trade_index), scene._trade_buy_rect(trade_index), scene._trade_sell_rect(trade_index)]:
+            if not viewport_rect.encloses(Rect2(trade_rect)):
+                _fail("physical trade goods row extends outside phone viewport")
+                return
+        if scene._trade_buy_rect(trade_index).size.y < 44.0 or scene._trade_sell_rect(trade_index).size.x < 44.0:
+            _fail("physical trade action is below 44px hit target")
+            return
+    if scene._trade_row_rect(scene.TRADE_ROWS_PER_PAGE - 1).end.y >= scene.TRADE_PREV_RECT.position.y or scene.TRADE_NEXT_RECT.end.y >= scene.SUBMENU_BACK_RECT.position.y:
+        _fail("physical trade goods overlap paging or BACK controls")
+        return
+    for hub_index in 4:
+        if scene._hub_button_rect(hub_index).end.y >= scene._hub_button_rect(hub_index + 1).position.y:
+            _fail("trade hub button overlaps neighboring navigation")
+            return
+    if scene.HUB_UPGRADES_RECT.end.y >= scene.HUB_CAREERS_RECT.position.y:
+        _fail("trade hub overlaps CAREERS button")
+        return
     for market_index in scene.BANK_MARKET_ROWS_PER_PAGE:
         if not viewport_rect.encloses(scene._market_buy_rect(market_index)) or not viewport_rect.encloses(scene._market_sell_rect(market_index)):
             _fail("bank market row extends outside phone viewport")
@@ -2310,6 +2336,75 @@ func _initialize() -> void:
     if not scene._sell_commodity("Grain") or int(scene.cargo.get("Grain", 0)) != 0:
         _fail("commodity sell failed")
         return
+
+    # Player-facing docked trading must reach every physical good. The Bank
+    # remains separate and must not intercept commodity buy/sell actions.
+    scene.hub_open = true
+    scene._handle_hub_tap(scene.HUB_TRADE_RECT.get_center())
+    if not scene.trade_open or scene.hub_open or scene.market_open or scene.trade_page != 0:
+        _fail("COMMODITY TRADE hub button did not open physical trading")
+        return
+    var displayed_goods: Dictionary = {}
+    for tab in ["green", "grey"]:
+        scene._handle_trade_tap(scene.TRADE_GREEN_TAB_RECT.get_center() if tab == "green" else scene.TRADE_GREY_TAB_RECT.get_center())
+        for page_index in scene._trade_page_count():
+            if scene.trade_page != page_index:
+                _fail("commodity trade page selection did not advance")
+                return
+            for item_name in scene._trade_visible_goods():
+                if displayed_goods.has(item_name):
+                    _fail("physical trade menu displays a duplicate good")
+                    return
+                displayed_goods[item_name] = true
+            if page_index + 1 < scene._trade_page_count():
+                scene._handle_trade_tap(scene.TRADE_NEXT_RECT.get_center())
+        scene._handle_trade_tap(scene.TRADE_NEXT_RECT.get_center())
+        if scene.trade_page != scene._trade_page_count() - 1:
+            _fail("commodity NEXT control advanced past last page")
+            return
+        scene._handle_trade_tap(scene.TRADE_PREV_RECT.get_center())
+        if scene.trade_page != 0:
+            _fail("commodity PREV control did not return to first page")
+            return
+    if displayed_goods.size() != 24:
+        _fail("physical trade screen did not display all 24 commodities")
+        return
+    scene._handle_trade_tap(scene.TRADE_GREEN_TAB_RECT.get_center())
+    var ui_cash_before: int = scene.research_credits
+    var ui_stock_before: float = float(scene.markets[lush]["Grain"].stock)
+    scene._handle_trade_tap(scene._trade_buy_rect(0).get_center())
+    if int(scene.cargo.get("Grain", 0)) != 1 or scene.research_credits != ui_cash_before - scene._market_buy_price(lush, "Grain") or float(scene.markets[lush]["Grain"].stock) >= ui_stock_before:
+        _fail("docked BUY tap did not execute physical commodity purchase")
+        return
+    scene._handle_trade_tap(scene._trade_sell_rect(0).get_center())
+    if int(scene.cargo.get("Grain", 0)) != 0 or float(scene.markets[lush]["Grain"].stock) != ui_stock_before:
+        _fail("docked SELL tap did not restore stock/cargo")
+        return
+    var cash_before_block: int = scene.research_credits
+    scene.research_credits = 0
+    scene._handle_trade_tap(scene._trade_buy_rect(0).get_center())
+    if int(scene.cargo.get("Grain", 0)) != 0 or float(scene.markets[lush]["Grain"].stock) != ui_stock_before:
+        _fail("commodity UI allowed purchase with insufficient cash")
+        return
+    scene.research_credits = cash_before_block
+    var original_cargo: Dictionary = scene.cargo.duplicate(true)
+    for item_name in scene.commodity_names:
+        scene.cargo[item_name] = 0
+    scene.cargo["Grain"] = scene._cargo_capacity()
+    scene._handle_trade_tap(scene._trade_buy_rect(0).get_center())
+    if int(scene.cargo.get("Grain", 0)) != scene._cargo_capacity() or scene.research_credits != cash_before_block:
+        _fail("commodity UI allowed purchase with full cargo hold")
+        return
+    scene.cargo = original_cargo
+    scene._handle_trade_tap(scene.SUBMENU_BACK_RECT.get_center())
+    if scene.trade_open or not scene.hub_open:
+        _fail("physical trade BACK did not return to dock")
+        return
+    scene._handle_hub_tap(scene.HUB_MARKET_RECT.get_center())
+    if not scene.market_open or scene.trade_open or scene.bank_view != "account":
+        _fail("Bank did not remain separate from physical commodity trading")
+        return
+    scene._handle_market_tap(scene.SUBMENU_BACK_RECT.get_center())
 
     scene.current_planet = industrial
     scene.research_credits = 10000
