@@ -1070,7 +1070,7 @@ static func ship_jump_route(world: Dictionary, origin: String, destination: Stri
         "virtual": true
     }
 
-static func neighbors(world: Dictionary, planet_id: String): Array[String]:
+static func neighbors(world: Dictionary, planet_id: String) -> Array[String]:
     var result: Array[String] = []
     for route in world.get("routes", []):
         if String(route.a) == planet_id:
