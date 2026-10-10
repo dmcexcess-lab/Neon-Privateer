@@ -2891,8 +2891,8 @@ func _initialize() -> void:
     if not scene._start_route(neighbor):
         _fail("could not launch generated jump-range-valid direct lane")
         return
-    if scene.ship_fuel != fuel_before_launch - scene._fuel_required_for_jump(int(launch_edge.distance)):
-        _fail("launch did not consume fuel equal to jump distance")
+    if scene.ship_fuel != fuel_before_launch - scene._fuel_required_for_jump(scene._direct_jump_distance(scene.current_planet, neighbor)):
+        _fail("launch did not consume fuel equal to direct geometric jump distance")
         return
     if not scene.playing or not scene.route_active or scene.destination_planet != neighbor:
         _fail("generated direct lane did not enter flight mode")
