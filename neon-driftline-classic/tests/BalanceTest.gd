@@ -33,7 +33,7 @@ func _move_bot(scene, policy: String) -> void:
                 if orb_dy < best_orb_dy:
                     best_orb_dy = orb_dy
                     desired_x = float(o.x)
-        if policy == "score":
+        if policy == "score" or policy == "score_2_4":
             for o in scene.objects:
                 if o.type == "hazard" and float(o.y) > scene.player_y - 390.0 and float(o.y) < scene.player_y - 105.0:
                     var approach_dy: float = scene.player_y - float(o.y)
@@ -54,6 +54,10 @@ func _move_bot(scene, policy: String) -> void:
     if imminent_hazard_x >= 0.0:
         if scene.dash_cooldown <= 0.0 and scene.dash_timer <= 0.0 and imminent_hazard_dist < -35.0:
             scene._dash()
+            # A/B control: same bot and seed, restoring the original 2.4s
+            # recharge after a dash. Only for telemetry, never gameplay.
+            if policy == "avoid_2_4" or policy == "score_2_4":
+                scene.dash_cooldown = 2.4
         elif absf(scene.player_x - imminent_hazard_x) < 43.0 and not station_close:
             desired_x = clampf(imminent_hazard_x + (85.0 if scene.player_x >= imminent_hazard_x else -85.0), scene.LEFT, scene.RIGHT)
 
@@ -78,11 +82,12 @@ func _initialize() -> void:
     await process_frame
     scene.set_process(false)
     var data: Dictionary = {}
-    for scenario in ["passive", "avoid", "score", "upgraded"]:
+    for scenario in ["passive", "avoid", "avoid_2_4", "score", "score_2_4", "upgraded"]:
         var scores: Array[int] = []
         var best_levels: Array[int] = []
         var orbs: Array[int] = []
         var total_successful_levels := 0
+        var endings: Dictionary = {}
         for trial in SEEDS:
             scene.research_ship_speed = 0
             scene.research_dash = 0
@@ -113,6 +118,10 @@ func _initialize() -> void:
                     scene._start_next_level()
                 _move_bot(scene, "score" if scenario == "upgraded" else scenario)
                 scene._process(DT)
+            var ending: String = String(scene.result_reason) if scene.game_over else "LEVEL CAP"
+            if ending.is_empty():
+                ending = "HP DEPLETED" if scene.game_over else "LEVEL CAP"
+            endings[ending] = int(endings.get(ending, 0)) + 1
             scores.append(scene.score)
             best_levels.append(maxi(scene.level, last_shop_level))
             orbs.append(scene.energy)
@@ -132,6 +141,7 @@ func _initialize() -> void:
             "mean_level": snappedf(float(sum_level) / float(scores.size()), 0.1),
             "mean_orbs": snappedf(float(sum_orbs) / float(scores.size()), 0.1),
             "cleared_levels": total_successful_levels,
+            "endings": endings,
             "runs_for_5000_at_mean": int(ceil(5000.0 / float(maxi(1, avg)))),
             "all_scores": scores
         }
