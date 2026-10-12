@@ -1637,5 +1637,76 @@ func _initialize() -> void:
         _fail("station barrier contact was not an instant kill")
         return
 
+    # Dash cooldown is an independent sixth upgrade, on both menus.
+    # Keep existing save files compatible: old saves default this track to 0.
+    scene.research_dash_cooldown = 0
+    scene.run_dash_cooldown = 0
+    scene.research_dash = 0
+    scene.run_dash = 0
+    if absf(scene._dash_cooldown_seconds() - 6.0) > 0.001:
+        _fail("fresh dash cooldown is not six seconds")
+        return
+    if scene._research_cost("cooldown") != 12000 or scene._run_upgrade_base_cost("cooldown") != 300 or scene._research_max("cooldown") != 10:
+        _fail("cooldown upgrade pricing or level cap is wrong")
+        return
+    var permanent_rows: Array = [scene.RESEARCH_SHIP_RECT, scene.RESEARCH_DASH_RECT, scene.RESEARCH_COOLDOWN_RECT, scene.RESEARCH_DAMAGE_RECT, scene.RESEARCH_HITS_RECT, scene.RESEARCH_SHIELD_RECT]
+    var temporary_rows: Array = [scene.SHOP_RUN_SHIP_RECT, scene.SHOP_RUN_DASH_RECT, scene.SHOP_RUN_COOLDOWN_RECT, scene.SHOP_RUN_DAMAGE_RECT, scene.SHOP_RUN_HITS_RECT, scene.SHOP_RUN_SHIELD_RECT]
+    for i in permanent_rows.size():
+        var perm_rect: Rect2 = permanent_rows[i]
+        var run_rect: Rect2 = temporary_rows[i]
+        if perm_rect.size.y < 44.0 or run_rect.size.y < 44.0 or perm_rect.end.x > scene.W or run_rect.end.x > scene.W:
+            _fail("cooldown menu rows exceed phone hitbox constraints")
+            return
+        if i > 0 and (Rect2(permanent_rows[i - 1]).end.y >= perm_rect.position.y or Rect2(temporary_rows[i - 1]).end.y >= run_rect.position.y):
+            _fail("six cooldown menu rows overlap")
+            return
+    if Rect2(permanent_rows[-1]).end.y >= scene.RESEARCH_WEAPONS_RECT.position.y or scene.RESEARCH_WEAPONS_RECT.end.y >= scene.RESEARCH_BACK_RECT.position.y or Rect2(temporary_rows[-1]).end.y >= scene.SHOP_PAGE_TOGGLE_RECT.position.y:
+        _fail("cooldown menu row overlaps navigation buttons")
+        return
+    scene.research_credits = 20000
+    scene.playing = false
+    scene.game_over = false
+    scene.shop_open = false
+    scene.research_open = true
+    scene._handle_tap(scene.RESEARCH_COOLDOWN_RECT.get_center())
+    if scene.research_dash_cooldown != 1 or scene.research_credits != 8000 or absf(scene._dash_cooldown_seconds() - 5.64) > 0.001:
+        _fail("research cooldown touch purchase or 6 percent reduction failed")
+        return
+    scene._save_meta()
+    scene.research_dash_cooldown = 0
+    scene._load_meta()
+    if scene.research_dash_cooldown != 1:
+        _fail("permanent cooldown upgrade did not survive metadata reload")
+        return
+    scene._start_game()
+    scene._dash()
+    if absf(scene.dash_cooldown - 5.64) > 0.001:
+        _fail("dash does not use saved cooldown upgrade")
+        return
+    scene._open_shop()
+    scene.score = 1000
+    scene._handle_tap(scene.SHOP_RUN_COOLDOWN_RECT.get_center())
+    if scene.run_dash_cooldown != 1 or scene.score != 700 or absf(scene._dash_cooldown_seconds() - 6.0 * 0.94 * 0.94) > 0.001:
+        _fail("between-level cooldown touch purchase did not stack")
+        return
+    scene._start_next_level()
+    if scene.run_dash_cooldown != 1:
+        _fail("temporary cooldown upgrade did not survive next level")
+        return
+    scene._pause_run()
+    scene.run_dash_cooldown = 0
+    if not scene._load_run_snapshot() or scene.run_dash_cooldown != 1:
+        _fail("temporary cooldown upgrade did not survive run reload")
+        return
+    scene._start_game()
+    if scene.run_dash_cooldown != 0 or scene.research_dash_cooldown != 1:
+        _fail("new run did not reset only temporary cooldown research")
+        return
+    scene.research_dash_cooldown = 10
+    scene.run_dash_cooldown = 10
+    if absf(scene._dash_cooldown_seconds() - 6.0 * pow(0.94, 20)) > 0.001:
+        _fail("combined permanent/run cooldown levels do not scale consistently")
+        return
+
     print("NEON DRIFTLINE SMOKE OK")
     quit(0)

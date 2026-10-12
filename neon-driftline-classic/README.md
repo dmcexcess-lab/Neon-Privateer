@@ -11,6 +11,7 @@ A fresh run now begins deliberately weak:
 - **No shield**
 - **Slow ship:** base level/world scroll multiplier is 0.72×
 - **Short dash:** 160 px base distance at 700 px/s
+- **Long dash cooldown:** 6.0 seconds before upgrades
 
 The first level remains the easiest: sparse lazy circles, one short station split, and no advanced enemies.
 
@@ -37,6 +38,16 @@ Each level adds:
 - dash-kill and dash-near-miss score scale proportionally with actual Dash Speed
 
 Dash has 10 research levels. The baseline dash is intentionally short and slow; research extends its reach much more aggressively than its raw speed.
+
+### Dash Cooldown
+
+Dash cooldown is a separate, sixth upgrade track available in both permanent Research and the between-level **RUN UPGRADES** shop. Fresh ships recharge dash in **6.0 seconds**, rather than the previous 2.4 seconds.
+
+- Each level shortens the remaining cooldown by **6%** (multiplicative), without affecting dash travel distance, dash speed, or scoring.
+- Permanent cooldown research costs **12,000 Research** for level 1, multiplied by **1.80×** for subsequent levels; maximum 10 permanent levels.
+- Temporary cooldown upgrades cost **300 score** for the first purchase per run, growing **1.55×** per level; maximum 10 run levels.
+- Permanent and temporary levels stack: 10 permanent levels yield approximately **3.23 seconds**; 10 permanent plus 10 temporary levels yield approximately **1.74 seconds**.
+- Cooldown research autosaves independently from other dash research. Run upgrades persist during the current run and reload, but reset when a new run starts. Existing saves load with zero cooldown upgrades.
 
 ### Damage
 
@@ -244,6 +255,7 @@ Permanent research has been pushed further into long-term progression:
 - **Hits:** starts at **5,000** research and remains the cheapest first permanent upgrade.
 - **Ship Speed:** starts at **15,000**.
 - **Dash:** starts at **18,000**.
+- **Dash Cooldown:** starts at **12,000**.
 - **Damage:** starts at **24,000**.
 - **Shield:** starts at **30,000** and scales steeply.
 - Permanent starting-weapon unlocks cost **50×** their normal one-level between-level store rental price.
@@ -257,6 +269,7 @@ The level-clear store now has two pages:
 1. **RUN UPGRADES**
    - Ship Speed (scroll speed, left/right steering speed, near-miss bonus)
    - Dash
+   - Dash Cooldown
    - Damage
    - Max Hits
    - Shield

@@ -16,6 +16,7 @@ const SHOP_SEEKER_COST := 10000
 const SHOP_LASER_COST := 2500
 const SHOP_RUN_SHIP_COST := 250
 const SHOP_RUN_DASH_COST := 350
+const SHOP_RUN_COOLDOWN_COST := 300
 const SHOP_RUN_DAMAGE_COST := 500
 const SHOP_RUN_HITS_COST := 650
 const SHOP_RUN_SHIELD_COST := 900
@@ -36,21 +37,23 @@ const SHOP_SEEKER_RECT := Rect2(205.0, 364.0, 150.0, 56.0)
 const SHOP_LASER_RECT := Rect2(35.0, 436.0, 320.0, 56.0)
 const SHOP_PAGE_TOGGLE_RECT := Rect2(35.0, 550.0, 320.0, 48.0)
 const SHOP_CONTINUE_RECT := Rect2(35.0, 615.0, 320.0, 62.0)
-const SHOP_RUN_SHIP_RECT := Rect2(35.0, 220.0, 320.0, 54.0)
-const SHOP_RUN_DASH_RECT := Rect2(35.0, 286.0, 320.0, 54.0)
-const SHOP_RUN_DAMAGE_RECT := Rect2(35.0, 352.0, 320.0, 54.0)
-const SHOP_RUN_HITS_RECT := Rect2(35.0, 418.0, 320.0, 54.0)
-const SHOP_RUN_SHIELD_RECT := Rect2(35.0, 484.0, 320.0, 54.0)
+const SHOP_RUN_SHIP_RECT := Rect2(35.0, 216.0, 320.0, 48.0)
+const SHOP_RUN_DASH_RECT := Rect2(35.0, 272.0, 320.0, 48.0)
+const SHOP_RUN_COOLDOWN_RECT := Rect2(35.0, 328.0, 320.0, 48.0)
+const SHOP_RUN_DAMAGE_RECT := Rect2(35.0, 384.0, 320.0, 48.0)
+const SHOP_RUN_HITS_RECT := Rect2(35.0, 440.0, 320.0, 48.0)
+const SHOP_RUN_SHIELD_RECT := Rect2(35.0, 496.0, 320.0, 48.0)
 const MAIN_LOADOUT_RECT := Rect2(54.0, 486.0, 282.0, 54.0)
 const MAIN_START_RECT := Rect2(54.0, 560.0, 282.0, 64.0)
 const MAIN_RESEARCH_RECT := Rect2(54.0, 640.0, 282.0, 64.0)
-const RESEARCH_SHIP_RECT := Rect2(35.0, 188.0, 320.0, 64.0)
-const RESEARCH_DASH_RECT := Rect2(35.0, 270.0, 320.0, 64.0)
-const RESEARCH_DAMAGE_RECT := Rect2(35.0, 352.0, 320.0, 64.0)
-const RESEARCH_HITS_RECT := Rect2(35.0, 434.0, 320.0, 64.0)
-const RESEARCH_SHIELD_RECT := Rect2(35.0, 516.0, 320.0, 64.0)
-const RESEARCH_WEAPONS_RECT := Rect2(35.0, 598.0, 320.0, 58.0)
-const RESEARCH_BACK_RECT := Rect2(54.0, 684.0, 282.0, 58.0)
+const RESEARCH_SHIP_RECT := Rect2(35.0, 146.0, 320.0, 56.0)
+const RESEARCH_DASH_RECT := Rect2(35.0, 210.0, 320.0, 56.0)
+const RESEARCH_COOLDOWN_RECT := Rect2(35.0, 274.0, 320.0, 56.0)
+const RESEARCH_DAMAGE_RECT := Rect2(35.0, 338.0, 320.0, 56.0)
+const RESEARCH_HITS_RECT := Rect2(35.0, 402.0, 320.0, 56.0)
+const RESEARCH_SHIELD_RECT := Rect2(35.0, 466.0, 320.0, 56.0)
+const RESEARCH_WEAPONS_RECT := Rect2(35.0, 550.0, 320.0, 58.0)
+const RESEARCH_BACK_RECT := Rect2(54.0, 636.0, 282.0, 58.0)
 const WEAPON_NONE_RECT := Rect2(35.0, 164.0, 320.0, 54.0)
 const WEAPON_SINGLE_RECT := Rect2(35.0, 232.0, 320.0, 54.0)
 const WEAPON_DUAL_RECT := Rect2(35.0, 300.0, 320.0, 54.0)
@@ -63,7 +66,8 @@ const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
 const META_SAVE_PATH := "user://neon_meta.cfg"
 const RUN_SAVE_PATH := "user://neon_run.cfg"
-const DASH_COOLDOWN := 2.4
+const DASH_COOLDOWN := 6.0
+const DASH_COOLDOWN_REDUCTION := 0.94
 const DASH_DURATION := 0.30
 const DASH_FORWARD_SPEED := 700.0
 const DASH_FORWARD_DISTANCE := 160.0
@@ -119,11 +123,13 @@ var score := 0
 var research_credits := 0
 var research_ship_speed := 0
 var research_dash := 0
+var research_dash_cooldown := 0
 var research_damage := 0
 var research_hits := 0
 var research_shield := 0
 var run_ship_speed := 0
 var run_dash := 0
+var run_dash_cooldown := 0
 var run_damage := 0
 var run_hits := 0
 var run_shield := 0
@@ -595,7 +601,7 @@ func _dash() -> void:
     if not playing or dash_cooldown > 0.0 or dash_timer > 0.0:
         return
     dash_timer = DASH_DURATION
-    dash_cooldown = DASH_COOLDOWN
+    dash_cooldown = _dash_cooldown_seconds()
     dash_score_timer = DASH_SCORE_DURATION
     invuln = maxf(invuln, 0.24)
     shake = maxf(shake, 3.5)
@@ -620,6 +626,7 @@ func _start_game() -> void:
     best_combo = 1
     run_ship_speed = 0
     run_dash = 0
+    run_dash_cooldown = 0
     run_damage = 0
     run_hits = 0
     run_shield = 0
@@ -691,6 +698,10 @@ func _dash_distance() -> float:
 
 func _dash_speed() -> float:
     return DASH_FORWARD_SPEED + float(research_dash + run_dash) * 40.0
+
+func _dash_cooldown_seconds() -> float:
+    # The ten permanent and ten run upgrades compound; no wasted levels.
+    return DASH_COOLDOWN * pow(DASH_COOLDOWN_REDUCTION, research_dash_cooldown + run_dash_cooldown)
 
 func _damage_multiplier() -> float:
     return 1.0 + float(research_damage + run_damage) * 0.03
@@ -816,6 +827,8 @@ func _run_upgrade_level(track: String) -> int:
             return run_ship_speed
         "dash":
             return run_dash
+        "cooldown":
+            return run_dash_cooldown
         "damage":
             return run_damage
         "hits":
@@ -833,6 +846,8 @@ func _run_upgrade_base_cost(track: String) -> int:
             return SHOP_RUN_SHIP_COST
         "dash":
             return SHOP_RUN_DASH_COST
+        "cooldown":
+            return SHOP_RUN_COOLDOWN_COST
         "damage":
             return SHOP_RUN_DAMAGE_COST
         "hits":
@@ -867,6 +882,8 @@ func _buy_run_upgrade(track: String) -> bool:
             run_ship_speed += 1
         "dash":
             run_dash += 1
+        "cooldown":
+            run_dash_cooldown += 1
         "damage":
             run_damage += 1
         "hits":
@@ -943,6 +960,8 @@ func _handle_shop_tap(pos: Vector2) -> void:
             _buy_run_upgrade("ship")
         elif SHOP_RUN_DASH_RECT.has_point(pos):
             _buy_run_upgrade("dash")
+        elif SHOP_RUN_COOLDOWN_RECT.has_point(pos):
+            _buy_run_upgrade("cooldown")
         elif SHOP_RUN_DAMAGE_RECT.has_point(pos):
             _buy_run_upgrade("damage")
         elif SHOP_RUN_HITS_RECT.has_point(pos):
@@ -984,6 +1003,8 @@ func _research_level(track: String) -> int:
             return research_ship_speed
         "dash":
             return research_dash
+        "cooldown":
+            return research_dash_cooldown
         "damage":
             return research_damage
         "hits":
@@ -997,7 +1018,7 @@ func _research_max(track: String) -> int:
         return 5
     if track == "hits":
         return 5
-    if track == "dash":
+    if track == "dash" or track == "cooldown":
         return 10
     return 20
 
@@ -1008,6 +1029,8 @@ func _research_cost(track: String) -> int:
             return int(round(15000.0 * pow(1.85, lvl)))
         "dash":
             return int(round(18000.0 * pow(1.90, lvl)))
+        "cooldown":
+            return int(round(12000.0 * pow(1.80, lvl)))
         "damage":
             return int(round(24000.0 * pow(1.90, lvl)))
         "hits":
@@ -1029,6 +1052,8 @@ func _buy_research(track: String) -> bool:
             research_ship_speed += 1
         "dash":
             research_dash += 1
+        "cooldown":
+            research_dash_cooldown += 1
         "damage":
             research_damage += 1
         "hits":
@@ -1153,6 +1178,8 @@ func _handle_research_tap(pos: Vector2) -> void:
         _buy_research("ship")
     elif RESEARCH_DASH_RECT.has_point(pos):
         _buy_research("dash")
+    elif RESEARCH_COOLDOWN_RECT.has_point(pos):
+        _buy_research("cooldown")
     elif RESEARCH_DAMAGE_RECT.has_point(pos):
         _buy_research("damage")
     elif RESEARCH_HITS_RECT.has_point(pos):
@@ -1230,6 +1257,7 @@ func _save_meta() -> void:
     cfg.set_value("meta", "credits", research_credits)
     cfg.set_value("meta", "ship_speed", research_ship_speed)
     cfg.set_value("meta", "dash", research_dash)
+    cfg.set_value("meta", "dash_cooldown", research_dash_cooldown)
     cfg.set_value("meta", "damage", research_damage)
     cfg.set_value("meta", "hits", research_hits)
     cfg.set_value("meta", "shield", research_shield)
@@ -1248,6 +1276,7 @@ func _load_meta() -> void:
     research_credits = int(cfg.get_value("meta", "credits", 0))
     research_ship_speed = int(cfg.get_value("meta", "ship_speed", 0))
     research_dash = int(cfg.get_value("meta", "dash", 0))
+    research_dash_cooldown = clampi(int(cfg.get_value("meta", "dash_cooldown", 0)), 0, _research_max("cooldown"))
     research_damage = int(cfg.get_value("meta", "damage", 0))
     research_hits = int(cfg.get_value("meta", "hits", 0))
     research_shield = int(cfg.get_value("meta", "shield", 0))
@@ -1270,6 +1299,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "shop_page", shop_page)
     cfg.set_value("run", "run_ship_speed", run_ship_speed)
     cfg.set_value("run", "run_dash", run_dash)
+    cfg.set_value("run", "run_dash_cooldown", run_dash_cooldown)
     cfg.set_value("run", "run_damage", run_damage)
     cfg.set_value("run", "run_hits", run_hits)
     cfg.set_value("run", "run_shield", run_shield)
@@ -1323,6 +1353,7 @@ func _load_run_snapshot() -> bool:
     shop_page = int(cfg.get_value("run", "shop_page", 0))
     run_ship_speed = int(cfg.get_value("run", "run_ship_speed", 0))
     run_dash = int(cfg.get_value("run", "run_dash", 0))
+    run_dash_cooldown = clampi(int(cfg.get_value("run", "run_dash_cooldown", 0)), 0, _run_upgrade_max("cooldown"))
     run_damage = int(cfg.get_value("run", "run_damage", 0))
     run_hits = int(cfg.get_value("run", "run_hits", 0))
     run_shield = int(cfg.get_value("run", "run_shield", 0))
@@ -2807,6 +2838,7 @@ func _draw_research() -> void:
     _text_center("R %07d" % research_credits, 114.0, 18, Color("ffd166"), 54.0, 336.0)
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
+    _draw_research_button(RESEARCH_COOLDOWN_RECT, "cooldown", "COOLDOWN", "-6% / LVL  %.1fs NOW" % _dash_cooldown_seconds())
     _draw_research_button(RESEARCH_DAMAGE_RECT, "damage", "DAMAGE", "+3%")
     _draw_research_button(RESEARCH_HITS_RECT, "hits", "HITS", "+1")
     _draw_research_button(RESEARCH_SHIELD_RECT, "shield", "SHIELD", "+1")
@@ -2900,6 +2932,7 @@ func _draw_shop() -> void:
         _text_center("UPGRADES", 203.0, 15, Color("d56cff"), 54.0, 336.0)
         _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
         _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
+        _draw_run_upgrade_button(SHOP_RUN_COOLDOWN_RECT, "cooldown", "COOLDOWN", "-6% / LVL  %.1fs NOW" % _dash_cooldown_seconds())
         _draw_run_upgrade_button(SHOP_RUN_DAMAGE_RECT, "damage", "DAMAGE", "+3%")
         _draw_run_upgrade_button(SHOP_RUN_HITS_RECT, "hits", "HITS", "+1 + HEAL")
         _draw_run_upgrade_button(SHOP_RUN_SHIELD_RECT, "shield", "SHIELD", "+1")
