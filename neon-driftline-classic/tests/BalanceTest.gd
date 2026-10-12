@@ -104,6 +104,10 @@ func _initialize() -> void:
                 scene.starting_weapon = "single"
             scene._start_game()
             scene.rng.seed = 11731 + trial * 919
+            # Audio clocks are not reset by _start_game; normalize them to
+            # keep every matched seed identical across scenario order.
+            scene.ambient_audio_clock = 2.0
+            scene.laser_sfx_clock = 0.0
             scene.neutral_spawn_clock = 1.65
             scene.pickup_clock = 1.4
             var last_shop_level := 0
