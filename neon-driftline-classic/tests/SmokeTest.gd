@@ -1180,6 +1180,21 @@ func _initialize() -> void:
         _fail("one shield charge should absorb the entire 2-hit missile")
         return
 
+    # Projectiles intercepted during hit grace must not spend a shield.
+    scene.enemy_shots.clear()
+    scene.hp = 4
+    scene.invuln = 0.3
+    scene.shield_charges = 2
+    scene.enemy_shots.append({
+        "type": "missile", "x": scene.player_x, "y": scene.player_y,
+        "vx": 0.0, "vy": 0.0, "r": scene.ENEMY_MISSILE_RADIUS,
+        "damage": 2, "homing": true
+    })
+    scene._move_enemy_shots(0.0)
+    if scene.hp != 4 or scene.shield_charges != 2 or not scene.enemy_shots.is_empty():
+        _fail("hit grace consumed a shield or left the intercepted projectile active")
+        return
+
     # Physical collisions hurt only the player; the enemy survives, and hit grace prevents rapid stacking.
     scene.objects.clear()
     scene.shots.clear()
@@ -1207,6 +1222,16 @@ func _initialize() -> void:
     scene._move_objects(0.0)
     if scene.hp != 2:
         _fail("collision did not hurt again after invulnerability expired")
+        return
+
+    # A body overlap cannot be scored as a near miss, even during hit grace.
+    scene.last_near_ids.clear()
+    scene.objects[0].y = scene.player_y + 20.0
+    scene.invuln = 0.5
+    scene.score = 0
+    scene._move_objects(0.0)
+    if scene.score != 0 or not scene.last_near_ids.has(990004):
+        _fail("overlapping enemy incorrectly awarded a near miss during invulnerability")
         return
 
     # During the active forward dash, body contact becomes a dash kill and causes no hit.
@@ -1295,8 +1320,10 @@ func _initialize() -> void:
         _fail("field repair did not restore exactly one hit")
         return
 
-    # Per-enemy scoring remains independent when multiple hazards qualify in the same update.
+    # Per-enemy scoring remains independent for two genuine close passes:
+    # outside collision distance (r + 14) but within near distance (r + 40).
     scene.objects.clear()
+    scene.last_near_ids.clear()
     scene.score = 0
     scene.dash_score_timer = 0.0
     scene.player_x = 195.0
@@ -1305,13 +1332,13 @@ func _initialize() -> void:
         scene.objects.append({
             "id": enemy_id, "type": "hazard", "kind": 0,
             "hp": 3.0, "max_hp": 3.0, "hard": false,
-            "x": scene.player_x, "y": scene.player_y + 20.0, "r": 18.0,
+            "x": scene.player_x + 44.0, "y": scene.player_y + 20.0, "r": 18.0,
             "speed": 0.0, "drift": 0.0, "shoot_clock": 999.0,
             "lane_speed_mult": 1.0, "lane_min": scene.LEFT, "lane_max": scene.RIGHT
         })
     scene._move_objects(0.0)
-    if scene.score != 20:
-        _fail("multiple simultaneous asteroid near misses did not each score 10")
+    if scene.score != 20 or scene.hp != 2:
+        _fail("two noncolliding asteroid near misses did not each score 10 safely")
         return
 
     # Economy should be on the compact score scale.
@@ -1562,6 +1589,43 @@ func _initialize() -> void:
     if scene._dash_speed() >= scene.DASH_FORWARD_SPEED + 150.0:
         _fail("dash research increased speed too aggressively")
         return
+
+    # Fatal damage ends the simulation frame immediately. A pickup queued
+    # after the lethal impact must not be collected after the score is banked.
+    scene._start_game()
+    scene.score = 123
+    scene.hp = 1
+    scene.objects.clear()
+    scene.objects.append({
+        "id": 999901, "type": "hazard", "kind": 0,
+        "hp": 3.0, "max_hp": 3.0, "hard": false,
+        "x": scene.player_x, "y": scene.player_y, "r": 18.0,
+        "speed": 0.0, "drift": 0.0, "shoot_clock": 999.0,
+        "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+    })
+    scene.objects.append({
+        "id": 999902, "type": "energy", "hard": false,
+        "x": scene.player_x, "y": scene.player_y, "r": 12.0,
+        "speed": 0.0, "drift": 0.0,
+        "lane_min": scene.LEFT, "lane_max": scene.RIGHT
+    })
+    scene._move_objects(0.0)
+    if scene.playing or not scene.game_over or scene.score != 123 or scene.last_banked_score != 123 or scene.energy != 0:
+        _fail("lethal impact continued collecting pickups after banking the run")
+        return
+
+    # Drawing screen shake must not advance the simulation's spawn RNG.
+    scene._start_game()
+    scene.run_paused = true
+    scene.shake = 8.0
+    var gameplay_rng_state: int = scene.rng.state
+    scene.queue_redraw()
+    await process_frame
+    if scene.rng.state != gameplay_rng_state:
+        _fail("rendering screen shake changed gameplay random sequence")
+        return
+    scene.run_paused = false
+    scene.shake = 0.0
 
     # Station structure remains instant-lethal through invulnerability.
     scene._begin_lane_event()

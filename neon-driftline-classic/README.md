@@ -179,7 +179,11 @@ Paused runs are snapshotted to `user://neon_run.cfg`. Persistent Research is sto
 
 Player impacts now use a short **0.5 second hit-invulnerability window** so overlapping impacts cannot drain several hits almost simultaneously.
 
-Physical contact outside a dash damages **only the player**. During the active forward dash, contact with a hazard becomes a **DASH KILL** instead: the hazard is destroyed, its normal kill score/drop rules apply, and the player takes no collision hit. Station-wall contact remains instant-lethal and is not converted into a dash kill.
+Physical contact outside a dash damages **only the player**. A hazard that has physically overlapped the ship is disqualified from near-miss scoring, including during hit grace. Genuine close passes still score separately for each enemy. During the active forward dash, contact with a hazard becomes a **DASH KILL** instead: the hazard is destroyed, its normal kill score/drop rules apply, and the player takes no collision hit. Station-wall contact remains instant-lethal and is not converted into a dash kill.
+
+Enemy projectiles during hit-invulnerability no longer consume shield charges; shield charges remain for unprotected hits. Fatal collisions stop further per-frame pickup/enemy-shot processing immediately so the banked score matches the final on-screen score.
+
+Screen-shake visuals use a separate random generator from spawns, loot, and difficulty. Frame redraws therefore cannot change the simulation's random sequence or loaded run's future enemy patterns.
 
 
 ## Procedural audio

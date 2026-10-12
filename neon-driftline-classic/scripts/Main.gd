@@ -105,6 +105,8 @@ const ENEMY_MISSILE_TURN_RATE := 3.2
 const HIT_INVULN_TIME := 0.5
 
 var rng := RandomNumberGenerator.new()
+# Drawing should never consume the simulation RNG used for spawns and drops.
+var visual_rng := RandomNumberGenerator.new()
 var playing := false
 var game_over := false
 var won := false
@@ -228,6 +230,7 @@ var ambient_audio_clock := 0.0
 
 func _ready() -> void:
     rng.randomize()
+    visual_rng.randomize()
     _load_meta()
     _setup_audio()
     set_process(true)
@@ -462,7 +465,13 @@ func _process(delta: float) -> void:
 
     _move_shots(game_delta)
     _move_objects(world_delta)
+    if not playing:
+        queue_redraw()
+        return
     _move_enemy_shots(game_delta)
+    if not playing:
+        queue_redraw()
+        return
     _move_particles(delta)
     _move_feedback(delta)
 
@@ -1955,14 +1964,20 @@ func _move_enemy_shots(delta: float) -> void:
         var dx := absf(float(shot.x) - player_x)
         var dy := absf(float(shot.y) - player_y)
         if dx < PLAYER_RADIUS + radius and dy < PLAYER_RADIUS + radius:
+            # Hit grace (including the dash window) absorbs projectiles before
+            # shields, so overlapping bullets cannot waste scarce charges.
+            if invuln > 0.0:
+                continue
             if shield_charges > 0:
-                # Any enemy projectile, including a 2-hit missile, consumes only one shield charge.
+                # A shield absorbs the entire projectile, even a 2-hit missile.
                 shield_charges -= 1
                 _burst(Vector2(shot.x, shot.y), 12, Color("77f7ff"))
                 _play_sfx_pair(shield_sfx, pickup_chime_sfx, 1.0, -2.0, 1.18, -9.0)
-            elif invuln <= 0.0:
+            else:
                 _take_hit(int(shot.get("damage", 1)))
                 _burst(Vector2(shot.x, shot.y), 8 if bool(shot.get("homing", false)) else 6, Color("ff8f5b") if bool(shot.get("homing", false)) else Color("d48cff"))
+                if not playing:
+                    return
             continue
 
         if shot.y < H + 40.0 and shot.y > -40.0 and shot.x > -40.0 and shot.x < W + 40.0:
@@ -2160,9 +2175,14 @@ func _move_objects(delta: float) -> void:
                 if dash_timer > 0.0:
                     _award_hazard_kill(obj, true)
                     continue
+                # Once a ship overlaps an enemy, this is a collision, not a
+                # near miss—even if hit invulnerability prevents HP loss.
+                last_near_ids[obj.id] = true
                 if invuln <= 0.0:
                     _take_hit(1)
                     _burst(Vector2(player_x, player_y), 13, Color("ff426f"))
+                    if not playing:
+                        return
                 # Outside a dash, physical collision hurts only the player.
 
             var near_dist: float = obj.r + 40.0
@@ -2214,11 +2234,11 @@ func _move_objects(delta: float) -> void:
                 if dx <= obj.half_width - 10.0:
                     _burst(Vector2(player_x, player_y), 22, Color("77f7ff"))
                     _finish(true)
-                    continue
+                    return
             if obj.y > player_y + 32.0:
                 result_reason = "MISSED THE GATE"
                 _finish(false)
-                continue
+                return
 
         if obj.y < H + 80.0:
             next.append(obj)
@@ -2318,7 +2338,7 @@ func _move_particles(delta: float) -> void:
     particles = next
 
 func _draw() -> void:
-    var offset := Vector2(rng.randf_range(-shake, shake), rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
+    var offset := Vector2(visual_rng.randf_range(-shake, shake), visual_rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
 
