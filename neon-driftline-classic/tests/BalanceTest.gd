@@ -15,14 +15,14 @@ func _move_bot(scene, policy: String) -> void:
     if policy == "passive":
         return
 
-    var desired_x := scene.W * 0.5
+    var desired_x: float = float(scene.W) * 0.5
     var best_orb_dy := 100000.0
     var best_hazard_dy := 100000.0
     var imminent_hazard_x := -1.0
     var imminent_hazard_dist := 9999.0
 
     # The split barrier must be committed to a side well before reaching player.
-    var station_close := scene.lane_event_active and scene.station_top + scene.station_height >= scene.player_y - 160.0 and scene.station_top <= scene.player_y + 60.0
+    var station_close: bool = scene.lane_event_active and scene.station_top + scene.station_height >= scene.player_y - 160.0 and scene.station_top <= scene.player_y + 60.0
     if station_close:
         # Prefer the easy side for both survival policies.
         desired_x = 110.0 if scene.hard_lane_right else 280.0
