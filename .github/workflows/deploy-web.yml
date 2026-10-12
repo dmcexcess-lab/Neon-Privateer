@@ -84,6 +84,20 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SMOKE FAIL' "$LOG"; then exit 1; fi
           grep -q 'NEON DRIFTLINE SMOKE OK' "$LOG"
 
+      - name: Run Classic balance telemetry
+        shell: bash
+        run: |
+          set -euxo pipefail
+          LOG=/tmp/classic-balance.log
+          set +e
+          timeout 120s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --path neon-driftline-classic --script res://tests/BalanceTest.gd 2>&1 | tee "$LOG"
+          GODOT_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
+          if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|BALANCE FAIL' "$LOG"; then exit 1; fi
+          grep -q 'NEON DRIFTLINE BALANCE TELEMETRY OK' "$LOG"
+
       - name: Export Web and reject script errors
         shell: bash
         run: |
