@@ -90,6 +90,12 @@ jobs:
           mkdir -p "$APP_DIR/addons/admob/android/bin"
           cp -R "$BIN_ROOT"/. "$APP_DIR/addons/admob/android/bin/"
           test -n "$(find "$APP_DIR/addons/admob/android/bin" -name 'poing_godot_admob_*.gd' -print -quit)"
+          # Poing's headless editor bootstrap otherwise tries to download
+          # BOTH Android and iOS binaries synchronously (unbounded curl).
+          # Android has been installed explicitly; iOS is not built here.
+          printf 'const VERSION := "v5.1.0"\n' > "$APP_DIR/addons/admob/android/bin/package.gd"
+          mkdir -p "$APP_DIR/addons/admob/ios/bin"
+          printf 'const VERSION := "v5.1.0"\n' > "$APP_DIR/addons/admob/ios/bin/package.gd"
           echo "Installed native AdMob library descriptors:"
           find "$APP_DIR/addons/admob/android/bin" -name 'poing_godot_admob_*.gd' -print | head -20
           cat >> "$APP_DIR/project.godot" <<'CFG'
@@ -113,7 +119,7 @@ jobs:
               settings.save()
               quit()
           GD
-          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --script /tmp/neon-android-settings.gd
+          timeout 120s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --script /tmp/neon-android-settings.gd
       - name: Import project and validate original gameplay
         run: |
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --quit
