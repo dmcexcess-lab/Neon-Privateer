@@ -1708,5 +1708,24 @@ func _initialize() -> void:
         _fail("combined permanent/run cooldown levels do not scale consistently")
         return
 
+    # Android banner layout reserve must not consume touch-control real estate.
+    if absf(scene.ANDROID_BANNER_RESERVE - 64.0) > 0.001:
+        _fail("top 320x50 AdMob banner did not reserve 64px of vertical space")
+        return
+    if scene.LEFT_CONTROL_RECT.position.y < scene.ANDROID_BANNER_RESERVE or scene.DASH_RECT.position.y < scene.ANDROID_BANNER_RESERVE:
+        _fail("banner collides with the gameplay touch controls")
+        return
+    if scene._kill_drop_kind(0.104) != "weapon" or scene._kill_drop_kind(0.50) != "":
+        _fail("rare field weapon salvage probability misconfigured")
+        return
+    scene.level = 1
+    scene.game_over = false
+    scene.shop_open = false
+    scene.playing = true
+    scene._open_shop()
+    if scene.last_level_bonus != 220:
+        _fail("level 1 completion bonus should be 220 credits")
+        return
+
     print("NEON DRIFTLINE SMOKE OK")
     quit(0)

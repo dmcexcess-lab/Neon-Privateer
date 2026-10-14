@@ -1,29 +1,22 @@
 extends Node
-# Optional Android-only AdMob integration. Uses Poing Studios' Godot v5.1.0
-# addon via dynamic loading, so Web/desktop and headless smoke runs need no SDK.
-# The release pipeline installs the pinned addon/native Android binaries.
-# Only test ads are enabled by default. Never place banners over touch controls.
+# Android-only, consent-gated AdMob top banner. Web never loads ads.
+# Poing Studios Godot AdMob v5.1.0 is installed only in Android CI exports.
+# Google-provided test ad IDs are the only defaults; replace before release.
 
 const API := "res://addons/admob/gdscript/src/api/"
 const UMP := "res://addons/admob/gdscript/src/ump/api/"
 const UMP_CORE := "res://addons/admob/gdscript/src/ump/core/"
-const TEST_UNIT := "ca-app-pub-3940256099942544/1033173712"
+const TEST_BANNER_UNIT := "ca-app-pub-3940256099942544/6300978111"
 
 var _mobile_script: Script
 var _ump_script: Script
 var _consent_info
-var _loaded_ad
-var _ad_loader
-var _load_callback
-var _full_screen_callback
-var _initialized := false
-var _pending := false
-var _presenting := false
+var _banner
+var _banner_listener
+var _started := false
 
 func _ready() -> void:
-    if OS.get_name() != "Android":
-        return
-    if not Engine.has_singleton("PoingGodotAdMob"):
+    if OS.get_name() != "Android" or not Engine.has_singleton("PoingGodotAdMob"):
         return
     if not ResourceLoader.exists(API + "MobileAds.gd") or not ResourceLoader.exists(UMP + "UserMessagingPlatform.gd"):
         return
@@ -34,126 +27,75 @@ func _ready() -> void:
     _consent_info = _ump_script.get("consent_information")
     if _consent_info == null:
         return
-    # Update consent on every launch. No ad requests until status permits them.
-    var params_script: Script = load(UMP_CORE + "ConsentRequestParameters.gd")
-    if params_script == null:
+    # Update UMP consent on every launch, before any ad requests.
+    var consent_params_script: Script = load(UMP_CORE + "ConsentRequestParameters.gd")
+    if consent_params_script == null:
         return
-    var params = params_script.new()
-    _consent_info.update(params, _on_consent_updated, _on_consent_error)
+    _consent_info.update(consent_params_script.new(), _on_consent_updated, _on_consent_error)
 
-func _status_allows_ads() -> bool:
-    # ConsentStatus: UNKNOWN=0, NOT_REQUIRED=1, REQUIRED=2, OBTAINED=3.
+func _may_request_ads() -> bool:
     if _consent_info == null:
         return false
+    # ConsentStatus NOT_REQUIRED=1 or OBTAINED=3.
     return int(_consent_info.get_consent_status()) in [1, 3]
 
 func _on_consent_updated() -> void:
-    if _status_allows_ads():
+    if _may_request_ads():
         _initialize_sdk()
     elif _consent_info.get_is_consent_form_available():
-        _ump_script.call("load_consent_form", _on_consent_form_loaded, _on_consent_error)
+        _ump_script.load_consent_form(_on_consent_form_loaded, _on_consent_error)
 
 func _on_consent_form_loaded(form) -> void:
     if int(_consent_info.get_consent_status()) == 2:
         form.show(_on_consent_dismissed)
-    elif _status_allows_ads():
+    elif _may_request_ads():
         _initialize_sdk()
 
 func _on_consent_dismissed(_error) -> void:
-    if _status_allows_ads():
+    if _may_request_ads():
         _initialize_sdk()
 
 func _on_consent_error(_error) -> void:
-    # No consent or update = no ad request. Gameplay is always available.
-    if _status_allows_ads():
+    # Offline, SDK unavailable, consent denied: play the game ad-free.
+    if _may_request_ads():
         _initialize_sdk()
 
 func _initialize_sdk() -> void:
-    if _initialized or _mobile_script == null:
+    if _started or _mobile_script == null:
         return
-    _initialized = true
+    _started = true
     var listener_script: Script = load(API + "listeners/OnInitializationCompleteListener.gd")
     if listener_script == null:
         return
     var listener = listener_script.new()
     listener.on_initialization_complete = _on_sdk_ready
-    _mobile_script.call("initialize", listener)
+    _mobile_script.initialize(listener)
 
 func _on_sdk_ready(_status) -> void:
-    _load_ad()
+    _attach_banner()
 
-func _ad_unit_id() -> String:
-    return String(ProjectSettings.get_setting("neon/ads/interstitial_unit_id", TEST_UNIT))
-
-func _load_ad() -> void:
-    if not _initialized or not _status_allows_ads() or _pending or _loaded_ad != null:
+func _attach_banner() -> void:
+    if _banner != null or not _may_request_ads():
         return
-    var unit_id := _ad_unit_id()
+    var unit_id: String = String(ProjectSettings.get_setting("neon/ads/banner_unit_id", TEST_BANNER_UNIT))
     if not unit_id.begins_with("ca-app-pub-") or not "/" in unit_id:
         return
-    var loader_script: Script = load(API + "InterstitialAdLoader.gd")
-    var callback_script: Script = load(API + "listeners/InterstitialAdLoadCallback.gd")
+    var banner_script: Script = load(API + "AdView.gd")
+    var size_script: Script = load(API + "core/AdSize.gd")
+    var pos_script: Script = load(API + "core/AdPosition.gd")
     var request_script: Script = load(API + "core/AdRequest.gd")
-    if loader_script == null or callback_script == null or request_script == null:
+    if banner_script == null or size_script == null or pos_script == null or request_script == null:
         return
-    _ad_loader = loader_script.new()
-    _load_callback = callback_script.new()
-    _load_callback.on_ad_loaded = _on_ad_loaded
-    _load_callback.on_ad_failed_to_load = _on_ad_load_failed
-    _pending = true
-    _ad_loader.load(unit_id, request_script.new(), _load_callback)
-
-func _on_ad_loaded(ad) -> void:
-    _pending = false
-    _loaded_ad = ad
-    var callback_script: Script = load(API + "listeners/FullScreenContentCallback.gd")
-    if callback_script == null:
-        _cleanup_ad()
-        return
-    _full_screen_callback = callback_script.new()
-    _full_screen_callback.on_ad_dismissed_full_screen_content = _on_ad_dismissed
-    _full_screen_callback.on_ad_failed_to_show_full_screen_content = _on_ad_show_failed
-    _full_screen_callback.on_ad_showed_full_screen_content = _on_ad_showed
-    _loaded_ad.full_screen_content_callback = _full_screen_callback
-
-func _on_ad_load_failed(_error) -> void:
-    _pending = false
-    _ad_loader = null
-
-func _on_ad_showed() -> void:
-    AudioServer.set_bus_mute(0, true)
-
-func _on_ad_dismissed() -> void:
-    AudioServer.set_bus_mute(0, false)
-    _presenting = false
-    _cleanup_ad()
-    _load_ad()
-
-func _on_ad_show_failed(_error) -> void:
-    AudioServer.set_bus_mute(0, false)
-    _presenting = false
-    _cleanup_ad()
-    _load_ad()
-
-func _cleanup_ad() -> void:
-    if _loaded_ad != null:
-        _loaded_ad.destroy()
-        _loaded_ad = null
-    _ad_loader = null
-
-func show_between_levels(completed_level: int) -> void:
-    # Level 3, 6, 9, etc; no app-open ads, ads during flights, or ads at death.
-    if completed_level < 3 or completed_level % 3 != 0:
-        return
-    if not _status_allows_ads() or _loaded_ad == null or _presenting:
-        return
-    _presenting = true
-    _loaded_ad.show()
+    # Fixed standard 320x50dp banner, top-center. Maintained for the whole app.
+    # Never replace with a full-screen, interstitial, rewarded, or app-open ad.
+    _banner = banner_script.new(unit_id, size_script.get("BANNER"), pos_script.get("TOP"))
+    _banner.load_ad(request_script.new())
 
 func open_privacy_options() -> void:
     if _ump_script != null:
-        _ump_script.call("show_privacy_options_form", func(_error): pass)
+        _ump_script.show_privacy_options_form(func(_error): pass)
 
 func _exit_tree() -> void:
-    AudioServer.set_bus_mute(0, false)
-    _cleanup_ad()
+    if _banner != null:
+        _banner.destroy()
+        _banner = null

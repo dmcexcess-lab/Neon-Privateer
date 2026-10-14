@@ -100,6 +100,9 @@ const ENERGY_ORB_BASE_SCORE := 25
 const ENERGY_ORB_DASH_MULT := 5.0
 const KILL_ORB_DROP_CHANCE := 0.08
 const KILL_REPAIR_DROP_CHANCE := 0.02
+const KILL_WEAPON_DROP_CHANCE := 0.008 # Rare weapon salvage from enemy kills
+const PRIVACY_RECT := Rect2(130.0, 726.0, 130.0, 42.0)
+const ANDROID_BANNER_RESERVE := 64.0 # 320x50dp native top banner + spacing
 const ENEMY_SHOT_SPEED := 255.0
 const ENEMY_SHOT_RADIUS := 5.0
 const ENEMY_MISSILE_SPEED := 190.0
@@ -121,6 +124,7 @@ var shop_page := 0 # 0 = run upgrades, 1 = weapons/repair
 var last_level_bonus := 0
 var score := 0
 var research_credits := 0
+var ad_bridge: Node
 var research_ship_speed := 0
 var research_dash := 0
 var research_dash_cooldown := 0
@@ -239,6 +243,11 @@ func _ready() -> void:
     visual_rng.randomize()
     _load_meta()
     _setup_audio()
+    # Optional AdMob integration never loads ads in browser/desktop builds.
+    var bridge_script = load("res://scripts/AdMobBridge.gd")
+    if bridge_script:
+        ad_bridge = bridge_script.new()
+        add_child(ad_bridge)
     set_process(true)
     if _load_run_snapshot():
         run_paused = true
@@ -557,6 +566,8 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         elif MAIN_RESEARCH_RECT.has_point(pos):
             research_open = true
             queue_redraw()
+        elif OS.get_name() == "Android" and PRIVACY_RECT.has_point(pos) and ad_bridge:
+            ad_bridge.call("open_privacy_options")
         return
     if PAUSE_RECT.has_point(pos):
         _clear_control_holds()
@@ -782,7 +793,9 @@ func _open_shop() -> void:
     playing = false
     shop_open = true
     shop_page = 0
-    last_level_bonus = 30 + level * 10
+    # Reward mastery without weakening the six-second base dash cooldown.
+    # Level 1 clear: 220 (previously 40); subsequent clears grow by 30.
+    last_level_bonus = 190 + level * 30
     score += last_level_bonus
     combo = 1
     dash_timer = 0.0
@@ -798,7 +811,6 @@ func _open_shop() -> void:
     _play_sfx_pair(level_clear_sfx, pickup_chime_sfx, 1.0, -1.0, 0.82, -6.0)
     _save_run_snapshot()
     queue_redraw()
-
 func _buy_repair() -> bool:
     if not shop_open or hp >= max_hp or score < SHOP_REPAIR_COST:
         return false
@@ -2056,6 +2068,8 @@ func _kill_drop_kind(roll: float) -> String:
         return "repair"
     if roll < KILL_REPAIR_DROP_CHANCE + KILL_ORB_DROP_CHANCE:
         return "energy"
+    if roll < KILL_REPAIR_DROP_CHANCE + KILL_ORB_DROP_CHANCE + KILL_WEAPON_DROP_CHANCE:
+        return "weapon"
     return ""
 
 func _queue_kill_drop(obj: Dictionary) -> void:
@@ -2064,6 +2078,19 @@ func _queue_kill_drop(obj: Dictionary) -> void:
         pending_drops.append(_make_repair_pickup(float(obj.x), float(obj.y)))
     elif drop_kind == "energy":
         pending_drops.append(_make_energy_orb(float(obj.x), float(obj.y), bool(obj.get("hard", false))))
+    elif drop_kind == "weapon":
+        # Salvaged field weapons actually enter the drop pool (previously
+        # an unused generator), do not erase persistent starting research.
+        var choices: Array[String] = ["single", "dual", "cone", "seeker", "laser"]
+        choices.erase(current_weapon)
+        var weapon: String = choices[rng.randi_range(0, choices.size() - 1)]
+        pending_drops.append({
+            "id": rng.randi(), "type": "weapon", "weapon": weapon,
+            "hard": false, "x": float(obj.x), "y": float(obj.y),
+            "r": 14.0, "speed": 225.0, "drift": 0.0,
+            "lane_min": float(obj.get("lane_min", LEFT)),
+            "lane_max": float(obj.get("lane_max", RIGHT))
+        })
 
 func _flush_pending_drops(target: Array[Dictionary]) -> void:
     if pending_drops.is_empty():
@@ -2372,6 +2399,7 @@ func _draw() -> void:
     var offset := Vector2(visual_rng.randf_range(-shake, shake), visual_rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
+    _draw_ad_reserve()
 
     if weapon_research_open:
         _draw_weapon_research()
@@ -2430,12 +2458,14 @@ func _draw() -> void:
 
     if lane_choice_banner_timer > 0.0 and _split_visible():
         var choice := "STATION SPLIT — CHOOSE A LANE"
-        draw_rect(Rect2(Vector2(38, 192), Vector2(314, 42)), Color(0.02, 0.04, 0.07, 0.92), true)
-        _text(choice, Vector2(62, 220), 16, Color("ffd166"))
+        var banner_y := 290.0 if OS.get_name() == "Android" else 192.0
+        draw_rect(Rect2(Vector2(38, banner_y), Vector2(314, 42)), Color(0.02, 0.04, 0.07, 0.92), true)
+        _text(choice, Vector2(62, banner_y + 28.0), 16, Color("ffd166"))
 
     if weapon_banner_timer > 0.0:
-        draw_rect(Rect2(Vector2(78, 244), Vector2(234, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
-        _text("WEAPON: %s" % weapon_banner_text, Vector2(91, 270), 17, Color("d4b8ff"))
+        var weapon_y := 345.0 if OS.get_name() == "Android" else 244.0
+        draw_rect(Rect2(Vector2(78, weapon_y), Vector2(234, 38)), Color(0.08, 0.04, 0.16, 0.9), true)
+        _text("WEAPON: %s" % weapon_banner_text, Vector2(91, weapon_y + 26.0), 17, Color("d4b8ff"))
 
     if near_miss_timer > 0.0:
         var pulse := 0.78 + sin(Time.get_ticks_msec() * 0.035) * 0.12
@@ -2445,7 +2475,7 @@ func _draw() -> void:
         var label := "EXTRACTION INBOUND"
         if extraction_spawned:
             label = "GATE: %s LANE" % extraction_lane
-        _text(label, Vector2(70 if not extraction_spawned else 84, 188), 22, Color("ffd166"))
+        _text(label, Vector2(70 if not extraction_spawned else 84, 274 if OS.get_name() == "Android" else 188), 22, Color("ffd166"))
 
     if flash > 0.0:
         draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(1.0, 0.2, 0.35, flash * 1.8))
@@ -2655,31 +2685,32 @@ func _draw_object(obj: Dictionary, offset: Vector2) -> void:
         draw_rect(Rect2(Vector2(p.x - bw * 0.5, p.y + obj.r + 7.0), Vector2(bw * ratio, 3.0)), Color("ffd166"), true)
 
 func _draw_hud() -> void:
-    _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50), 30, Color("f0fbff"))
-    _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46), 19, Color("bdeef4"))
-    _text("ENERGY %02d" % energy, Vector2(20, 88), 18, Color("6bffb0"))
+    var top: float = ANDROID_BANNER_RESERVE if OS.get_name() == "Android" else 0.0
+    _text("%02d" % int(maxf(0.0, _level_duration() - elapsed)), Vector2(20, 50 + top), 30, Color("f0fbff"))
+    _text("L%d  SCORE %06d" % [level, score], Vector2(120, 46 + top), 19, Color("bdeef4"))
+    _text("ENERGY %02d" % energy, Vector2(20, 88 + top), 18, Color("6bffb0"))
 
     if _split_visible():
         var left_hard := not hard_lane_right
-        _text("HARD" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
-        _text("HARD" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
+        _text("HARD" if left_hard else "EASY", Vector2(55 if left_hard else 72, 122 + top), 15, Color("ff8fa6") if left_hard else Color("82d8e8"))
+        _text("HARD" if hard_lane_right else "EASY", Vector2(238 if hard_lane_right else 267, 122 + top), 15, Color("ff8fa6") if hard_lane_right else Color("82d8e8"))
     else:
-        _text("OPEN FIELD", Vector2(145, 122), 15, Color("82d8e8"))
+        _text("OPEN FIELD", Vector2(145, 122 + top), 15, Color("82d8e8"))
 
     if dash_score_timer > 0.0:
-        _text("DASH NEAR BONUS", Vector2(126, 146), 16, Color("ffd166"))
+        _text("DASH NEAR BONUS", Vector2(126, 146 + top), 16, Color("ffd166"))
     else:
-        _text(_weapon_label(current_weapon), Vector2(118, 146), 14, Color("ffd166"))
+        _text(_weapon_label(current_weapon), Vector2(118, 146 + top), 14, Color("ffd166"))
 
     for i in max_hp:
         var c := Color("ff4f78") if i < hp else Color(0.3,0.3,0.38,0.55)
-        draw_circle(Vector2(28 + i * 21, 146), 7.0, c)
+        draw_circle(Vector2(28 + i * 21, 146 + top), 7.0, c)
     if shield_charges > 0:
-        _text("SHIELD x%d" % shield_charges, Vector2(20, 199), 13, Color("77f7ff"))
+        _text("SHIELD x%d" % shield_charges, Vector2(20, 199 + top), 13, Color("77f7ff"))
 
     var progress := clampf(elapsed / _level_duration(), 0.0, 1.0)
-    draw_rect(Rect2(Vector2(20, 169), Vector2(350, 6)), Color(0.2,0.25,0.3,0.7))
-    draw_rect(Rect2(Vector2(20, 169), Vector2(350 * progress, 6)), Color("77f7ff"))
+    draw_rect(Rect2(Vector2(20, 169 + top), Vector2(350, 6)), Color(0.2,0.25,0.3,0.7))
+    draw_rect(Rect2(Vector2(20, 169 + top), Vector2(350 * progress, 6)), Color("77f7ff"))
 
 func _draw_controls() -> void:
     var move_fill := Color("102633")
@@ -2706,12 +2737,22 @@ func _draw_controls() -> void:
     draw_rect(RIGHT_CONTROL_RECT, held_border if right_held else move_border, false, 3.0)
     _text("RIGHT", RIGHT_CONTROL_RECT.position + Vector2(20, 40), 19, Color("f0fbff"))
 
+func _draw_ad_reserve() -> void:
+    if OS.get_name() != "Android":
+        return
+    # The actual native 320x50dp AdMob view is attached at TOP.
+    # Reserve 64 virtual pixels and never put interactive HUD under that area.
+    draw_rect(Rect2(0.0, 0.0, W, ANDROID_BANNER_RESERVE), Color("050811"), true)
+    draw_line(Vector2(0.0, ANDROID_BANNER_RESERVE - 1.0), Vector2(W, ANDROID_BANNER_RESERVE - 1.0), Color("385465"), 1.0)
+    _text_center("ADVERTISEMENT", 59.0, 9, Color("586777"))
+
 func _draw_menu_backdrop() -> void:
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("070914"))
     draw_circle(Vector2(54, 120), 150.0, Color(0.10, 0.85, 1.0, 0.045))
     draw_circle(Vector2(344, 610), 190.0, Color(0.80, 0.18, 1.0, 0.040))
     draw_line(Vector2(20, 0), Vector2(20, H), Color(0.20, 0.90, 1.0, 0.08), 1.0)
     draw_line(Vector2(W - 20, 0), Vector2(W - 20, H), Color(0.90, 0.20, 1.0, 0.08), 1.0)
+    _draw_ad_reserve()
 
 func _text_center(s: String, y: float, size: int, color: Color, left_x: float = 0.0, right_x: float = W) -> void:
     draw_string(ThemeDB.fallback_font, Vector2(left_x, y), s, HORIZONTAL_ALIGNMENT_CENTER, right_x - left_x, size, color)
@@ -2813,6 +2854,9 @@ func _draw_title() -> void:
 
     _neon_panel(MAIN_RESEARCH_RECT, Color("25152f"), Color("d56cff"), true, 3.0)
     _text_center("RESEARCH", MAIN_RESEARCH_RECT.position.y + 42.0, 23, Color("f1dcff"), MAIN_RESEARCH_RECT.position.x, MAIN_RESEARCH_RECT.end.x)
+    _text_center("LEFT / RIGHT STEER    DASH TO BURST", 717.0, 12, Color("8ea9b8"))
+    if OS.get_name() == "Android":
+        _text_center("AD PRIVACY", PRIVACY_RECT.position.y + 28.0, 14, Color("9db6ce"), PRIVACY_RECT.position.x, PRIVACY_RECT.end.x)
 
 func _draw_research_button(rect: Rect2, track: String, label: String, effect: String) -> void:
     var lvl := _research_level(track)
@@ -2834,8 +2878,8 @@ func _draw_research_button(rect: Rect2, track: String, label: String, effect: St
 
 func _draw_research() -> void:
     _draw_menu_backdrop()
-    _glow_text_center("RESEARCH", 76.0, 34, Color("f0fbff"), Color("d56cff"))
-    _text_center("R %07d" % research_credits, 114.0, 18, Color("ffd166"), 54.0, 336.0)
+    _glow_text_center("RESEARCH", 100.0 if OS.get_name() == "Android" else 76.0, 30 if OS.get_name() == "Android" else 34, Color("f0fbff"), Color("d56cff"))
+    _text_center("R %07d" % research_credits, 136.0 if OS.get_name() == "Android" else 114.0, 17, Color("ffd166"), 54.0, 336.0)
     _draw_research_button(RESEARCH_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
     _draw_research_button(RESEARCH_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
     _draw_research_button(RESEARCH_COOLDOWN_RECT, "cooldown", "COOLDOWN", "-6% / LVL  %.1fs NOW" % _dash_cooldown_seconds())
@@ -2866,8 +2910,8 @@ func _draw_weapon_unlock_button(rect: Rect2, weapon: String, label: String) -> v
 
 func _draw_weapon_research() -> void:
     _draw_menu_backdrop()
-    _glow_text_center("WEAPONS", 76.0, 30, Color("f0fbff"), Color("d56cff"))
-    _text_center("R %07d" % research_credits, 114.0, 18, Color("ffd166"), 54.0, 336.0)
+    _glow_text_center("WEAPONS", 99.0 if OS.get_name() == "Android" else 76.0, 30, Color("f0fbff"), Color("d56cff"))
+    _text_center("R %07d" % research_credits, 137.0 if OS.get_name() == "Android" else 114.0, 17, Color("ffd166"), 54.0, 336.0)
     _draw_weapon_unlock_button(WEAPON_NONE_RECT, "none", "NONE")
     _draw_weapon_unlock_button(WEAPON_SINGLE_RECT, "single", "SINGLE D1")
     _draw_weapon_unlock_button(WEAPON_DUAL_RECT, "dual", "DUAL D1x2")
@@ -2921,15 +2965,16 @@ func _draw_run_upgrade_button(rect: Rect2, track: String, label: String, effect:
 
 func _draw_shop() -> void:
     _draw_menu_backdrop()
-    _glow_text_center("LEVEL %d" % level, 72.0, 28, Color("f0fbff"), Color("77f7ff"))
+    _glow_text_center("LEVEL %d" % level, 96.0 if OS.get_name() == "Android" else 72.0, 27, Color("f0fbff"), Color("77f7ff"))
     var reward_pulse := 0.82 + sin(Time.get_ticks_msec() * 0.005) * 0.12
-    _text_center("+%d" % last_level_bonus, 103.0, 16, Color(0.42, 1.0, 0.69, reward_pulse), 54.0, 336.0)
-    _text_center("%06d" % score, 139.0, 20, Color("ffd166"), 54.0, 336.0)
-    _text_center("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], 171.0, 16, Color("bdeef4"), 35.0, 355.0)
-    _text_center("BASE %s" % _weapon_label(_valid_starting_weapon()), 194.0, 12, Color("8ea9b8"), 54.0, 336.0)
+    _text_center("+%d" % last_level_bonus, 124.0 if OS.get_name() == "Android" else 103.0, 16, Color(0.42, 1.0, 0.69, reward_pulse), 54.0, 336.0)
+    _text_center("%06d" % score, 153.0 if OS.get_name() == "Android" else 139.0, 20, Color("ffd166"), 54.0, 336.0)
+    _text_center("HP %d/%d   %s" % [hp, max_hp, _weapon_label(current_weapon)], 181.0 if OS.get_name() == "Android" else 171.0, 15, Color("bdeef4"), 35.0, 355.0)
+    _text_center("BASE %s" % _weapon_label(_valid_starting_weapon()), 201.0 if OS.get_name() == "Android" else 194.0, 11, Color("8ea9b8"), 54.0, 336.0)
 
     if shop_page == 0:
-        _text_center("UPGRADES", 203.0, 15, Color("d56cff"), 54.0, 336.0)
+        if OS.get_name() != "Android":
+            _text_center("UPGRADES", 203.0, 15, Color("d56cff"), 54.0, 336.0)
         _draw_run_upgrade_button(SHOP_RUN_SHIP_RECT, "ship", "SPEED", "SCROLL / STEER / NEAR")
         _draw_run_upgrade_button(SHOP_RUN_DASH_RECT, "dash", "DASH", "RANGE / SPEED / SCORE")
         _draw_run_upgrade_button(SHOP_RUN_COOLDOWN_RECT, "cooldown", "COOLDOWN", "-6% / LVL  %.1fs NOW" % _dash_cooldown_seconds())
@@ -2940,7 +2985,8 @@ func _draw_shop() -> void:
         draw_rect(SHOP_PAGE_TOGGLE_RECT, Color("b56cff"), false, 2.0)
         _text_center("WEAPONS", SHOP_PAGE_TOGGLE_RECT.position.y + 34.0, 17, Color("f1dcff"), SHOP_PAGE_TOGGLE_RECT.position.x, SHOP_PAGE_TOGGLE_RECT.end.x)
     else:
-        _text_center("WEAPONS • 1 LEVEL", 203.0, 13, Color("d56cff"), 54.0, 336.0)
+        if OS.get_name() != "Android":
+            _text_center("WEAPONS • 1 LEVEL", 203.0, 13, Color("d56cff"), 54.0, 336.0)
         var can_repair := hp < max_hp and score >= SHOP_REPAIR_COST
         _draw_shop_button(SHOP_REPAIR_RECT, "REPAIR +1", SHOP_REPAIR_COST, can_repair, hp >= max_hp)
         _draw_shop_button(SHOP_SINGLE_RECT, "SINGLE D1", SHOP_SINGLE_COST, score >= SHOP_SINGLE_COST and current_weapon != "single", current_weapon == "single")

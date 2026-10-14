@@ -2,7 +2,7 @@
 config_version=5
 
 [application]
-config/name="Neon Driftline"
+config/name="Neon Driftline Classic"
 run/main_scene="res://main.tscn"
 
 [display]
@@ -23,3 +23,12 @@ pointing/emulate_touch_from_mouse=true
 
 [physics]
 common/physics_ticks_per_second=60
+
+[neon]
+ads/banner_unit_id="ca-app-pub-3940256099942544/6300978111"
+
+[admob]
+general/android/enabled=true
+general/android/app_id="ca-app-pub-3940256099942544~3347511713"
+mediation/applovin=false
+mediation/ironsource=false

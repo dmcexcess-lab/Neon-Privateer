@@ -286,3 +286,14 @@ Run upgrades use the current run's score, stack on top of permanent research, pe
 Weapons bought on the **WEAPONS / REPAIR** page are different: they are **one-level rentals layered on top of the permanent default**. A purchased weapon equips for the immediately following level only, survives pause/reload during that level, then expires when that level clears. The selected permanent starting weapon immediately returns and remains the default for subsequent levels unless another rental temporarily replaces it. Field weapon pickups are not tagged as store rentals.
 
 Permanent research remains permanent; non-weapon run upgrades remain run-only.
+
+
+## Android release and AdMob
+
+The Android version is a **native Godot game**. A single standard **320×50dp AdMob banner** sits at the very top continuously on the title, research, shop, pause and gameplay screens, when ads are available and consent permits them. There are **no interstitial, rewarded, or app-open ads**. Android reserves 64 virtual pixels above all essential HUD elements; the LEFT / DASH / RIGHT touch buttons are unchanged. The Web version is ad-free.
+
+The banner is implemented through the **Poing Studios v5.1.0** Godot 4.7.2 plugin. Development uses Google's sample Banner Ad Unit ID `ca-app-pub-3940256099942544/6300978111` and sample Android App ID `ca-app-pub-3940256099942544~3347511713`; sample ads **do not earn money**. For real revenue, configure your own AdMob App ID, banner unit ID, AdMob Privacy & Messaging, and all Google Play data-safety disclosures. The User Messaging Platform updates consent before creating the banner; no consent or no network means no served ad.
+
+Gameplay release polish: The first completed level now grants a 220-point bonus rather than 40. Later clears award 30 more points for each additional level. Destroyed enemies now have a rare **0.8%** chance to drop a random weapon as salvage, in addition to the existing health and score pickups. Dash remains on the 6-second base cooldown and retains all cooldown upgrades.
+
+The workflow **Build Classic Android** can export a **debug APK** for sideloaded testing. A signed Play Store `.aab` requires release signing secrets. Google Play developer/AdMob accounts, privacy policy, store listing, testing requirements and Play review remain account-specific. See `ANDROID_RELEASE.md`.
