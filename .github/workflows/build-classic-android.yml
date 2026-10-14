@@ -107,24 +107,20 @@ jobs:
         run: |
           python3 "$APP_DIR/tools/generate_android_icon.py"
           test -s "$APP_DIR/assets/android/icon.png"
-      - name: Set SDK and Java paths for Godot
+      - name: Set Android SDK paths in global Godot editor settings
         shell: bash
         run: |
-          cat > /tmp/neon-android-settings.gd <<'GD'
-          extends SceneTree
-          func _initialize() -> void:
-              var settings = EditorInterface.get_editor_settings()
-              settings.set_setting("export/android/android_sdk_path", OS.get_environment("ANDROID_HOME"))
-              settings.set_setting("export/android/java_sdk_path", OS.get_environment("JAVA_HOME"))
-              settings.save()
-              quit()
-          GD
-          # Editor settings are global, not project-specific. Use a tiny
-          # empty bootstrap project to avoid executing AdMob plugin startup
-          # while configuring the Android/Java paths.
-          mkdir -p /tmp/neon-editor-bootstrap
-          printf 'config_version=5\n[application]\nconfig/name="SDK Bootstrap"\n' > /tmp/neon-editor-bootstrap/project.godot
-          timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path /tmp/neon-editor-bootstrap --script /tmp/neon-android-settings.gd
+          set -euxo pipefail
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+          echo "${GODOT_VERSION}.${GODOT_STATUS}" > "$APP_DIR/android/.build_version"
+          touch "$APP_DIR/android/build/.gdignore"
       - name: Import project and validate original gameplay
         run: |
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --quit
