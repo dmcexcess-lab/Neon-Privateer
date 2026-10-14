@@ -6,6 +6,7 @@ extends Node
 
 const API := "res://addons/admob/gdscript/src/api/"
 const UMP := "res://addons/admob/gdscript/src/ump/api/"
+const UMP_CORE := "res://addons/admob/gdscript/src/ump/core/"
 const TEST_UNIT := "ca-app-pub-3940256099942544/1033173712"
 
 var _mobile_script: Script
@@ -34,7 +35,7 @@ func _ready() -> void:
     if _consent_info == null:
         return
     # Update consent on every launch. No ad requests until status permits them.
-    var params_script: Script = load(UMP + "ConsentRequestParameters.gd")
+    var params_script: Script = load(UMP_CORE + "ConsentRequestParameters.gd")
     if params_script == null:
         return
     var params = params_script.new()
