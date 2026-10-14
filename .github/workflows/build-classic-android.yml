@@ -54,6 +54,12 @@ jobs:
           set -euxo pipefail
           mkdir -p "$APP_DIR/android"
           unzip -q "/tmp/templates/templates/android_source.zip" -d "$APP_DIR/android"
+          # The Godot export archive is rooted at gradlew, but an installed
+          # Gradle template lives under res://android/build.
+          if [ -f "$APP_DIR/android/gradlew" ]; then
+            mkdir -p "$APP_DIR/android/build"
+            find "$APP_DIR/android" -mindepth 1 -maxdepth 1 ! -name build -exec mv -t "$APP_DIR/android/build" {} +
+          fi
           if [ ! -f "$APP_DIR/android/build/gradlew" ]; then
             echo "Source template layout:"; find "$APP_DIR/android" -maxdepth 3 -type f | head -30
             exit 1
