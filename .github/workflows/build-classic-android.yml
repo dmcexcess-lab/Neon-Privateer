@@ -89,7 +89,9 @@ jobs:
           BIN_ROOT="$(dirname "$(dirname "$NATIVE_GD")")"
           mkdir -p "$APP_DIR/addons/admob/android/bin"
           cp -R "$BIN_ROOT"/. "$APP_DIR/addons/admob/android/bin/"
-          test -f "$APP_DIR/addons/admob/android/bin/core/poing_godot_admob_core.gd"
+          test -n "$(find "$APP_DIR/addons/admob/android/bin" -name 'poing_godot_admob_*.gd' -print -quit)"
+          echo "Installed native AdMob library descriptors:"
+          find "$APP_DIR/addons/admob/android/bin" -name 'poing_godot_admob_*.gd' -print | head -20
           cat >> "$APP_DIR/project.godot" <<'CFG'
 
           [editor_plugins]
