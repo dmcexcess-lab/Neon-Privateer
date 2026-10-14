@@ -119,7 +119,12 @@ jobs:
               settings.save()
               quit()
           GD
-          timeout 120s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --script /tmp/neon-android-settings.gd
+          # Editor settings are global, not project-specific. Use a tiny
+          # empty bootstrap project to avoid executing AdMob plugin startup
+          # while configuring the Android/Java paths.
+          mkdir -p /tmp/neon-editor-bootstrap
+          printf 'config_version=5\n[application]\nconfig/name="SDK Bootstrap"\n' > /tmp/neon-editor-bootstrap/project.godot
+          timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path /tmp/neon-editor-bootstrap --script /tmp/neon-android-settings.gd
       - name: Import project and validate original gameplay
         run: |
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --quit
