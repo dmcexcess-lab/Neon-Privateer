@@ -138,6 +138,7 @@ jobs:
         run: |
           mkdir -p build/web/ad-support
           cp monetization/*.html build/web/ad-support/
+          python3 tools/WrapClassicWebAds.py build/web/classic/index.html
 
       - name: Keep downloadable Web build
         uses: actions/upload-artifact@v4
