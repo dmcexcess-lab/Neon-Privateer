@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Support Neon Driftline Classic</title>
+<style>*{box-sizing:border-box}body{margin:0;padding:14px;background:#f7f5fc;color:#172238;font:14px/1.5 system-ui,sans-serif;text-align:center}main{max-width:670px;margin:auto}h1{font-size:11px;letter-spacing:.16em;color:#626476;margin:0 0 7px}p{margin:7px auto;max-width:540px}button{font:inherit;border:1px solid #75658c;border-radius:5px;padding:7px 17px;background:white;color:#2a194a;cursor:pointer;margin:5px}button:focus-visible,a:focus-visible{outline:3px solid #007d96;outline-offset:3px}#allow{background:#6522a5;color:white;border-color:#6522a5}a{color:#57218d}#ad{width:320px;max-width:100%;height:50px;border:0;display:block;margin:10px auto}#change{font-size:12px;padding:3px 9px}small{display:block;font-size:11px}#message{font-size:12px}[hidden]{display:none!important}</style></head>
+<body><main><h1>ADVERTISEMENT · OPTIONAL</h1><section id="choice"><p>Allow an ad to support the free game? Adsterra and its advertising partners may use cookies and device information to show and measure ads.</p><button id="allow">Allow ads</button><button id="decline">No thanks</button><small><a href="https://adsterra.com/privacy-policy/" target="_blank" rel="noopener noreferrer">Adsterra privacy policy</a> · Playing and purchasing work either way.</small></section><section id="shown" hidden><div id="slot"></div><p id="message" role="status"></p><button id="change">Change ad choice</button></section></main>
+<script>
+'use strict';
+const choice=document.getElementById('choice'),shown=document.getElementById('shown'),slot=document.getElementById('slot'),message=document.getElementById('message');
+const store={get(){try{return sessionStorage.getItem('dmc-ad-choice')}catch{return null}},set(v){try{sessionStorage.setItem('dmc-ad-choice',v)}catch{}}};
+function apply(value){slot.replaceChildren();choice.hidden=true;shown.hidden=false;if(value==='allow'){const frame=document.createElement('iframe');frame.id='ad';frame.title='Advertisement from Adsterra';frame.width='320';frame.height='50';frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox');frame.src='./banner.html';slot.appendChild(frame);message.textContent='Ads help support the free browser game.'}else{message.textContent='Ads are off. Enjoy the game.'}}
+document.getElementById('allow').addEventListener('click',()=>{store.set('allow');apply('allow')});
+document.getElementById('decline').addEventListener('click',()=>{store.set('decline');apply('decline')});
+document.getElementById('change').addEventListener('click',()=>{store.set('');slot.replaceChildren();choice.hidden=false;shown.hidden=true});
+const saved=store.get();if(saved==='allow'||saved==='decline')apply(saved);
+</script></body></html>

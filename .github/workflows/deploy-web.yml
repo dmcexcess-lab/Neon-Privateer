@@ -133,6 +133,12 @@ jobs:
 
           touch build/web/.nojekyll
 
+      - name: Include optional advertising panel
+        shell: bash
+        run: |
+          mkdir -p build/web/ad-support
+          cp monetization/*.html build/web/ad-support/
+
       - name: Keep downloadable Web build
         uses: actions/upload-artifact@v4
         with:
