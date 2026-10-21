@@ -5,6 +5,9 @@ config_version=5
 config/name="Neon Driftline Classic"
 run/main_scene="res://main.tscn"
 
+[autoload]
+Soundtrack="*res://scripts/Soundtrack.gd"
+
 [display]
 window/size/viewport_width=390
 window/size/viewport_height=844

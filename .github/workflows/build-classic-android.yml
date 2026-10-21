@@ -126,6 +126,16 @@ jobs:
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path "$APP_DIR" --quit
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --path "$APP_DIR" --script res://tests/SmokeTest.gd | tee /tmp/classic-android-smoke.log
           grep -q 'NEON DRIFTLINE SMOKE OK' /tmp/classic-android-smoke.log
+      - name: Test soundtrack persistence and balance with AdMob installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          GODOT="/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"
+          timeout 60s "$GODOT" --headless --path "$APP_DIR" --script res://tests/MusicTest.gd 2>&1 | tee /tmp/android-music.log
+          timeout 120s "$GODOT" --headless --path "$APP_DIR" --script res://tests/BalanceTest.gd 2>&1 | tee /tmp/android-balance.log
+          if grep -E 'SCRIPT ERROR|Parse Error|MUSIC FAIL|BALANCE FAIL' /tmp/android-music.log /tmp/android-balance.log; then exit 1; fi
+          grep -q 'NEON DRIFTLINE MUSIC OK' /tmp/android-music.log
+          grep -q 'NEON DRIFTLINE BALANCE TELEMETRY OK' /tmp/android-balance.log
       - name: Generate disposable Android debug keystore
         run: |
           keytool -genkeypair -v -keystore /tmp/neon-debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Neon Driftline Test,O=Development,C=US"
@@ -138,6 +148,7 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/neon-android-export.log; then exit 1; fi
           test -s "$APP_DIR/build/android/neon-driftline-classic.apk"
           unzip -t "$APP_DIR/build/android/neon-driftline-classic.apk" >/dev/null
+          python3 "$APP_DIR/tools/verify_android_soundtrack.py" "$APP_DIR/build/android/neon-driftline-classic.apk"
       - name: Upload installable debug APK
         uses: actions/upload-artifact@v4
         with:

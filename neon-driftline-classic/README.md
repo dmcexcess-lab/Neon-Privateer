@@ -183,7 +183,38 @@ Paused runs are snapshotted to `user://neon_run.cfg`. Persistent Research is sto
 
 ## Automated smoke test
 
+Import resources on a fresh checkout first:
+
+`godot --headless --editor --path . --quit`
+
 `godot --headless --path . --script res://tests/SmokeTest.gd`
+
+`godot --headless --path . --script res://tests/BalanceTest.gd`
+
+`godot --headless --path . --script res://tests/MusicTest.gd`
+
+## Continuous soundtrack
+
+**Nineteen Steps** plays from the Classic-only `Soundtrack` autoload at -11 dB.
+Its one dedicated streaming AudioStreamPlayer survives title/research/weapon
+research/shop/gameplay/pause/death screens, new runs, level changes and scene
+replacement. In-game pause leaves the music playing. The imported Ogg itself
+loops at offset zero; no finished-signal restart is used.
+
+Browsers can block audio until the first real click, tap, key or gamepad button.
+Godot unlocks Web Audio during that input, and the controller retries only if
+the player is not already playing. No screen action resets the song. Reloading
+the browser or killing the application starts a new soundtrack session.
+
+On Android, application suspension or lost application focus pauses the
+existing decoder. Playback resumes from that position once both conditions
+clear. Actual phone-call/Bluetooth/device interruption behavior still needs
+physical-device testing. The soundtrack does not change AdMob or any SFX.
+
+The music regression test checks all screens, repeated input, scene replacement,
+SceneTree pause, suspension ordering, position retention and two actual Ogg EOF
+loops. Web CI repeats it against the exported PCK; Android CI checks the song's
+exact imported bytes inside the APK. See `assets/audio/README.md` for conversion.
 
 
 ## Impact rules
@@ -199,13 +230,13 @@ Screen-shake visuals use a separate random generator from spawns, loot, and diff
 
 ## Procedural audio
 
-Audio is generated entirely in code. A 16-voice pool, richer multi-oscillator synthesis, layered transients/sub-bass/chimes, event-specific pitch variation, and a restrained periodic flight pulse give weapons, dash, impacts, pickups, warnings, shields, kills, and level transitions more distinct audio identities without external assets.
+Sound effects are generated entirely in code. A 16-voice pool, richer multi-oscillator synthesis, layered transients/sub-bass/chimes, event-specific pitch variation, and a restrained periodic flight pulse give weapons, dash, impacts, pickups, warnings, shields, kills, and level transitions more distinct audio identities without external assets.
 
 ## Menu presentation
 
 Menus use compact labels and retained actionable state only. Layout now uses shared centered/right-aligned text helpers so costs, statuses, headers, and button copy stay aligned as values change.
 
-The presentation remains asset-free: the title logo, ship silhouette, enemy motifs, split-lane accents, panel glows, pickup rings, and floating score feedback are all drawn from the same geometric primitives used by the game. Cyan/magenta neon accents are stronger while the playfield remains dark for contrast.
+The visual presentation remains asset-free: the title logo, ship silhouette, enemy motifs, split-lane accents, panel glows, pickup rings, and floating score feedback are all drawn from the same geometric primitives used by the game. Cyan/magenta neon accents are stronger while the playfield remains dark for contrast.
 
 Green-orb pickups show their actual awarded score as floating lime text. Dash-boosted orb pickups show an explicit **DASH +N** indicator, and activating dash creates a short cyan/magenta pulse around the ship.
 

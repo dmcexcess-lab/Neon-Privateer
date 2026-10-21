@@ -70,6 +70,10 @@ jobs:
           grep -q 'NEON PRIVATEER PRODUCTION CLOSURE OK' "$LOG"
           grep -q 'NEON PRIVATEER SMOKE OK' "$LOG"
 
+      - name: Import Classic audio resources
+        run: |
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path neon-driftline-classic --quit
+
       - name: Run Classic Neon Driftline smoke test
         shell: bash
         run: |
@@ -83,6 +87,15 @@ jobs:
           if [ "$GODOT_EXIT" -ne 0 ]; then exit "$GODOT_EXIT"; fi
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script|SMOKE FAIL' "$LOG"; then exit 1; fi
           grep -q 'NEON DRIFTLINE SMOKE OK' "$LOG"
+
+      - name: Test persistent Classic soundtrack
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --path neon-driftline-classic --script res://tests/MusicTest.gd 2>&1 | tee /tmp/classic-music.log
+          if grep -E "SCRIPT ERROR|Parse Error|MUSIC FAIL" /tmp/classic-music.log; then exit 1; fi
+          grep -q "NEON DRIFTLINE MUSIC OK" /tmp/classic-music.log
 
       - name: Run Classic balance telemetry
         shell: bash
@@ -130,6 +143,13 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' "$CLASSIC_LOG"; then exit 1; fi
           mv "build/web/classic/${CLASSIC_BASENAME}.html" build/web/classic/index.html
           test -f "build/web/classic/${CLASSIC_BASENAME}.pck"
+          # Run the real soundtrack test against the EXPORTED pack, so a missing
+          # imported song, controller or loop flag fails deployment.
+          timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --main-pack "$(realpath "build/web/classic/${CLASSIC_BASENAME}.pck")" \
+            --script res://tests/MusicTest.gd 2>&1 | tee /tmp/classic-pack-music.log
+          if grep -E 'SCRIPT ERROR|Parse Error|MUSIC FAIL' /tmp/classic-pack-music.log; then exit 1; fi
+          grep -q 'NEON DRIFTLINE MUSIC OK' /tmp/classic-pack-music.log
 
           touch build/web/.nojekyll
 
