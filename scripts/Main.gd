@@ -3014,6 +3014,7 @@ func _save_all_state() -> void:
     _save_privateer_state()
 
 func _process(delta: float) -> void:
+    _sync_soundtrack()
     if not run_paused:
         _update_active_contract_clock(delta)
     if not playing and market_open and not run_paused:
@@ -3113,6 +3114,11 @@ func _process(delta: float) -> void:
         queue_redraw()
         return
     queue_redraw()
+
+func _sync_soundtrack() -> void:
+    var soundtrack := get_node_or_null("/root/PrivateerSoundtrack")
+    if soundtrack != null:
+        soundtrack.set_flight(not profile_menu_open and (playing or route_active or shop_open))
 
 func _input(event: InputEvent) -> void:
     if travel_open:

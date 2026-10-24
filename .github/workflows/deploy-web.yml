@@ -56,6 +56,23 @@ jobs:
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64"             --headless --path . --script res://tools/BuildPrivateerArt.gd
           test -s assets/privateer_ui/privateer_ui_atlas.res
 
+      - name: Import Privateer soundtrack and test beta page
+        shell: bash
+        run: |
+          set -euo pipefail
+          "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path . --quit
+          node --test tests/beta_feedback.test.mjs
+          python3 -m unittest discover -s tests -p 'test_beta_wrapper.py'
+
+      - name: Test Privateer soundtrack state and real loops
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --path . --script res://tests/PrivateerMusicTest.gd 2>&1 | tee /tmp/privateer-music.log
+          if grep -E 'SCRIPT ERROR|Parse Error|PRIVATEER MUSIC FAIL' /tmp/privateer-music.log; then exit 1; fi
+          grep -q 'NEON PRIVATEER MUSIC OK' /tmp/privateer-music.log
+
       - name: Run Privateer smoke test
         shell: bash
         run: |
@@ -131,6 +148,12 @@ jobs:
           # Assert the reconstructed/generated atlas is inside the Web PCK.
           grep -a -q "privateer_ui_atlas.res" "build/web/${BASENAME}.pck"
 
+          timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" \
+            --headless --main-pack "$(realpath "build/web/${BASENAME}.pck")" \
+            --script res://tests/PrivateerMusicTest.gd 2>&1 | tee /tmp/privateer-pack-music.log
+          if grep -E 'SCRIPT ERROR|Parse Error|PRIVATEER MUSIC FAIL' /tmp/privateer-pack-music.log; then exit 1; fi
+          grep -q 'NEON PRIVATEER MUSIC OK' /tmp/privateer-pack-music.log
+
           CLASSIC_BASENAME="neon-driftline-classic-${SHORT_SHA}"
           CLASSIC_LOG=/tmp/classic-export.log
           set +e
@@ -159,6 +182,7 @@ jobs:
           mkdir -p build/web/ad-support
           cp monetization/*.html build/web/ad-support/
           python3 tools/WrapClassicWebAds.py build/web/classic/index.html
+          python3 tools/WrapPrivateerBeta.py build/web/index.html "${GITHUB_SHA:0:12}"
 
       - name: Keep downloadable Web build
         uses: actions/upload-artifact@v4

@@ -1,0 +1,9 @@
+.godot/
+build/
+assets/privateer_ui/privateer_ui_atlas.jpg
+assets/privateer_ui/privateer_ui_atlas.res
+assets/privateer_ui/privateer_ui_atlas.jpg.import
+assets/privateer_ui/privateer_ui_atlas.webp.import
+*.tmp
+__pycache__/
+*.pyc

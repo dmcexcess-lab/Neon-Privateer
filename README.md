@@ -348,6 +348,29 @@ CI requires the production-closure marker before the frozen Classic regression, 
 
 ## Technical target
 
+### Public Web beta
+
+The repository's Pages root is the windowed **Neon Privateer public beta**. The
+game is embedded beneath the existing consent-based Adsterra strip; declining
+third-party ads leaves DMC Oddworks house promotions visible. The game frame
+cannot enter fullscreen. Classic remains at `/classic/` with its own controller.
+
+`Do Androids Dream` loops in the port/menus; `Nineteen Steps` loops in flight.
+One persistent player remembers each song's position across context switches,
+keeps SFX independent and retries inactive playback on real user input.
+
+The beta page's Flight Report builds plain-text/Markdown feedback locally.
+Testers can copy/download it without an account, or review and submit a public
+GitHub issue (GitHub sign-in required). Nothing is silently submitted. Reports
+are collected under the `beta-feedback` issue label for easy copy/paste into chat.
+Use `gh issue list --label beta-feedback --state all --json number,title,body,url`
+to retrieve them as one copyable log. No third-party form backend is required.
+
+Additional checks: `godot --headless --path . --script res://tests/PrivateerMusicTest.gd`,
+`node --test tests/beta_feedback.test.mjs`, and
+`python3 -m unittest discover -s tests -p 'test_beta_wrapper.py'`.
+CI tests the real soundtrack against the exported PCK before deploying the wrapper.
+
 - Godot 4.7.2 stable
 - Compatibility renderer
 - 390×844 portrait viewport
