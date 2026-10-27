@@ -95,7 +95,7 @@ function updateUI(){
    meter.style.width=(working?(game.player.reloadClock>0?1-game.player.reloadClock/Math.max(.1,game.player.reloadTotal):1-game.player.pumpClock/Math.max(.1,game.player.pumpTotal))*100:0)+'%';
    meter.style.background=game.player.reloadClock>0?'#f9cc70':'#ffa969';
  }
- $('location').textContent=`${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`; 
+ $('location').textContent=`${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`;
 }
 function enterHQ(message='FIELD LOADOUT READY'){
   if(game.profile.unlockedFloor>1)saveProfile();

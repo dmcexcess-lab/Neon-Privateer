@@ -37,7 +37,7 @@ document.getElementById('github-report').addEventListener('click', () => {
 const game = document.querySelector('[data-game-frame]');
 const gameStatus = document.getElementById('game-status');
 document.getElementById('launch').addEventListener('click', () => {
-  game.src = './game.html'; game.hidden = false; document.getElementById('launch-card').hidden = true;
+  game.src = './game.html?v=' + encodeURIComponent(build); game.hidden = false; document.getElementById('launch-card').hidden = true;
   document.getElementById('close-game').hidden = false;
   gameStatus.textContent = 'Loading the game…'; game.focus();
 });
