@@ -43,7 +43,7 @@ Red `!` capsules: smaller paddle, faster balls, reversed paddle input or +20 sec
 
 Mouse movement, A/D, arrows or touch dragging moves the paddle. Click, tap or Space launches; Space/click also fires lasers when available. Dedicated LAUNCH, LASER and PAUSE touch targets remain below the playfield. P/Escape toggles pause. Losing focus pauses automatically.
 
-Geometric cyan/magenta rendering, glow, armored node marks, particle breaks, ball trails, credit floats and procedural pooled SFX follow Classic's visual language. Nineteen Steps loops in the standalone version. The embedded game uses Privateer's existing soundtrack and does not start a second music player. Its sound toggle controls terminal SFX; standalone Sound controls SFX and music.
+Geometric cyan/magenta rendering, glow, armored node marks, particle breaks, ball trails, credit floats and procedural pooled SFX follow Classic's visual language. Do Androids Dream loops in the standalone version. This is the Firewall theme in the Neon Quartet; Privateer embedded Firewall continues using the career's shared rotating soundtrack. The embedded game uses Privateer's existing soundtrack and does not start a second music player. Its sound toggle controls terminal SFX; standalone Sound controls SFX and music.
 
 The public page uses the existing consent-based ad/house-promo strip, fullscreen controls and downloadable/copyable feedback form. No new advertising mechanism is introduced.
 
