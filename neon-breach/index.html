@@ -1725,7 +1725,7 @@ function collectPickup(pickup){
   }else if(pickup.kind==='chest'){
     credit(4+game.floor*2);floating('RARE CREDIT CACHE',pickup.x,pickup.y,C.gold);
   }else if(pickup.kind==='equipment'){
-    if(!p.map)p.map=true;else stash('armor1');
+    if(!p.map)p.map=true;else p.spares.push('armor1');
     floating('RARE EQUIPMENT',pickup.x,pickup.y,C.cyan);
   }else if(pickup.kind==='weapon'){
     const pool=['knife','revolver','auto_pistol','shotgun','ar'].filter(w=>w!==p.weapon);

@@ -382,3 +382,10 @@ test('pause freezes the mission clock and weapon reload timers',()=>{
   const clock=b.game.player.reloadClock,time=b.game.time;b.togglePause();b.update(1);
   assert.equal(b.game.time,time);assert.equal(b.game.player.reloadClock,clock);
 });
+
+
+test('rare field equipment stays at risk until recovered, not teleported to HQ storage',()=>{
+  b.enterHQ();b.resetRun();const count=b.game.profile.storage.armor1;
+  b.game.player.map=true;b.collectPickup({kind:'equipment',x:0,y:0});
+  assert.equal(b.game.profile.storage.armor1,count);assert.ok(b.game.player.spares.includes('armor1'));
+});
