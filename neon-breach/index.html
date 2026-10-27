@@ -55,7 +55,7 @@ body.hq-mode #location{top:19px;font-size:10px;max-width:calc(100vw - 185px)}
 @media(max-width:600px){#hqPrompt{bottom:192px;width:min(300px,75vw)}#hqPrompt button{font-size:10px;padding:9px 12px;min-height:40px}#hqPrompt span{font-size:9px}body.hq-mode #location{top:10px;font-size:8px;max-width:calc(100vw - 170px)}}
 
 </style>
-  <title>NEON BREACH — The Ascent v0.7.0</title>
+  <title>NEON BREACH — The Ascent v0.8.0</title>
 </head>
 <body>
   <canvas id="game" aria-label="Neon Breach twin-stick shooter"></canvas>
@@ -139,6 +139,10 @@ const STEP_X = 0;
 const STEP_Y = 0;
 const DOOR_HALF = 0;
 const CELL = 300;
+const EXTRACTION=Object.freeze({seconds:8,triggerRadius:56,holdRadius:100});
+const floorAdvanceAward=(floor,rooms)=>Math.round(35+floor*18+rooms*5);
+const floorClearAward=(floor,rooms)=>Math.max(10,Math.round(floorAdvanceAward(floor,rooms)*.35));
+const isGuard=e=>!['circle','square'].includes(e.type);
 class RNG {
   constructor(seed=1){this.state=(seed>>>0)||1;}
   next(){let x=this.state;x^=x<<13;x^=x>>>17;x^=x<<5;this.state=x>>>0;return this.state/4294967296;}
@@ -221,7 +225,10 @@ function roomAt(world,x,y){
   if(!floorAt(world,x,y))return null;
   // An overlapping shared threshold belongs to the nearest room center.
   let room=null,best=Infinity;
-  for(const r of world.rooms){const d=(x-r.cx)**2+(y-r.cy)**2;if(d<best){best=d;room=r;}}
+  for(const r of world.rooms){
+    if(x<r.x||x>r.x+r.w||y<r.y||y>r.y+r.h)continue;
+    const d=(x-r.cx)**2+(y-r.cy)**2;if(d<best){best=d;room=r;}
+  }
   return room;
 }
 function randomSpot(world,room,rng,radius=24,awayFromCenter=0){
@@ -437,8 +444,8 @@ function createHQWorld(){
 
 // Awareness and graph navigation operate on physical organic geometry, not doors.
 const VISION=Object.freeze({
-  circle:{range:410,halfAngle:Math.PI*.46,hearing:235,turn:1.6},
-  square:{range:500,halfAngle:Math.PI*.47,hearing:315,turn:2.05},
+  circle:{range:760,halfAngle:Math.PI*.48,hearing:600,turn:1.9},
+  square:{range:820,halfAngle:Math.PI*.48,hearing:680,turn:2.05},
   diamond:{range:610,halfAngle:Math.PI*.42,hearing:640,turn:3.15},
   trapezoid:{range:700,halfAngle:Math.PI*.37,hearing:790,turn:2.55},
   pentagon:{range:790,halfAngle:Math.PI*.41,hearing:850,turn:1.5}
@@ -458,7 +465,7 @@ function canSpot(world,e,player){
   const dx=player.x-e.x,dy=player.y-e.y,dist=Math.hypot(dx,dy);
   // Sneaking makes you harder to recognize, not invisible; near contact
   // defeats stealth. Stealth upgrades reduce the effective recognition range.
-  const conceal=player.sneaking?Math.max(.37,.62*(player.stealth||1)):1;
+  const conceal=player.sneaking?Math.max(.25,.38*(player.stealth||1)):1;
   const effectiveRange=Math.max(82,rule.range*conceal*(!player.sneaking&&player.moving?1.18:1));
   if(dist>effectiveRange||dist<.1)return false;
   const bearing=Math.atan2(dy,dx);
@@ -482,19 +489,26 @@ function findRoomPath(world,start,goal){
   return [];
 }
 function navigationPoint(world,e,target){
-  const current=roomAt(world,e.x,e.y);
+  const current=roomAt(world,e.x,e.y),destination=roomAt(world,target.x,target.y);
   if(current)e.room=current.id;
-  const destination=roomAt(world,target.x,target.y);
-  if(!destination||destination.id===e.room)return target;
-  const route=findRoomPath(world,e.room,destination.id);
-  if(route.length<2)return target;
-  const link=world.links.find(l=>(l.a===route[0]&&l.b===route[1])||(l.b===route[0]&&l.a===route[1]));
-  if(!link)return target;
-  // Guides pass through the actual curved tunnel bend before approaching the
-  // adjacent hall. Unlike axis-aligned door centers, this is physically open.
-  const next=world.rooms[route[1]];
-  if(Math.hypot(e.x-link.via.x,e.y-link.via.y)>link.width*.58)return link.via;
-  return {x:next.cx,y:next.cy};
+  if(!destination)return target;
+  // Keep the entire doorway/center chain until traversed. Recomputing from
+  // nearest room every frame can skip an opening at overlapping corners.
+  if(!e.navigation||e.navigation.world!==world||e.navigation.room!==destination.id){
+    const route=findRoomPath(world,e.room,destination.id),points=[];
+    if(route.length>1){
+      const first=world.rooms[route[0]];points.push({x:first.cx,y:first.cy});
+      for(let i=1;i<route.length;i++){
+        const link=world.links.find(l=>(l.a===route[i-1]&&l.b===route[i])||(l.b===route[i-1]&&l.a===route[i]));
+        if(link)points.push({...link.via});
+        const next=world.rooms[route[i]];points.push({x:next.cx,y:next.cy});
+      }
+    }
+    e.navigation={world,room:destination.id,points};
+  }
+  const points=e.navigation.points;
+  while(points.length&&Math.hypot(e.x-points[0].x,e.y-points[0].y)<20)points.shift();
+  return points[0]||target;
 }
 
 // Self-contained synthesized sound design + continuous, looping Nineteen Steps.
@@ -791,6 +805,7 @@ function resetRun(){
 function beginFloor(){
   game.world=generateFloor(game.floor,game.seed);
   game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];game.exitClock=0;
+  game.extraction=null;game.floorClearPaid=false;
   const start=game.world.rooms[0];game.player.x=start.cx;game.player.y=start.cy;
   game.player.cool=0;game.player.invuln=1.15;game.activeRoom=0;
   // Every room, cache, and enemy is present at floor creation. The starter
@@ -831,6 +846,8 @@ function spawnEnemies(room){
       state:'idle',alertTime:0,searchTime:0,sees:false,suspicion:0,perceptionClock:rand(.02,.23),
       anchor:{x:pos.x,y:pos.y},patrol:{x:pos.x,y:pos.y},patrolClock:0,lastKnown:null,
       route:[],routeIndex:0,stareClock:0,stareAngle:0,lookIndex:0,lookClock:0,searchNodes:[],searchIndex:0,hadSight:false};
+    // The first human guard holds a rotating post; others repeat floor routes.
+    e.duty=isGuard(e)&&!game.enemies.some(isGuard)?'post':'patrol';
     initializeBehavior(e);
     roster.push(e);game.enemies.push(e);
   }
@@ -858,10 +875,11 @@ function alertEnemy(e,x,y,duration=6,state='alert'){
   e.perceptionClock=Math.min(e.perceptionClock,.03);
 }
 function emitNoise(x,y,volume=1){
-  // Sounds are clues for patrollers and guards; red wanderers do not investigate.
+  // Audible running is a location clue, including for zombies; walls still
+  // block sight and hearing never grants the ability to shoot through them.
   for(const e of game.enemies){
-    if(e.type==='circle'||e.state==='alert'||!canHear(e,x,y,volume))continue;
-    const duration=e.type==='square'?1.1:e.type==='pentagon'?6.5:e.type==='trapezoid'?5.5:3;
+    if(e.state==='alert'||!canHear(e,x,y,volume))continue;
+    const duration=e.type==='circle'?2.5:e.type==='square'?1.5:e.type==='pentagon'?6.5:e.type==='trapezoid'?5.5:3;
     alertEnemy(e,x,y,duration,'investigate');
   }
 }
@@ -874,6 +892,7 @@ function playerDamage(amount){
   if(p.hp<=0)die();
 }
 function die(){
+  game.extraction=null;game.exitClock=0;
   game.mode='DEAD';show('death',true);show('touchUI',false);show('aimTip',false);
   game.loadout=emptyLoadout();saveProfile();
   $('deathStats').textContent=`SECTOR ${String(game.floor).padStart(2,'0')}  ·  ${game.kills} KILLS  ·  ${game.runCash} CR BANKED  ·  ${game.profile.credits} CR SAFE`;
@@ -891,10 +910,32 @@ function recoverGear(){
   game.loadout=emptyLoadout();saveProfile();
 }
 function exfil(){
+  game.extraction=null;game.exitClock=0;
   recoverGear();playSound('start');enterHQ(`EXFIL SUCCESS // GEAR RECOVERED // ${game.profile.credits} CREDITS SAFE`);
 }
+function updateExtraction(dt){
+  if(game.mode!=='PLAY')return false;
+  const room=game.world.exfil==null?null:game.world.rooms[game.world.exfil];
+  if(!room){game.extraction=null;return false;}
+  const p=game.player,dist=Math.hypot(p.x-room.cx,p.y-room.cy);
+  if(game.extraction&&dist>EXTRACTION.holdRadius){
+    game.extraction=null;
+    announce('EXFIL CANCELLED // RETURN TO THE INNER MARKER TO RETRY',2);
+    return false;
+  }
+  if(!game.extraction&&dist<EXTRACTION.triggerRadius){
+    game.extraction={elapsed:0,room:room.id,remaining:EXTRACTION.seconds};
+    announce('EXFIL ALARM // HOLD THE RING FOR 8 SECONDS',2.2);
+  }
+  if(!game.extraction)return false;
+  for(const e of game.enemies)alertEnemy(e,p.x,p.y,EXTRACTION.seconds+1,'alert');
+  game.extraction.elapsed+=dt;
+  game.extraction.remaining=Math.max(0,Math.ceil(EXTRACTION.seconds-game.extraction.elapsed));
+  if(game.extraction.elapsed>=EXTRACTION.seconds){exfil();return true;}
+  return false;
+}
 function nextFloor(){
-  const award=Math.round(35+game.floor*18+game.world.rooms.length*5);
+  const award=floorAdvanceAward(game.floor,game.world.rooms.length);
   credit(award);game.floor++;beginFloor();game.mode='PLAY';
   announce(`SECTOR CLEARED +${award} CR  //  LEVEL ${String(game.floor).padStart(2,'0')}  //  ${game.world.stratum.name}`,3);
   playSound('door');
@@ -1027,64 +1068,61 @@ function shootEnemy(e,angle,spread=0){
   makeBullet(e.x,e.y,angle+spread,'enemy',TYPE[e.type].damage,TYPE[e.type].name==='HEAVY GUARD'?320:370,TYPE[e.type].color,5);
   burst(e.x+Math.cos(angle)*26,e.y+Math.sin(angle)*26,TYPE[e.type].color,2,.18);
 }
-// An NPC never learns the player's exact position without sight or a noise.
-// Patrol nodes, staring periods, and search points are precomputed per NPC;
-// no enemy AI is created when a player walks into a new area.
-function validPost(e,x,y){
-  return walkable(game.world,x,y,e.r+3) && roomAt(game.world,x,y)?.id===e.homeRoom;
-}
+// Idle routes traverse the connected floor graph. Combat may interrupt a
+// route, but never re-rolls it: a patroller returns to the same repeating tour.
+function validPost(e,x,y){return walkable(game.world,x,y,e.r+3);}
 function buildPostRoute(e){
-  const anchor=e.anchor,phase=e.id*97.3;
-  const isSquare=e.type==='square';
-  const dist=isSquare?96:e.type==='pentagon'?50:155;
-  const offsets=isSquare?[[0,0],[dist,0],[dist,dist],[0,dist]]:
-    [[0,0],[dist,0],[dist*.52,dist*.65],[-dist*.55,dist*.32]];
-  const angle=phase%(TAU),ca=Math.cos(angle),sa=Math.sin(angle);
-  const route=[];
-  for(const [px,py] of offsets){
-    const x=anchor.x+px*ca-py*sa,y=anchor.y+px*sa+py*ca;
-    if(validPost(e,x,y))route.push({x,y});
+  const world=game.world,start=roomAt(world,e.anchor.x,e.anchor.y)?.id??e.homeRoom;
+  const visited=new Set(),order=[];
+  function tour(id){
+    visited.add(id);order.push(id);
+    const neighbors=[...world.rooms[id].neighbors].sort((a,b)=>e.orbit*(a-b));
+    for(const next of neighbors)if(!visited.has(next)){tour(next);order.push(id);}
   }
-  if(route.length<2){
-    for(const heading of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
-      const x=anchor.x+Math.cos(heading)*dist*.5,y=anchor.y+Math.sin(heading)*dist*.5;
-      if(validPost(e,x,y))route.push({x,y});
-    }
+  tour(start);
+  const route=[{...e.anchor,room:start}];
+  for(const id of order){
+    const room=world.rooms[id];
+    if(validPost(e,room.cx,room.cy))route.push({x:room.cx,y:room.cy,room:id});
   }
-  return route.length>1?route:[{...anchor}];
+  return route;
 }
 function initializeBehavior(e){
   if(!e.anchor)e.anchor={x:e.x,y:e.y};
-  if(!e.patrol)e.patrol={...e.anchor};
-  e.route=buildPostRoute(e);e.routeIndex=0;e.patrol=e.route[0];e.searchNodes=[];e.searchIndex=0;
-  e.stareClock=e.type==='circle'?rand(2.7,5.2):e.type==='square'?rand(.55,1.05):rand(1.3,2.2);
-  e.stareAngle=e.angle;e.lookIndex=0;e.lookClock=rand(.45,.85);
+  if(!e.duty)e.duty='patrol';
+  e.route=e.duty==='post'?[{...e.anchor,room:e.homeRoom}]:buildPostRoute(e);
+  e.routeIndex=0;e.patrol=e.route[0];e.searchNodes=[];e.searchIndex=0;
+  e.stareClock=e.type==='circle'?rand(1.2,2.8):rand(2.5,4);
+  e.stareAngle=e.angle;e.lookIndex=0;e.lookClock=rand(.7,1.1);
   e.hadSight=false;e.isWalking=false;e.atPost=true;
 }
 function chooseCircleWander(e){
-  // Short, unhurried random walks with a long, fixed-direction stare between.
-  e.stareClock=0;
-  for(let i=0;i<25;i++){
-    const angle=rand(0,TAU),d=rand(22,68),x=e.x+Math.cos(angle)*d,y=e.y+Math.sin(angle)*d;
-    if(validPost(e,x,y)){e.patrol={x,y};e.isWalking=true;return;}
-  }
-  e.patrol={x:e.x,y:e.y};e.isWalking=false;e.stareClock=rand(2.8,5.1);
+  // Random destinations span the floor, rather than a circle around spawn.
+  const rooms=game.world.rooms,current=roomAt(game.world,e.x,e.y)?.id;
+  const others=rooms.filter(r=>r.id!==current);
+  const room=(others.length?others:rooms)[Math.floor(Math.random()*(others.length||rooms.length))];
+  const point=randomSpot(game.world,room,game.world.rng,e.r+3,65);
+  e.stareClock=0;e.patrol=validPost(e,point.x,point.y)?point:{x:room.cx,y:room.cy};
+  e.isWalking=true;
 }
 function finishPost(e){
   if(e.type==='circle'){
-    e.stareClock=rand(2.7,5.4);
-    // Look in ONE direction throughout the entire pause, not a scanning cone.
-    e.stareAngle=rand(0,TAU);
+    e.stareClock=rand(1.2,2.8);e.stareAngle=rand(0,TAU);
     e.patrol={x:e.x,y:e.y};e.isWalking=false;
   }else{
-    e.routeIndex=(e.routeIndex+1)%e.route.length;
-    e.patrol=e.route[e.routeIndex];
-    e.stareClock=e.type==='square'?rand(.50,.90):e.type==='pentagon'?rand(2.8,4.4):rand(1.55,2.75);
-    e.stareAngle=e.angle;e.lookIndex=0;e.lookClock=.45;e.atPost=false;
+    e.routeIndex=(e.routeIndex+1)%e.route.length;e.patrol=e.route[e.routeIndex];
+    e.atPost=false;e.stareClock=0;
   }
 }
 function patrolIntent(e,dt){
+  if(!e.route)initializeBehavior(e);
   const at=Math.hypot(e.x-e.patrol.x,e.y-e.patrol.y)<18;
+  if(e.duty==='post'){
+    if(!at)return {target:e.patrol,speed:e.spd*.48,look:Math.atan2(e.patrol.y-e.y,e.patrol.x-e.x)};
+    e.stareClock-=dt;
+    if(e.stareClock<=0){e.stareAngle+=e.orbit*Math.PI/2;e.stareClock=rand(2.5,4);}
+    return {target:e.patrol,speed:0,look:e.stareAngle};
+  }
   if(e.type==='circle'){
     if(e.isWalking){
       if(at)finishPost(e);
@@ -1093,25 +1131,19 @@ function patrolIntent(e,dt){
     e.stareClock=Math.max(0,(e.stareClock||0)-dt);
     if(e.stareClock>0)return {target:{x:e.x,y:e.y},speed:0,look:e.stareAngle};
     chooseCircleWander(e);
-    return {target:e.patrol,speed:e.spd*.50,look:Math.atan2(e.patrol.y-e.y,e.patrol.x-e.x)};
-  }
-  // Route legs and pauses are distinct; arriving never skips the watch period.
-  if(at&&!e.atPost){
-    e.atPost=true;
-    e.stareClock=e.type==='square'?rand(.55,1):e.type==='pentagon'?rand(2.8,4.4):rand(1.6,2.7);
-    e.stareAngle=e.angle;e.lookClock=.45;e.lookIndex=0;
-  }
-  if(at){
-    e.stareClock=Math.max(0,(e.stareClock||0)-dt);
-    if(e.stareClock<=0){finishPost(e);}
-    else if(e.type==='square')return {target:e.patrol,speed:0,look:e.stareAngle};
-    else{
-      e.lookClock-=dt;
-      if(e.lookClock<=0){e.lookIndex++;e.lookClock=e.type==='pentagon'?.78:.62;}
-      return {target:e.patrol,speed:0,look:e.stareAngle+Math.sin(e.lookIndex*1.7)*1.22};
+  }else if(at){
+    if(!e.atPost){
+      e.atPost=true;e.stareClock=rand(2.5,4.5);e.stareAngle=e.angle;
+      e.lookClock=rand(.65,1.1);
     }
+    e.stareClock-=dt;e.lookClock-=dt;
+    if(e.lookClock<=0){
+      e.stareAngle+=(Math.random()<.5?-1:1)*Math.PI/2;e.lookClock=rand(.7,1.1);
+    }
+    if(e.stareClock>0)return {target:e.patrol,speed:0,look:e.stareAngle};
+    finishPost(e);
   }
-  return {target:e.patrol,speed:e.spd*(e.type==='square'?.53:e.type==='pentagon'?.24:.48),
+  return {target:e.patrol,speed:e.spd*(e.type==='square'?.53:e.type==='pentagon'?.32:.48),
     look:Math.atan2(e.patrol.y-e.y,e.patrol.x-e.x)};
 }
 function prepareSearch(e){
@@ -1166,7 +1198,8 @@ function updateEnemies(dt){
       if(e.sees&&dist<e.r+p.r+33)alertEnemy(e,p.x,p.y,5.5,'alert');
     }
     // Zombies never retain supernatural knowledge of a player behind a wall.
-    if(e.hadSight&&!e.sees&&e.state==='alert'){
+    const alarm=!!game.extraction;
+    if(!alarm&&e.hadSight&&!e.sees&&e.state==='alert'){
       if(e.type==='circle')forgetWanderer(e);
       else prepareSearch(e);
     }
@@ -1178,7 +1211,8 @@ function updateEnemies(dt){
     if(e.sees&&e.state==='alert')e.lastKnown={x:p.x,y:p.y};
     let target=null,look=null,speed=e.spd;
     if(e.state==='alert'){
-      if(!e.sees&&e.type==='circle')forgetWanderer(e);
+      if(alarm){target={x:p.x,y:p.y};look=Math.atan2(p.y-e.y,p.x-e.x);}
+      else if(!e.sees&&e.type==='circle')forgetWanderer(e);
       else if(e.sees){target={x:p.x,y:p.y};look=Math.atan2(p.y-e.y,p.x-e.x);}
       else if(e.type==='square'||e.type==='trapezoid'||e.type==='pentagon'||e.type==='diamond'){
         prepareSearch(e);
@@ -1186,9 +1220,7 @@ function updateEnemies(dt){
     }
     if(e.state==='investigate'){
       if(e.lastKnown){target=e.lastKnown;look=Math.atan2(target.y-e.y,target.x-e.x);}
-      if(e.type==='circle'){
-        forgetWanderer(e);target=null;
-      }else if(!target||Math.hypot(e.x-target.x,e.y-target.y)<30||e.alertTime<=0){
+      if(!target||Math.hypot(e.x-target.x,e.y-target.y)<30||e.alertTime<=0){
         prepareSearch(e);target=null;
       }else e.alertTime=Math.max(0,e.alertTime-dt);
     }
@@ -1211,7 +1243,7 @@ function updateEnemies(dt){
       const idle=patrolIntent(e,dt);target=idle.target;speed=idle.speed;look=idle.look;
     }
     // Pursuit is a distinct gait, markedly faster than wandering/patrol.
-    if(e.state==='alert'&&e.sees&&(e.type==='circle'||e.type==='square'))speed*=e.type==='circle'?2.25:1.68;
+    if(e.state==='alert'&&(e.sees||alarm)&&(e.type==='circle'||e.type==='square'))speed*=e.type==='circle'?2.25:1.68;
     const nav=navigationPoint(world,e,target);
     let dx=nav.x-e.x,dy=nav.y-e.y;
     const len=Math.hypot(dx,dy),bearing=Math.atan2(dy,dx);
@@ -1229,7 +1261,7 @@ function updateEnemies(dt){
         else if(dist<preferred+60){mx=-pdy*e.orbit;my=pdx*e.orbit;speed*=.72;}
       }
     }
-    const face=e.sees&&e.state==='alert'?Math.atan2(pdy,pdx):look??bearing;
+    const face=e.sees&&e.state==='alert'?Math.atan2(pdy,pdx):speed>0&&len>14?bearing:look??bearing;
     e.angle=turnToward(e.angle,face,VISION[e.type].turn*dt);
     if(e.sees&&e.state==='alert'&&e.cool<=0&&dist<(e.type==='pentagon'?780:740)
       &&Math.abs(angleDifference(Math.atan2(pdy,pdx),e.angle))<.24&&canSpot(world,e,p)){
@@ -1314,6 +1346,10 @@ function killEnemy(e){
   // Deliberately very rare: 0.18% chance per enemy kill.
   if(Math.random()<.0014)makePickup('weapon',e.x-18,e.y+12,0);
   if(!room.enemies.length)secureRoom(room);
+  if(!game.enemies.length&&!game.floorClearPaid){
+    game.floorClearPaid=true;const bonus=floorClearAward(game.floor,game.world.rooms.length);
+    credit(bonus);announce(`ALL HOSTILES CLEARED // +${bonus} CR BONUS`,2.5);
+  }
   updateUI();
 }
 function makePickup(kind,x,y,value){
@@ -1392,12 +1428,11 @@ function update(dt){
   // Room discovery affects HUD/map only. No doors, spawns, or collisions.
   const room=roomAt(game.world,p.x,p.y);
   if(room&&room.id!==game.activeRoom)enterRoom(room);
+  if(updateExtraction(dt))return;
   updateEnemies(dt);updateBullets(dt);updatePickups(dt);updateParticles(dt);
+  if(game.mode!=='PLAY')return;
   const exit=game.world.rooms[game.world.exit];
-  const ex=game.world.exfil==null?null:game.world.rooms[game.world.exfil];
-  if(ex&&Math.hypot(p.x-ex.cx,p.y-ex.cy)<56){
-    game.exitClock+=dt;if(game.exitClock>.75)exfil();
-  }else if(Math.hypot(p.x-exit.cx,p.y-exit.cy)<56){
+  if(!game.extraction&&Math.hypot(p.x-exit.cx,p.y-exit.cy)<56){
     game.exitClock+=dt;if(game.exitClock>.75)nextFloor();
   }else game.exitClock=0;
   const smooth=Math.min(1,dt*8);camera.x+=(p.x-camera.x)*smooth;camera.y+=(p.y-camera.y)*smooth;
@@ -1515,9 +1550,13 @@ function drawRoom(room){
   }
   if(room.exfil){
     const pulse=Math.sin(now*3)*4;
+    const active=game.extraction?.room===room.id;
+    ctx.save();ctx.setLineDash([10,7]);
+    glowCircle(x,y,EXTRACTION.holdRadius,active?C.red:C.gold,'#27271d33',active?4:2,8);
+    ctx.restore();
     glowCircle(x,y,41+pulse,C.gold,'#27271d',3,18);
-    ctx.fillStyle=C.gold;ctx.font='900 14px ui-monospace,monospace';ctx.fillText('EXFIL',x,y+4);
-    ctx.font='700 12px ui-monospace,monospace';ctx.fillText('RETURN TO HQ WITH GEAR',x,y+75);
+    ctx.fillStyle=C.gold;ctx.font='900 14px ui-monospace,monospace';ctx.fillText(active?`${game.extraction.remaining}s`:'EXFIL',x,y+4);
+    ctx.font='700 12px ui-monospace,monospace';ctx.fillText(active?'HOLD THE RING // ALL HOSTILES ALERT':'ENTER MARKER // HOLD 8s TO EXFIL',x,y+132);
   }
 }
 function drawHQStations(){

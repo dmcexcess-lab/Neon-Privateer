@@ -15,11 +15,16 @@ const makeElement=()=>({
   querySelector(){return makeElement()}
 });
 const elements=new Map();
+// Reproducible headings, pauses and spawn offsets for traversal regressions.
+let randomSeed=0x1234abcd;
+const seededMath=Object.create(Math);
+seededMath.random=()=>{randomSeed=(Math.imul(randomSeed,1664525)+1013904223)>>>0;return randomSeed/4294967296;};
 const document={
   body:makeElement(),hidden:false,addEventListener(){},createElement:makeElement,
   getElementById(id){if(!elements.has(id))elements.set(id,makeElement());return elements.get(id);}
 };
 const sandbox={
+  Math:seededMath,
   document,localStorage:{getItem(){return null},setItem(){}},navigator:{getGamepads(){return []}},
   innerWidth:1080,innerHeight:830,devicePixelRatio:1,performance,
   addEventListener(){},requestAnimationFrame(){},
@@ -27,7 +32,9 @@ const sandbox={
 };
 vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
-  canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount};
+  canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
+  initializeBehavior,buildPostRoute,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
+  updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
 
@@ -43,7 +50,7 @@ function openWorld(){
   const floor={x:-3500,y:-3500,w:7000,h:7000,minX:-3500,minY:-3500,maxX:3500,maxY:3500};
   const buckets=new Map();
   for(let x=-12;x<=12;x++)for(let y=-12;y<=12;y++)buckets.set(x+','+y,[floor]);
-  return {rooms:[room],buckets,links:[],walls:[],shapes:[floor]};
+  return {rooms:[room],buckets,links:[],walls:[],shapes:[floor],rng:new b.RNG(9)};
 }
 function zombie(x,type='circle'){
   const speed=b.TYPE[type].spd;
@@ -78,7 +85,7 @@ test('footsteps attract distant zombies and pursuit is faster than patrolling',(
   assert.ok(chaseDistance>patrolSpeed*.1*2,'pursuit materially exceeds idle patrol speed');
   e.state='idle';e.x=0;e.perceptionClock=999;
   b.emitNoise(190,0,1.12);
-  assert.equal(e.state,'idle','red wanderers ignore noise-only clues');
+  assert.equal(e.state,'investigate','running now attracts red zombies');
   const yellow=zombie(0,'square');yellow.state='idle';
   b.game.enemies=[yellow];b.emitNoise(190,0,1.12);
   assert.equal(yellow.state,'investigate','yellow patrollers check footsteps');
@@ -95,7 +102,98 @@ test('red wanderers forget instantly when line of sight breaks, regardless of ti
   assert.equal(e.state,'idle');assert.equal(e.lastKnown,null);
   assert.equal(e.suspicion,0);assert.equal(e.sees,false);
   b.emitNoise(-165,0,1.5);
-  assert.equal(e.state,'idle','red never resumes a search from sound');
+  assert.equal(e.state,'investigate','new audible movement is a fresh clue');
+});
+
+test('zombies detect non-stealth movement far ahead but not through cover',()=>{
+  const world=openWorld(),e=zombie(0),p={x:850,y:0,r:16,sneaking:false,moving:true,stealth:1};
+  assert.equal(b.canSpot(world,e,p),true);
+  p.sneaking=true;assert.equal(b.canSpot(world,e,p),false);
+  p.sneaking=false;world.rooms[0].cover=[{x:400,y:0,w:50,h:100,hp:4}];
+  assert.equal(b.canSpot(world,e,p),false,'stronger awareness still respects occlusion');
+  world.rooms[0].cover=[];e.state='idle';b.game.enemies=[e];b.game.extraction=null;
+  b.emitNoise(600,0,1.12);assert.equal(e.state,'investigate');
+  assert.equal(e.lastKnown.x,600);
+});
+
+function generatedScenario(floor=15){
+  b.game.floor=floor;b.game.seed=0xBEEF1234;b.game.mode='PLAY';
+  b.game.player={x:0,y:0,r:16,hp:100,maxHp:100,invuln:999,weapon:'hands',
+    armorTier:0,medkits:0,spares:[],map:true,sneaking:false,moving:false,stealth:1};
+  b.beginFloor();
+}
+
+test('first human guard holds a rotating post; other tours span every room',()=>{
+  generatedScenario(30);
+  const guards=b.game.enemies.filter(e=>!['circle','square'].includes(e.type));
+  assert.ok(guards.length>1);assert.equal(guards[0].duty,'post');
+  for(const guard of guards.slice(1)){
+    assert.equal(guard.duty,'patrol');
+    const rooms=new Set(guard.route.map(p=>p.room));
+    assert.equal(rooms.size,b.game.world.rooms.length,'tour includes the whole connected floor');
+    const fixed=JSON.stringify(guard.route);
+    for(let n=0;n<guard.route.length+2;n++){
+      guard.x=guard.patrol.x;guard.y=guard.patrol.y;b.patrolIntent(guard,20);
+    }
+    assert.equal(JSON.stringify(guard.route),fixed,'tour repeats without randomizing its stops');
+  }
+  for(const direction of [-1,1]){
+    const e={...guards[0],orbit:direction,stareClock:0,stareAngle:0};
+    e.x=e.patrol.x;e.y=e.patrol.y;
+    const intent=b.patrolIntent(e,.02);
+    assert.equal(intent.speed,0);assert.equal(intent.look,direction*Math.PI/2);
+    const next=b.patrolIntent(e,e.stareClock+.01);
+    assert.equal(next.look,direction*Math.PI,'quarter turn, same chosen direction');
+  }
+});
+
+test('random walks choose a different room and patrollers really cross room boundaries',()=>{
+  generatedScenario(6);
+  const e=b.game.enemies.find(e=>e.type==='circle')||b.game.enemies[0];
+  for(let i=0;i<20;i++){
+    const home=b.roomAt(b.game.world,e.x,e.y).id;b.chooseCircleWander(e);
+    assert.notEqual(b.roomAt(b.game.world,e.patrol.x,e.patrol.y).id,home);
+    assert.equal(b.walkable(b.game.world,e.patrol.x,e.patrol.y,e.r+3),true);
+  }
+  e.type='square';e.duty='patrol';e.state='idle';b.initializeBehavior(e);
+  b.game.enemies=[e];b.game.player.x=-1e6;b.game.player.y=-1e6;
+  const seen=new Set([e.room]);
+  for(let n=0;n<9000;n++){b.updateEnemies(.1);seen.add(e.room);}
+  assert.equal(seen.size,b.game.world.rooms.length,'actual traversal '+JSON.stringify({seen:[...seen],pos:[e.x,e.y],patrol:e.patrol,index:e.routeIndex,nav:b.navigationPoint(b.game.world,e,e.patrol),cover:b.game.world.rooms.flatMap(r=>r.cover).filter(p=>Math.hypot(p.x-e.x,p.y-e.y)<250),route:e.route}));
+});
+
+test('exfil alarms the entire floor, cancels outside the ring, and requires eight seconds',()=>{
+  generatedScenario(15);
+  // Optional exfil is probabilistic; explicitly designate a room for this scenario.
+  b.game.world.exfil=1;b.game.world.rooms[1].exfil=true;
+  const room=b.game.world.rooms[b.game.world.exfil];assert.ok(room);
+  Object.assign(b.game.player,{x:room.cx,y:room.cy});
+  b.updateExtraction(.1);
+  assert.ok(b.game.enemies.every(e=>e.state==='alert'&&e.lastKnown.x===room.cx));
+  const remote=b.game.enemies.find(e=>Math.hypot(e.x-room.cx,e.y-room.cy)>1000);
+  assert.ok(remote,'test includes an enemy far outside the old local simulation range');
+  b.updateEnemies(.1);assert.equal(remote.state,'alert','alarm overrides loss of sight');
+  b.game.player.x=room.cx+b.EXTRACTION.holdRadius+1;b.updateExtraction(.1);
+  assert.equal(b.game.extraction,null);
+  b.game.player.x=room.cx+70;b.updateExtraction(.1);assert.equal(b.game.extraction,null,'outer ring does not restart');
+  b.game.player.x=room.cx;b.updateExtraction(5);assert.equal(b.game.mode,'PLAY');
+  assert.equal(b.game.extraction.remaining,3);
+  b.game.mode='PAUSE';b.updateExtraction(30);assert.equal(b.game.extraction.remaining,3);
+  b.game.mode='PLAY';b.updateExtraction(2.99);assert.equal(b.game.mode,'PLAY');
+  assert.equal(b.updateExtraction(.02),true);assert.equal(b.game.mode,'HQ');
+  assert.equal(b.game.extraction,null);
+});
+
+test('last hostile pays a smaller clear bonus once, independent of stairs',()=>{
+  generatedScenario(6);
+  const enemies=[...b.game.enemies],start=b.game.profile.credits;
+  const kills=enemies.reduce((sum,e)=>sum+Math.round(b.TYPE[e.type].credits*(1+(b.game.floor-1)*.12)),0);
+  const bonus=b.floorClearAward(b.game.floor,b.game.world.rooms.length);
+  assert.ok(bonus>0&&bonus<b.floorAdvanceAward(b.game.floor,b.game.world.rooms.length));
+  for(const enemy of enemies)b.killEnemy(enemy);
+  assert.equal(b.game.profile.credits-start,kills+bonus);
+  b.killEnemy(enemies.at(-1));assert.equal(b.game.profile.credits-start,kills+bonus);
+  assert.equal(b.game.floorClearPaid,true);
 });
 
 test('short yellow checks versus extended guard investigations',()=>{
