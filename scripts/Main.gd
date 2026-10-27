@@ -3,6 +3,7 @@ extends Node2D
 const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
+const FirewallGame = preload("res://neon-firewall/scripts/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 4
 const CRIME_SCHEMA_VERSION := 1
@@ -78,6 +79,7 @@ const PROFILE_CONTINUE_RECT := Rect2(54.0, 352.0, 282.0, 64.0)
 const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
 const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
 const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
+const HUB_FIREWALL_RECT := Rect2(35.0, 774.0, 320.0, 48.0)
 const HUB_CAREERS_RECT := Rect2(35.0, 710.0, 320.0, 54.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 390.0, 320.0, 54.0)
 const HUB_TRADE_RECT := Rect2(35.0, 454.0, 320.0, 54.0)
@@ -192,6 +194,10 @@ const ENEMY_MISSILE_RADIUS := 7.0
 const ENEMY_MISSILE_DAMAGE := 2
 const ENEMY_MISSILE_TURN_RATE := 3.2
 const HIT_INVULN_TIME := 0.5
+
+var firewall_open := false
+var firewall: Node2D
+var firewall_profile: Dictionary = FirewallGame.default_profile()
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -431,6 +437,7 @@ func _ready() -> void:
     rng.randomize()
     _load_privateer_ui_art()
     _setup_audio()
+    _setup_firewall()
     _load_career_index()
     _migrate_legacy_career_if_needed()
     profile_menu_open = true
@@ -441,10 +448,52 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+        if firewall_open:
+            firewall.pause_game()
         if (playing or shop_open) and not game_over:
             _pause_run()
         if active_career_slot > 0:
             _save_all_state()
+
+func _setup_firewall() -> void:
+    firewall = FirewallGame.new()
+    firewall.name = "FirewallTerminal"
+    firewall.embedded = true
+    firewall.visible = false
+    firewall.configure(firewall_profile, research_credits)
+    firewall.career_changed.connect(_firewall_changed)
+    firewall.exit_requested.connect(_close_firewall)
+    add_child(firewall)
+
+func _open_firewall() -> bool:
+    if active_career_slot <= 0 or playing or route_active or not hub_open:
+        return false
+    firewall.configure(firewall_profile, research_credits)
+    firewall.visible = true
+    firewall_open = true
+    hub_open = false
+    _clear_control_holds()
+    queue_redraw()
+    return true
+
+func _firewall_changed(data: Dictionary, cash: int) -> void:
+    # Cash and the credited-run ledger are committed together in one meta file.
+    # The terminal has no parallel wallet and cannot touch protected bank funds.
+    if not firewall_open:
+        return
+    firewall_profile = data.duplicate(true)
+    research_credits = maxi(0,cash)
+    _save_meta()
+
+func _close_firewall() -> void:
+    if not firewall_open:
+        return
+    firewall.persist()
+    firewall.visible = false
+    firewall_open = false
+    hub_open = true
+    _save_all_state()
+    queue_redraw()
 
 func _setup_audio() -> void:
     for i in 10:
@@ -576,6 +625,10 @@ func _migrate_legacy_career_if_needed() -> void:
     _save_career_index()
 
 func _reset_career_state() -> void:
+    firewall_open = false
+    firewall_profile = FirewallGame.default_profile()
+    if is_instance_valid(firewall):
+        firewall.visible = false
     research_credits = 1200
     bank_balance = 0
     market_index_holdings = {"green": 0, "grey": 0}
@@ -3010,13 +3063,18 @@ func _load_privateer_state() -> void:
 
 
 func _save_all_state() -> void:
+    if firewall_open:
+        firewall.persist()
     _save_meta()
     _save_privateer_state()
 
 func _process(delta: float) -> void:
     _sync_soundtrack()
-    if not run_paused:
+    if not run_paused and not (firewall_open and firewall.phase != "PLAY"):
         _update_active_contract_clock(delta)
+    if firewall_open:
+        queue_redraw()
+        return
     if not playing and market_open and not run_paused:
         docked_market_clock += delta
         if docked_market_clock >= DOCKED_MARKET_TICK_SECONDS:
@@ -3121,6 +3179,8 @@ func _sync_soundtrack() -> void:
         soundtrack.set_flight(not profile_menu_open and (playing or route_active or shop_open))
 
 func _input(event: InputEvent) -> void:
+    if firewall_open:
+        return
     if travel_open:
         if event is InputEventScreenTouch:
             if event.pressed:
@@ -3675,6 +3735,8 @@ func _handle_hub_tap(pos: Vector2) -> void:
     elif HUB_UPGRADES_RECT.has_point(pos):
         research_open = true
         hub_open = false
+    elif HUB_FIREWALL_RECT.has_point(pos):
+        _open_firewall()
     elif HUB_CAREERS_RECT.has_point(pos):
         _open_profile_menu()
         return
@@ -4391,6 +4453,7 @@ func _bank_run_score() -> void:
 func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
+    cfg.set_value("meta", "firewall", var_to_bytes(firewall_profile))
     cfg.set_value("meta", "bank_balance", bank_balance)
     cfg.set_value("meta", "fuel", ship_fuel)
     cfg.set_value("meta", "jump_range", research_jump_range)
@@ -4416,6 +4479,7 @@ func _load_meta() -> void:
     if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
+    firewall_profile = FirewallGame.decode_profile(cfg.get_value("meta", "firewall", FirewallGame.default_profile()))
     bank_balance = int(cfg.get_value("meta", "bank_balance", 0))
     ship_fuel = clampi(int(cfg.get_value("meta", "fuel", FUEL_CAPACITY)), 0, FUEL_CAPACITY)
     research_jump_range = clampi(int(cfg.get_value("meta", "jump_range", 0)), 0, JUMP_RANGE_MAX - JUMP_RANGE_BASE)
@@ -5649,6 +5713,8 @@ func _active_boss_object() -> Dictionary:
     return {}
 
 func _draw() -> void:
+    if firewall_open:
+        return
     var offset := Vector2(rng.randf_range(-shake, shake), rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
     _draw_background()
@@ -6420,6 +6486,10 @@ func _draw_title() -> void:
     draw_rect(HUB_CAREERS_RECT, Color(0.07, 0.08, 0.16, 0.92), true)
     draw_rect(HUB_CAREERS_RECT, Color("b56cff"), false, 3.0)
     _text_center("CAREERS", HUB_CAREERS_RECT.position.y + 38.0, 20, Color("f0fbff"), HUB_CAREERS_RECT.position.x, HUB_CAREERS_RECT.end.x)
+    draw_rect(HUB_FIREWALL_RECT, Color("182039"), true)
+    draw_rect(HUB_FIREWALL_RECT, Color("ff60bd"), false, 2.0)
+    _text_center("NETWORK / NEON FIREWALL", HUB_FIREWALL_RECT.position.y + 31.0, 17, Color("f0fbff"), HUB_FIREWALL_RECT.position.x, HUB_FIREWALL_RECT.end.x)
+
 func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)
     draw_rect(SUBMENU_BACK_RECT, Color("77f7ff"), false, 2.0)

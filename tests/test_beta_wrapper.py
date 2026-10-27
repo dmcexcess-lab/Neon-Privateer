@@ -32,8 +32,9 @@ function ready() {setStatusMode('hidden');}</script></body>''')
             with self.assertRaises(ValueError):
                 wrapper.wrap(path, 'abc123')
 
-    def test_classic_and_breach_have_complete_independent_pages(self):
+    def test_standalone_games_have_complete_independent_pages(self):
         fixtures = {
+            'firewall': '<head></head><canvas id="canvas"></canvas><script>function displayFailureNotice(err) {} function ready() {setStatusMode(\'hidden\');}</script>',
             'classic': '<head></head><canvas id="canvas"></canvas><script>function displayFailureNotice(err) {} function ready() {setStatusMode(\'hidden\');}</script>',
             'breach': '<head></head><canvas id="game"></canvas><script type="module">requestAnimationFrame(frame);</script>',
         }
@@ -61,7 +62,7 @@ function ready() {setStatusMode('hidden');}</script></body>''')
                 self.assertTrue((path.parent / 'beta.js').is_file())
                 if key == 'classic':
                     self.assertEqual((path.parent / 'play.html').read_text(), game)
-                else:
+                elif key == 'breach':
                     self.assertGreater(game.rfind('dmc-game-ready'), game.rfind('requestAnimationFrame(frame);'))
 
     def test_breach_rejects_missing_game_module_without_overwriting(self):

@@ -20,6 +20,20 @@ PROFILES = {
   'MUSIC_HEADING': 'A soundtrack for the waiting.<br>A soundtrack for the run.',
   'MUSIC': '<div><dt>SPACEPORT + MENUS</dt><dd>Do Androids Dream</dd></div><div><dt>SPACEFLIGHT</dt><dd>Nineteen Steps</dd></div>',
  },
+ 'firewall': {
+  'GAME_NAME': 'Neon Firewall', 'GAME_SLUG': 'neon-firewall',
+  'DESCRIPTION': 'Neon Firewall: procedural neon brick-breaking, persistent research, run upgrades and three save profiles. Keep your credits on death.',
+  'HEADING': '<h1>NEON <span>FIREWALL</span></h1>',
+  'LEDE': 'Break the wall.<br>Keep the credits.',
+  'OVERVIEW': 'Procedural security grids grow denser and tougher. Break armored caches, unlock relays and survive bonus drops that can help or hurt. Research permanent upgrades or spend in the store between levels.',
+  'LAUNCH_EYEBROW': 'PACKET BREAKER / PROCEDURAL ARCADE',
+  'READY_TEXT': 'Firewall online. Three profiles, permanent research and run upgrades. Tap inside for sound.',
+  'CLOSED_TEXT': 'Connection closed. Your last saved profile, credits and active run stay in this browser.',
+  'GUIDE_HEADING': 'Break in.<br>Build up.',
+  'GUIDE': '<li><b>Move the paddle.</b> Mouse, touch drag, A/D or arrow keys. Click, tap or Space launches the balls. P or Escape pauses.</li><li><b>Read the grid.</b> Numbers are armor. Green relays unlock red # nodes. Gold ? caches hide cash and drops. Steel X blocks cannot break; phased bricks turn intangible. Later grids move and fire back.</li><li><b>Catch carefully.</b> Green + capsules help; red ! capsules shrink the paddle, reverse controls, accelerate balls or increase trace. Lasers fire with Space, click or the LASER button; magnets catch balls for relaunch.</li><li><b>Keep your earnings.</b> Credits survive death. Permanent research applies to new runs. Between-level purchases last for the current run. Save/load profiles separately; pause or background to save an active run. The same game is also in Privateer at NETWORK / NEON FIREWALL.</li>',
+  'MUSIC_HEADING': 'One soundtrack.<br>Every security layer.',
+  'MUSIC': '<div><dt>MENUS + GAMEPLAY</dt><dd>Nineteen Steps</dd></div>',
+ },
  'classic': {
   'GAME_NAME': 'Neon Driftline Classic', 'GAME_SLUG': 'neon-driftline-classic',
   'DESCRIPTION': 'Play Neon Driftline Classic free in a window, with Nineteen Steps on the soundtrack and a downloadable playtest report.',
@@ -76,7 +90,7 @@ window.addEventListener('error',()=>window.parent.postMessage('dmc-game-failed',
         original = original.replace('function displayFailureNotice(err) {', 'function displayFailureNotice(err) {\nwindow.parent.postMessage(\'dmc-game-failed\', window.location.origin);', 1)
     source = Path(__file__).resolve().parents[1] / 'web' / 'beta'
     values = dict(profile, BUILD=build, AD_PATH='./ad-support/' if game == 'privateer' else '../ad-support/')
-    destinations = {'privateer': './' if game == 'privateer' else '../', 'classic': './classic/' if game == 'privateer' else '../classic/', 'breach': './breach/' if game == 'privateer' else '../breach/'}
+    destinations = {'privateer': './' if game == 'privateer' else '../', 'classic': './classic/' if game == 'privateer' else '../classic/', 'breach': './breach/' if game == 'privateer' else '../breach/', 'firewall': './firewall/' if game == 'privateer' else '../firewall/'}
     values['GAME_LINKS'] = ''.join(f'<a href="{destinations[key]}">{PROFILES[key]["GAME_NAME"]} ↗</a>' for key in PROFILES if key != game)
     page = (source / 'index.html').read_text()
     for key, value in values.items():
