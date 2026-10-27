@@ -27,15 +27,15 @@ const sandbox={
 };
 vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
-  canSpot,patrolIntent,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount};
+  canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
 
-test('all equipment and weapons cost exactly 50% more, rounded up',()=>{
+test('everything costs twice the original price except the unchanged knife',()=>{
   const baseline={knife:95,revolver:165,auto_pistol:225,shotgun:285,ar:385,map:115,
     armor1:75,armor2:145,armor3:220,medkit:45};
   assert.equal(b.SHOP_GEAR.length,Object.keys(baseline).length);
-  for(const gear of b.SHOP_GEAR)assert.equal(gear.cost,Math.ceil(baseline[gear.id]*1.5),gear.id);
+  for(const gear of b.SHOP_GEAR)assert.equal(gear.cost,(gear.id==='knife'?baseline[gear.id]:baseline[gear.id]*2),gear.id);
 });
 
 function openWorld(){
@@ -78,7 +78,41 @@ test('footsteps attract distant zombies and pursuit is faster than patrolling',(
   assert.ok(chaseDistance>patrolSpeed*.1*2,'pursuit materially exceeds idle patrol speed');
   e.state='idle';e.x=0;e.perceptionClock=999;
   b.emitNoise(190,0,1.12);
-  assert.equal(e.state,'investigate','normal footfalls alert zombie from beyond the original hearing radius');
+  assert.equal(e.state,'idle','red wanderers ignore noise-only clues');
+  const yellow=zombie(0,'square');yellow.state='idle';
+  b.game.enemies=[yellow];b.emitNoise(190,0,1.12);
+  assert.equal(yellow.state,'investigate','yellow patrollers check footsteps');
+});
+
+test('red wanderers forget instantly when line of sight breaks, regardless of timer',()=>{
+  const e=zombie(0,'circle');
+  b.game.world=openWorld();b.game.enemies=[e];b.game.mode='PLAY';b.game.floor=5;
+  b.game.player={x:165,y:0,r:16,sneaking:false,moving:true,stealth:1,hp:10,maxHp:10,invuln:99};
+  b.updateEnemies(.08);
+  assert.equal(e.sees,true);
+  b.game.player.x=-165;e.perceptionClock=999;
+  b.updateEnemies(.016);
+  assert.equal(e.state,'idle');assert.equal(e.lastKnown,null);
+  assert.equal(e.suspicion,0);assert.equal(e.sees,false);
+  b.emitNoise(-165,0,1.5);
+  assert.equal(e.state,'idle','red never resumes a search from sound');
+});
+
+test('short yellow checks versus extended guard investigations',()=>{
+  b.game.world=openWorld();
+  const search=type=>{
+    const e=zombie(0,type);e.lastKnown={x:150,y:0};
+    b.prepareSearch(e);return e;
+  };
+  const red=search('circle'),yellow=search('square');
+  const shock=search('diamond'),guard=search('trapezoid'),heavy=search('pentagon');
+  assert.equal(red.state,'idle');assert.equal(red.lastKnown,null);
+  assert.equal(yellow.state,'search');assert.equal(yellow.searchNodes.length,1);
+  assert.ok(yellow.searchTime<=1.5);
+  assert.ok(shock.searchTime>yellow.searchTime);
+  assert.ok(guard.searchTime>shock.searchTime);
+  assert.ok(heavy.searchTime>guard.searchTime);
+  assert.ok(guard.searchNodes.length>yellow.searchNodes.length);
 });
 
 test('out-of-range enemies do not sleep: radar-visible units keep moving',()=>{

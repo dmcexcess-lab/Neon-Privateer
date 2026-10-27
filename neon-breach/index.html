@@ -619,16 +619,16 @@ const WEAPONS={
  ar:{label:'ASSAULT RIFLE',cooldown:.115,damage:1.42,velocity:1460,pellets:1,spread:.052,color:C.purple,r:3,pierce:0}
 };
 const SHOP_GEAR=[
- {id:'knife',name:'COMBAT KNIFE',desc:'Single-hand silent slash; stronger and longer than fists.',cost:143},
- {id:'revolver',name:'REVOLVER',desc:'Heavy precision sidearm.',cost:248},
- {id:'auto_pistol',name:'AUTO PISTOL',desc:'Quick successive shots.',cost:338},
- {id:'shotgun',name:'PUMP SHOTGUN',desc:'Wide blast with audible pump action.',cost:428},
- {id:'ar',name:'ASSAULT RIFLE',desc:'Rapid ranged rifle.',cost:578},
- {id:'map',name:'TACTICAL RADAR',desc:'Reveals the map, nearby hostiles, and their facing. M expands.',cost:173},
- {id:'armor1',name:'LIGHT ARMOR +1 HP',desc:'Adds one maximum hit point for this deployment.',cost:113},
- {id:'armor2',name:'FIELD ARMOR +2 HP',desc:'Adds two maximum hit points for this deployment.',cost:218},
- {id:'armor3',name:'HEAVY ARMOR +3 HP',desc:'Adds three maximum hit points for this deployment.',cost:330},
- {id:'medkit',name:'FIELD MEDKIT',desc:'One consumable heal: +3 HP. Use F or the mobile MEDKIT button.',cost:68}
+ {id:'knife',name:'COMBAT KNIFE',desc:'Single-hand silent slash; stronger and longer than fists.',cost:95},
+ {id:'revolver',name:'REVOLVER',desc:'Heavy precision sidearm.',cost:330},
+ {id:'auto_pistol',name:'AUTO PISTOL',desc:'Quick successive shots.',cost:450},
+ {id:'shotgun',name:'PUMP SHOTGUN',desc:'Wide blast with audible pump action.',cost:570},
+ {id:'ar',name:'ASSAULT RIFLE',desc:'Rapid ranged rifle.',cost:770},
+ {id:'map',name:'TACTICAL RADAR',desc:'Reveals the map, nearby hostiles, and their facing. M expands.',cost:230},
+ {id:'armor1',name:'LIGHT ARMOR +1 HP',desc:'Adds one maximum hit point for this deployment.',cost:150},
+ {id:'armor2',name:'FIELD ARMOR +2 HP',desc:'Adds two maximum hit points for this deployment.',cost:290},
+ {id:'armor3',name:'HEAVY ARMOR +3 HP',desc:'Adds three maximum hit points for this deployment.',cost:440},
+ {id:'medkit',name:'FIELD MEDKIT',desc:'One consumable heal: +3 HP. Use F or the mobile MEDKIT button.',cost:90}
 ];
 const GEAR_IDS=SHOP_GEAR.map(g=>g.id);
 const PROFILE_KEY='neon-breach.hq.v1';
@@ -843,6 +843,13 @@ function secureRoom(room){
   if(room.id===game.activeRoom){announce('ROOM SECURE  //  PATHS REMAIN OPEN',1.7);playSound('door');}
   for(let i=0;i<12;i++)particle(room.cx,room.cy,C.green,rand(70,210));
 }
+// Red wanderers immediately lose all pursuit and investigative memory on lost sight.
+function forgetWanderer(e){
+  e.state='idle';e.alertTime=0;e.searchTime=0;e.lastKnown=null;
+  e.searchNodes=[];e.searchIndex=0;e.suspicion=0;e.sees=false;e.hadSight=false;
+  e.isWalking=false;e.patrol={x:e.x,y:e.y};
+  e.stareAngle=e.angle;e.stareClock=rand(1.6,3);
+}
 function alertEnemy(e,x,y,duration=6,state='alert'){
   e.lastKnown={x,y};
   e.alertTime=Math.max(e.alertTime,duration);
@@ -851,10 +858,11 @@ function alertEnemy(e,x,y,duration=6,state='alert'){
   e.perceptionClock=Math.min(e.perceptionClock,.03);
 }
 function emitNoise(x,y,volume=1){
-  // Hearing does not reveal the player's exact location forever: units
-  // investigate the sound and lose their lead if they never gain sight.
+  // Sounds are clues for patrollers and guards; red wanderers do not investigate.
   for(const e of game.enemies){
-    if(canHear(e,x,y,volume)&&e.state!=='alert')alertEnemy(e,x,y,3.9,'investigate');
+    if(e.type==='circle'||e.state==='alert'||!canHear(e,x,y,volume))continue;
+    const duration=e.type==='square'?1.1:e.type==='pentagon'?6.5:e.type==='trapezoid'?5.5:3;
+    alertEnemy(e,x,y,duration,'investigate');
   }
 }
 function playerDamage(amount){
@@ -1107,9 +1115,10 @@ function patrolIntent(e,dt){
     look:Math.atan2(e.patrol.y-e.y,e.patrol.x-e.x)};
 }
 function prepareSearch(e){
+  if(e.type==='circle'){forgetWanderer(e);return;}
   const point=e.lastKnown||{x:e.x,y:e.y},nodes=[{...point}];
   if(e.type==='square'){
-    e.searchTime=1.05; // Just one short check of the last visible position.
+    e.searchTime=1.25; // Check the last position once; no extended search.
   }else{
     const a=Math.atan2(point.y-e.y,point.x-e.x),distances=[100,155,80,120];
     for(let i=0;i<distances.length;i++){
@@ -1130,12 +1139,19 @@ function prepareSearch(e){
         if(nodes.length>=3)break;
       }
     }
-    e.searchTime=e.type==='pentagon'?12:8.8;
+    e.searchTime=e.type==='pentagon'?14:e.type==='trapezoid'?11:4.5;
   }
   e.searchNodes=nodes;e.searchIndex=0;e.state='search';e.alertTime=0;
 }
 function updateEnemies(dt){
   const p=game.player,world=game.world;
+  // All enemies keep simulating; collision neighbors use a local spatial index.
+  const separationGrid=new Map(),cellSize=96;
+  for(const actor of game.enemies){
+    const key=`${Math.floor(actor.x/cellSize)},${Math.floor(actor.y/cellSize)}`;
+    if(!separationGrid.has(key))separationGrid.set(key,[]);
+    separationGrid.get(key).push(actor);
+  }
   for(const e of game.enemies){
     const dist=Math.max(1,Math.hypot(p.x-e.x,p.y-e.y));
     e.flash=Math.max(0,e.flash-dt);e.contact=Math.max(0,e.contact-dt);
@@ -1144,17 +1160,15 @@ function updateEnemies(dt){
     // All enemies stay simulated for accurate full-floor radar tracking.
     if(!e.route)initializeBehavior(e);
     e.perceptionClock-=dt;
-    if(e.perceptionClock<=0){
+    if(e.perceptionClock<=0||(e.type==='circle'&&(e.state==='alert'||e.hadSight))){
       e.perceptionClock=rand(.13,.24);
       e.sees=canSpot(world,e,p);
       if(e.sees&&dist<e.r+p.r+33)alertEnemy(e,p.x,p.y,5.5,'alert');
     }
     // Zombies never retain supernatural knowledge of a player behind a wall.
     if(e.hadSight&&!e.sees&&e.state==='alert'){
-      if(e.type==='circle'){
-        // Follow the last observed location briefly; no tracking through walls.
-        e.state='investigate';e.alertTime=2.8;e.suspicion=0;
-      }else prepareSearch(e);
+      if(e.type==='circle')forgetWanderer(e);
+      else prepareSearch(e);
     }
     e.hadSight=!!e.sees;
     e.suspicion=clamp((e.suspicion||0)+(e.sees?dt*(p.sneaking?.65:5.4):-dt*(e.type==='circle'?1.8:.9)),0,1);
@@ -1164,26 +1178,25 @@ function updateEnemies(dt){
     if(e.sees&&e.state==='alert')e.lastKnown={x:p.x,y:p.y};
     let target=null,look=null,speed=e.spd;
     if(e.state==='alert'){
-      if(!e.sees&&e.type==='circle'){
-        e.state='investigate';e.alertTime=2.8;
-      }else if(e.sees){target={x:p.x,y:p.y};look=Math.atan2(p.y-e.y,p.x-e.x);}
+      if(!e.sees&&e.type==='circle')forgetWanderer(e);
+      else if(e.sees){target={x:p.x,y:p.y};look=Math.atan2(p.y-e.y,p.x-e.x);}
       else if(e.type==='square'||e.type==='trapezoid'||e.type==='pentagon'||e.type==='diamond'){
         prepareSearch(e);
       }
     }
     if(e.state==='investigate'){
       if(e.lastKnown){target=e.lastKnown;look=Math.atan2(target.y-e.y,target.x-e.x);}
-      if(!target||Math.hypot(e.x-target.x,e.y-target.y)<30||e.alertTime<=0){
-        if(e.type==='circle'){
-          e.state='idle';e.stareClock=rand(2,4);e.stareAngle=e.angle;e.patrol={x:e.x,y:e.y};
-        }else prepareSearch(e);
-        target=null;
+      if(e.type==='circle'){
+        forgetWanderer(e);target=null;
+      }else if(!target||Math.hypot(e.x-target.x,e.y-target.y)<30||e.alertTime<=0){
+        prepareSearch(e);target=null;
       }else e.alertTime=Math.max(0,e.alertTime-dt);
     }
     if(e.state==='search'){
       e.searchTime-=dt;
       if(e.searchTime<=0||e.searchIndex>=e.searchNodes.length){
-        e.state='idle';e.patrol=e.route[e.routeIndex];
+        e.state='idle';e.lastKnown=null;e.alertTime=0;
+        e.searchNodes=[];e.searchIndex=0;e.patrol=e.route[e.routeIndex];
         e.stareClock=e.type==='square'?.5:1.4;
       }else{
         target=e.searchNodes[e.searchIndex];
@@ -1239,10 +1252,18 @@ function updateEnemies(dt){
       playerDamage(TYPE[e.type].damage);e.contact=.68;
       alertEnemy(e,p.x,p.y,6.2);
     }
-    // Local separation is capped at the floor-wide budget, not room count.
-    for(const o of game.enemies)if(o!==e&&Math.abs(o.x-e.x)<75&&Math.abs(o.y-e.y)<75){
-      const sep=Math.hypot(e.x-o.x,e.y-o.y),required=e.r+o.r+6;
-      if(sep>1&&sep<required){const nx=e.x+(e.x-o.x)/sep*Math.min(4,required-sep),ny=e.y+(e.y-o.y)/sep*Math.min(4,required-sep);if(walkable(world,nx,ny,e.r+1)){e.x=nx;e.y=ny;}}
+    // Separate only from actors in nearby grid cells, not the whole floor.
+    const gx=Math.floor(e.x/cellSize),gy=Math.floor(e.y/cellSize);
+    for(let yy=gy-1;yy<=gy+1;yy++)for(let xx=gx-1;xx<=gx+1;xx++){
+      const nearby=separationGrid.get(`${xx},${yy}`);
+      if(!nearby)continue;
+      for(const o of nearby)if(o!==e&&Math.abs(o.x-e.x)<75&&Math.abs(o.y-e.y)<75){
+        const sep=Math.hypot(e.x-o.x,e.y-o.y),required=e.r+o.r+6;
+        if(sep>1&&sep<required){
+          const nx=e.x+(e.x-o.x)/sep*Math.min(4,required-sep),ny=e.y+(e.y-o.y)/sep*Math.min(4,required-sep);
+          if(walkable(world,nx,ny,e.r+1)){e.x=nx;e.y=ny;}
+        }
+      }
     }
   }
 }

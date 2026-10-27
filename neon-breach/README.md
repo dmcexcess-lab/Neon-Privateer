@@ -13,13 +13,18 @@ Privateer and the frozen Neon Driftline Classic Godot game.
   Patroller zombie vision: **500 units**, **±84.6°**. Standard walking in
   their field of view gains a further 18% recognition range, while sneaking
   retains concealment.
-- Normal footsteps generate noise heard by zombies in a meaningful radius.
-  Zombies briefly investigate the last visible position without tracking
-  through solid obstacles.
+- Red wanderers forget the player immediately when line of sight breaks;
+  they do not investigate noise or remembered positions.
+- Yellow squares briefly check only the last known location (1.25 s).
+  Shock troops search about 4.5 s, guards up to 11 s, heavy guards up to
+  14 s. Footsteps leave temporary investigation clues only for these units.
 - Alert wanderers move at **2.25×** their base movement speed, and alert
   patrollers at **1.68×**. Their patrol/wander speeds are unchanged.
-- Every stored-purchase weapon, radar, armor and medkit costs **1.5×** its
-  previous amount, rounded up to whole credits.
+- All purchasable weapons, radar, armor, and medkits cost **2× the original
+  baseline**, except the combat knife, unchanged at **95 credits**.
+  Example prices: revolver 330 credits; assault rifle 770 credits.
+- Full-map enemies continue simulating; local spatial buckets keep collision
+  separation from becoming an expensive quadratic operation.
 - Existing persistent credits, HQ storage, and equipment remain valid.
   Prices apply on the next purchase; no saved profile conversion is needed.
 
@@ -30,7 +35,8 @@ node --test tests/neon_breach.test.mjs
 ```
 
 This launches the complete game module in a browser-like Node VM and verifies
-shop prices, sight and stealth, noise, pursuit versus patrol speed, continued
+shop prices, red loss-of-sight forgetfulness, tiered investigations,
+sight and stealth, noise, pursuit versus patrol speed, continued
 AI motion beyond the former 1650-unit sleeping boundary, and 120 full enemy
 updates on floors 15, 30 and 60 (the upper archaeology ceiling, a large
 security floor, and the maximum-sized generated layout). The stress test prints
