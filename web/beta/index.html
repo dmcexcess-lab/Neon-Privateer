@@ -3,32 +3,32 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Play the Neon Privateer public beta. Trade across 32 generated worlds, survive the flight, and tell DMC Oddworks what breaks.">
+  <meta name="description" content="__DESCRIPTION__">
   <meta name="theme-color" content="#0a1019">
-  <title>Neon Privateer · Public Beta · DMC Oddworks</title>
+  <title>__GAME_NAME__ · Public Beta · DMC Oddworks</title>
   <link rel="stylesheet" href="beta.css?v=__BUILD__">
 </head>
-<body data-build="__BUILD__">
-  <header class="masthead"><a class="brand" href="https://payhip.com/u1792206845634834027608" target="_blank" rel="noopener">DMC <b>ODDWORKS</b></a><nav aria-label="Main"><a href="#flight-deck">Play beta</a><a href="#feedback">Send feedback</a><a href="./classic/">Driftline Classic ↗</a></nav></header>
+<body data-build="__BUILD__" data-game-name="__GAME_NAME__" data-game-slug="__GAME_SLUG__" data-ready-text="__READY_TEXT__" data-closed-text="__CLOSED_TEXT__">
+  <header class="masthead"><a class="brand" href="https://payhip.com/u1792206845634834027608" target="_blank" rel="noopener">DMC <b>ODDWORKS</b></a><nav aria-label="Main"><a href="#flight-deck">Play beta</a><a href="#feedback">Send feedback</a>__GAME_LINKS__</nav></header>
   <main>
-    <section class="intro"><div><p class="eyebrow"><span class="dot"></span> PUBLIC BETA / 01</p><h1>NEON <span>PRIVATEER</span></h1><p class="lede">Thirty-two worlds. A hold full of cargo.<br>One more flight before you bank the money.</p></div><div class="intro-note"><b>Free in your browser.</b><p>Trade, take contracts, upgrade the ship and pick your route. Lose the ship and everything aboard goes with it. The bank survives.</p><a href="#field-guide">Read the pilot notes ↓</a></div></section>
+    <section class="intro"><div><p class="eyebrow"><span class="dot"></span> PUBLIC BETA / 01</p>__HEADING__<p class="lede">__LEDE__</p></div><div class="intro-note"><b>Free in your browser.</b><p>__OVERVIEW__</p><a href="#field-guide">Read the controls ↓</a></div></section>
     <div class="beta-layout">
       <section id="flight-deck" class="flight-deck" aria-labelledby="deck-title">
-        <div class="section-bar"><h2 id="deck-title">01 / FLIGHT DECK</h2><span>WINDOWED WEB BUILD</span></div>
-        <iframe id="ad-support-strip" src="./ad-support/?layout=20261017" title="Advertising · Adsterra with permission or DMC Oddworks promos" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
+        <div class="section-bar"><h2 id="deck-title">01 / PLAY WINDOW</h2><span>WINDOWED WEB BUILD</span></div>
+        <iframe id="ad-support-strip" src="__AD_PATH__?layout=20261027" title="Advertising · Adsterra with permission or DMC Oddworks promos" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
         <div class="game-stage">
-          <div id="launch-card" class="launch-card"><div class="orbit" aria-hidden="true">✦</div><p class="eyebrow">THE PORT IS OPEN</p><h3>Ready to make a run?</h3><p>Desktop or phone. No account to play.</p><button id="launch" class="primary" type="button">Launch public beta <span>↗</span></button><p class="small">The first load downloads the game.<br>Tap inside it to enable sound.</p></div>
-          <iframe id="privateer-game" title="Neon Privateer public beta game" allow="autoplay; fullscreen 'none'" hidden></iframe>
+          <div id="launch-card" class="launch-card"><div class="orbit" aria-hidden="true">✦</div><p class="eyebrow">__LAUNCH_EYEBROW__</p><h3>Ready to make a run?</h3><p>Desktop or phone. No account to play.</p><button id="launch" class="primary" type="button">Launch public beta <span>↗</span></button><p class="small">The first load downloads the game.<br>Tap inside it to enable sound.</p></div>
+          <iframe id="__GAME_SLUG__-game" class="game-frame" data-game-frame title="__GAME_NAME__ public beta game" allow="autoplay; fullscreen 'none'" hidden></iframe>
         </div>
         <div class="deck-footer"><p id="game-status" role="status">Ready when you are.</p><button id="close-game" type="button" hidden>Close game</button><a href="#feedback">Something break? Report it ↓</a></div>
       </section>
       <aside id="feedback" class="feedback" aria-labelledby="feedback-title">
-        <div class="section-bar"><h2 id="feedback-title">02 / FLIGHT REPORT</h2><span>ACTUAL FEEDBACK WANTED</span></div>
+        <div class="section-bar"><h2 id="feedback-title">02 / PLAYTEST REPORT</h2><span>ACTUAL FEEDBACK WANTED</span></div>
         <div class="feedback-inner"><h3>Where did it lose you?</h3><p>A bug, an unfair death, a menu you couldn't figure out—or something worth keeping. Tell us what happened.</p>
           <form id="feedback-form">
             <div class="form-row"><label>Report type<select name="kind"><option>Bug</option><option>Controls / usability</option><option>Balance</option><option>Music / audio</option><option>Something that works</option><option>Idea</option></select></label><label>Impact<select name="impact"><option>Minor</option><option>Annoying</option><option>Blocks play</option></select></label></div>
             <label>One-line summary<input name="summary" maxlength="120" required placeholder="What happened?"></label>
-            <label>What did you do?<textarea name="steps" maxlength="1600" rows="3" placeholder="Which screen or route? What did you tap?"></textarea></label>
+            <label>What did you do?<textarea name="steps" maxlength="1600" rows="3" placeholder="Which screen or level? What did you press?"></textarea></label>
             <label>What did you expect?<textarea name="expected" maxlength="900" rows="2"></textarea></label>
             <label>What actually happened?<textarea name="actual" maxlength="1600" rows="3" required></textarea></label>
             <label>Device / browser (optional)<input name="device" maxlength="180" placeholder="e.g. Android phone, Chrome"></label>
@@ -43,11 +43,11 @@
         </div>
       </aside>
     </div>
-    <section id="field-guide" class="field-guide"><div><p class="eyebrow">03 / PILOT NOTES</p><h2>Get paid.<br>Get back.</h2></div><ol><li><b>Start a career.</b> Pick a save slot, then explore the port. Your progress stays in this browser; clearing its saved data can erase it.</li><li><b>Check the route.</b> Buy cargo or take a contract, choose a reachable destination and make sure you have fuel.</li><li><b>Fly the ship.</b> Use the on-screen LEFT, DASH and RIGHT buttons. Weapons fire automatically when equipped. Pause before stepping away.</li><li><b>Protect the money.</b> Banked money and investments survive ship loss. Cash, cargo, passengers, upgrades and weapons aboard do not.</li></ol></section>
-    <section class="soundtrack"><div><p class="eyebrow">TWO SIDES OF THE TRIP</p><h2>A soundtrack for the waiting.<br>A soundtrack for the run.</h2></div><dl><div><dt>SPACEPORT + MENUS</dt><dd>Do Androids Dream</dd></div><div><dt>SPACEFLIGHT</dt><dd>Nineteen Steps</dd></div></dl></section>
+    <section id="field-guide" class="field-guide"><div><p class="eyebrow">03 / FIELD NOTES</p><h2>__GUIDE_HEADING__</h2></div><ol>__GUIDE__</ol></section>
+    <section class="soundtrack"><div><p class="eyebrow">ON THE SOUNDTRACK</p><h2>__MUSIC_HEADING__</h2></div><dl>__MUSIC__</dl></section>
     <section class="more-work"><p class="eyebrow">OUTSIDE THE PORT</p><div><a href="https://www.youtube.com/@MotherStatic" target="_blank" rel="noopener"><small>MOTHER STATIC</small><h3>Grunge, noise,<br>melody and feedback.</h3><span>Listen free on YouTube ↗</span></a><a href="https://payhip.com/b/7fyzD" target="_blank" rel="noopener"><small>THAT BOY HAS FUNNY NAILS!</small><h3>A picture book about<br>liking what you like.</h3><span>$2 · PDF + EPUB ↗</span></a><a href="https://payhip.com/u1792206845634834027608" target="_blank" rel="noopener"><small>DMC ODDWORKS</small><h3>Books, comics,<br>games. Odd work.</h3><span>Visit the store ↗</span></a></div></section>
   </main>
-  <footer><span>DMC Oddworks · Neon Privateer public beta</span><span>AI-assisted game and artwork · AI-generated music</span><span id="build-label"></span></footer>
+  <footer><span>DMC Oddworks · __GAME_NAME__ public beta</span><span>AI-assisted game and artwork · AI-generated music</span><span id="build-label"></span></footer>
   <script type="module" src="beta.js?v=__BUILD__"></script>
 </body>
 </html>

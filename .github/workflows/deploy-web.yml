@@ -185,8 +185,9 @@ jobs:
         run: |
           mkdir -p build/web/ad-support
           cp monetization/*.html build/web/ad-support/
-          python3 tools/WrapClassicWebAds.py build/web/classic/index.html
+          python3 tools/WrapClassicWebAds.py build/web/classic/index.html "${GITHUB_SHA:0:12}"
           python3 tools/WrapPrivateerBeta.py build/web/index.html "${GITHUB_SHA:0:12}"
+          python3 tools/WrapPrivateerBeta.py build/web/breach/index.html "${GITHUB_SHA:0:12}" breach
 
       - name: Keep downloadable Web build
         uses: actions/upload-artifact@v4

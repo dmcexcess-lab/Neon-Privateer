@@ -20,3 +20,13 @@ test('GitHub transport escapes user text and labels reports; full report stays i
  assert.match(url.searchParams.get('body'),/Report shortened/);
  assert.equal(report.length,7019);
 });
+test('each game produces its own report heading and public issue title',()=>{
+ for (const gameName of ['Neon Privateer','Neon Driftline Classic','Neon Breach']) {
+  const report=buildReport({summary:'Controls',actual:'Stopped responding'},{...env,gameName});
+  assert.equal(report.split('\n')[0],`# ${gameName} beta feedback`);
+  const url=new URL(issueURL('Controls',report,gameName));
+  assert.equal(url.searchParams.get('title'),`[${gameName}] Controls`);
+  assert.equal(url.searchParams.get('body'),report);
+  assert.equal(url.searchParams.get('labels'),'beta-feedback');
+ }
+});

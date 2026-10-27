@@ -393,3 +393,10 @@ The final standalone **Neon Driftline** build from immediately before the Privat
 It remains its own Godot project with the original endless escalating-level loop, permanent research/upgrades, starting-weapon research, station splits, enemies, pickups, button controls, and procedural SFX.
 
 The repository CI runs its original smoke suite independently and exports it alongside Neon Privateer at the `/classic/` Pages path. This subproject is intentionally frozen as the arcade branch of the game rather than sharing Privateer's economy/career state.
+
+
+## Shared public playtest pages
+
+Privateer at `/`, Driftline Classic at `/classic/`, and Neon Breach at `/breach/` use the same windowed page layout. Each has a separate advertising strip, game-specific controls and soundtrack notes, cross-links to the other games, and a feedback form. Copy or download a complete plain-text report without an account; GitHub submission is optional and reviewed by the tester before sending. Reports and filenames identify the game and deployed commit. No report is sent automatically.
+
+The shared source is `web/beta/`; `tools/WrapPrivateerBeta.py` renders the three profiles during the existing Pages workflow. Classic retains `play.html` compatibility for old embeds. Breach gameplay remains in `neon-breach/index.html`, with its existing browser storage keys and balance unchanged. Direct engine pages return to their windowed page; fullscreen is disabled. The Classic APK offer is no longer linked from these pages.
