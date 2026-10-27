@@ -62,6 +62,7 @@ jobs:
           set -euo pipefail
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path . --quit
           node --test tests/beta_feedback.test.mjs
+          node --test tests/neon_breach.test.mjs
           python3 -m unittest discover -s tests -p 'test_beta_wrapper.py'
 
       - name: Test Privateer soundtrack state and real loops
@@ -174,6 +175,9 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|MUSIC FAIL' /tmp/classic-pack-music.log; then exit 1; fi
           grep -q 'NEON DRIFTLINE MUSIC OK' /tmp/classic-pack-music.log
 
+          mkdir -p build/web/breach
+          cp neon-breach/index.html build/web/breach/index.html
+          test -s build/web/breach/index.html
           touch build/web/.nojekyll
 
       - name: Include optional advertising panel
