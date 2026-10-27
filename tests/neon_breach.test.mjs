@@ -7,9 +7,18 @@ import {performance} from 'node:perf_hooks';
 const html=readFileSync(new URL('../neon-breach/index.html',import.meta.url),'utf8');
 const source=html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 assert.ok(source,'standalone game module is available');
+const eventTarget=()=>{
+  const listeners=new Map();
+  return {
+    addEventListener(type,handler){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(handler);},
+    dispatch(type,event={}){for(const handler of listeners.get(type)||[])handler(event);},
+    removeEventListener(type,handler){listeners.set(type,(listeners.get(type)||[]).filter(fn=>fn!==handler));}
+  };
+};
 const makeElement=()=>({
+  ...eventTarget(),
   style:{},disabled:false,textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},
-  addEventListener(){},removeEventListener(){},setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
+  setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
   getContext(){return new Proxy({}, {get:()=>()=>{}})},
   getBoundingClientRect(){return {left:0,top:0,width:120,height:120}},
   querySelector(){return makeElement()}
@@ -21,14 +30,15 @@ let randomSeed=0x1234abcd;
 const seededMath=Object.create(Math);
 seededMath.random=()=>{randomSeed=(Math.imul(randomSeed,1664525)+1013904223)>>>0;return randomSeed/4294967296;};
 const document={
-  body:makeElement(),hidden:false,addEventListener(){},createElement:makeElement,
+  ...eventTarget(),body:makeElement(),hidden:false,createElement:makeElement,
   getElementById(id){if(!elements.has(id))elements.set(id,makeElement());return elements.get(id);}
 };
 const sandbox={
+  ...eventTarget(),
   Math:seededMath,
   console,document,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v))},navigator:{getGamepads(){return []}},
   innerWidth:1080,innerHeight:830,devicePixelRatio:1,performance,
-  addEventListener(){},requestAnimationFrame(){},
+  requestAnimationFrame(){},
   Audio:class{constructor(){musicInstances++;this.paused=true;this.currentTime=0;}addEventListener(){} play(){this.paused=false;return Promise.resolve()} pause(){this.paused=true;}},
 };
 vm.runInNewContext(source+`
@@ -38,7 +48,7 @@ vm.runInNewContext(source+`
   updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
-  getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase};
+  getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
 
@@ -134,6 +144,62 @@ function generatedScenario(floor=15){
     armorTier:0,medkits:0,spares:[],map:true,sneaking:false,moving:false,stealth:1};
   b.beginFloor();
 }
+
+function mouseEvent(button){return {button,clientX:600,clientY:400,preventDefault(){this.defaultPrevented=true;}};}
+
+test('holding right-click sneaks while left attack works independently in either button order',()=>{
+  const canvas=elements.get('game');generatedScenario(5);
+  for(const first of [2,0]){
+    b.inputs.keys.clear();b.inputs.sneakTouch=false;b.inputs.mouse.down=false;b.inputs.mouse.stealthHeld=false;
+    const presses=b.inputs.shotgunPendingPresses;
+    const right=mouseEvent(2),left=mouseEvent(0);
+    canvas.dispatch('mousedown',first===2?right:left);
+    let control=b.captureInputs();
+    assert.equal(b.game.player.sneaking,first===2);assert.equal(control.shoot,first===0);
+    canvas.dispatch('mousedown',first===2?left:right);
+    control=b.captureInputs();assert.equal(b.game.player.sneaking,true);assert.equal(control.shoot,true);
+    assert.equal(b.inputs.shotgunPendingPresses,presses+1,'right button must not fire or pump the shotgun');
+    sandbox.dispatch('mouseup',first===2?right:left);
+    control=b.captureInputs();
+    assert.equal(b.game.player.sneaking,first===0);assert.equal(control.shoot,first===2);
+    sandbox.dispatch('mouseup',first===2?left:right);
+    control=b.captureInputs();assert.equal(b.game.player.sneaking,false);assert.equal(control.shoot,false);
+    assert.equal(right.defaultPrevented,true);
+  }
+  const menu=mouseEvent(2);canvas.dispatch('contextmenu',menu);assert.equal(menu.defaultPrevented,true);
+});
+
+test('right-click stealth releases on pause, lost focus, hidden tab and pointer cancellation',()=>{
+  const canvas=elements.get('game');
+  for(const interruption of ['pause','blur','visibilitychange','pointercancel']){
+    generatedScenario(5);b.inputs.sneakTouch=false;b.inputs.keys.clear();
+    canvas.dispatch('mousedown',mouseEvent(2));canvas.dispatch('mousedown',mouseEvent(0));
+    b.captureInputs();assert.equal(b.game.player.sneaking,true);
+    if(interruption==='pause')b.togglePause();
+    else if(interruption==='visibilitychange'){document.hidden=true;document.dispatch(interruption);document.hidden=false;}
+    else sandbox.dispatch(interruption);
+    const control=b.captureInputs();assert.equal(b.game.player.sneaking,false,interruption);assert.equal(control.shoot,false,interruption);
+    if(b.game.mode==='PAUSE')b.togglePause();
+  }
+});
+
+test('idle gamepad preserves right-click stealth and existing Shift/C/touch alternatives',()=>{
+  generatedScenario(5);const canvas=elements.get('game'),original=sandbox.navigator.getGamepads;
+  sandbox.navigator.getGamepads=()=>[{axes:[0,0,0,0],buttons:[]}];
+  try{
+    b.inputs.sneakTouch=false;b.inputs.keys.clear();canvas.dispatch('mousedown',mouseEvent(2));
+    b.captureInputs();assert.equal(b.game.player.sneaking,true);
+    sandbox.dispatch('mouseup',mouseEvent(2));b.captureInputs();assert.equal(b.game.player.sneaking,false);
+    sandbox.dispatch('keydown',{code:'ShiftLeft'});b.captureInputs();assert.equal(b.game.player.sneaking,true);
+    sandbox.dispatch('keyup',{code:'ShiftLeft'});b.captureInputs();assert.equal(b.game.player.sneaking,false);
+    sandbox.dispatch('keydown',{code:'KeyC'});b.captureInputs();assert.equal(b.game.player.sneaking,true);
+    sandbox.dispatch('keydown',{code:'KeyC'});b.captureInputs();assert.equal(b.game.player.sneaking,false);
+    elements.get('sneakButton').dispatch('click');b.captureInputs();assert.equal(b.game.player.sneaking,true);
+    elements.get('sneakButton').dispatch('click');b.captureInputs();assert.equal(b.game.player.sneaking,false);
+    sandbox.navigator.getGamepads=()=>[{axes:[0,0,0,0],buttons:Array.from({length:11},(_,i)=>({pressed:i===10}))}];
+    b.captureInputs();assert.equal(b.game.player.sneaking,true,'L3 still sneaks');
+  }finally{sandbox.navigator.getGamepads=original;}
+});
 
 test('first human guard holds a rotating post; other tours span every room',()=>{
   generatedScenario(30);

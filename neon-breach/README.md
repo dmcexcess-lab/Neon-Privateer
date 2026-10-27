@@ -1,4 +1,4 @@
-# Neon Breach v1.2.1 — recovered features and mobile play
+# Neon Breach v1.2.2 — recovered features and mobile play
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/breach/
 
@@ -121,3 +121,12 @@ These compare room decomposition invariance and check 144 seeded floors for
 full population, clear body placement, spacing, near-entry presence, uncovered
 areas and exit concentration. Runtime regressions include actual traversal of
 all lower-floor and upper-archaeology regions, not just route membership.
+
+## Desktop stealth input (v1.2.2)
+
+Hold the right mouse button over the game to sneak; release it to stop. Left
+click still attacks and can be held independently while sneaking. The canvas
+suppresses the browser context menu. Shift remains a hold alternative and C
+remains a toggle; the phone SNEAK toggle and gamepad L3 also remain available.
+Losing focus, hiding the tab, pointer cancellation or pausing releases mouse
+buttons so stealth/attacks cannot remain stuck after an interrupted gesture.

@@ -55,7 +55,7 @@ function credit(amount){const n=Math.max(0,Math.floor(amount));game.profile.cred
 const TAU=Math.PI*2,clamp=(n,a,b)=>Math.max(a,Math.min(b,n)),rand=(a,b)=>a+Math.random()*(b-a),distance=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 let SW=innerWidth,SH=innerHeight,DPR=1,zoom=1;
 const camera={x:0,y:0};
-const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false},move:{x:0,y:0},aim:{x:0,y:0},map:false,sneakTouch:false,shotgunTriggerHeld:false,shotgunPendingPresses:0};
+const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false,stealthHeld:false},move:{x:0,y:0},aim:{x:0,y:0},map:false,sneakTouch:false,shotgunTriggerHeld:false,shotgunPendingPresses:0};
 let lastFrame=0,now=0,audio=null,gamepadPauseDown=false,toastTimeout=0;
 let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0};
 game.profile=loadProfile();game.loadout=emptyLoadout();
@@ -347,7 +347,7 @@ function useMedkit(){
 }
 function togglePause(){
   if(game.mode==='PLAY'||game.mode==='HQ'){
-    game.pausedFrom=game.mode;$('quitButton').disabled=game.pausedFrom!=='PLAY';game.mode='PAUSE';show('pause',true);show('touchUI',false);inputs.mouse.down=false;
+    game.pausedFrom=game.mode;$('quitButton').disabled=game.pausedFrom!=='PLAY';game.mode='PAUSE';show('pause',true);show('touchUI',false);inputs.mouse.down=false;inputs.mouse.stealthHeld=false;
   }else if(game.mode==='PAUSE'){
     game.mode=game.pausedFrom||'PLAY';show('pause',false);show('touchUI',true);
   }
@@ -462,7 +462,8 @@ function quitRun(){
 function captureInputs(){
   let mx=0,my=0,ax=0,ay=0,shoot=false;
   const wasSneaking=game.player.sneaking;
-  game.player.sneaking=inputs.keys.has('ShiftLeft')||inputs.keys.has('ShiftRight')||inputs.sneakTouch;
+  const sneakHeld=inputs.mouse.stealthHeld||inputs.keys.has('ShiftLeft')||inputs.keys.has('ShiftRight')||inputs.sneakTouch;
+  game.player.sneaking=sneakHeld;
   const k=inputs.keys;
   if(k.has('KeyA')||k.has('ArrowLeft'))mx--;
   if(k.has('KeyD')||k.has('ArrowRight'))mx++;
@@ -484,7 +485,7 @@ function captureInputs(){
     if(Math.hypot(px,py)>.19){mx=px;my=py;}
     if(Math.hypot(rx,ry)>.24){ax=rx;ay=ry;shoot=true;}
     if(gp.buttons[7]?.pressed)shoot=true;
-    game.player.sneaking=!!gp.buttons[10]?.pressed||inputs.keys.has('ShiftLeft')||inputs.keys.has('ShiftRight')||inputs.sneakTouch;
+    game.player.sneaking=!!gp.buttons[10]?.pressed||sneakHeld;
     const pausePressed=!!gp.buttons[9]?.pressed;
     if(pausePressed&&!gamepadPauseDown)togglePause();gamepadPauseDown=pausePressed;
     break;
@@ -1445,10 +1446,22 @@ function attachStick(element,target){
 }
 attachStick($('moveStick'),'move');attachStick($('aimStick'),'aim');
 canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){inputs.mouse.x=e.clientX;inputs.mouse.y=e.clientY;inputs.mouse.valid=true;}});
-canvas.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button===0&&game.mode==='PLAY'){inputs.shotgunPendingPresses++;inputs.mouse.down=true;inputs.mouse.x=e.clientX;inputs.mouse.y=e.clientY;inputs.mouse.valid=true;}});
-addEventListener('pointerup',e=>{if(e.pointerType==='mouse')inputs.mouse.down=false;});
-addEventListener('blur',()=>{inputs.keys.clear();inputs.mouse.down=false;inputs.move={x:0,y:0};inputs.aim={x:0,y:0};inputs.shotgunPendingPresses=0;inputs.shotgunTriggerHeld=false;if(game.mode==='PLAY')togglePause();});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){if(game.mode==='PLAY')togglePause();if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();}});
+// Mouse events report each button separately, including left/right chords;
+// pointerup only fires when the final mouse button is released.
+canvas.addEventListener('mousedown',e=>{
+  if(game.mode!=='PLAY'||(e.button!==0&&e.button!==2))return;
+  if(e.button===2){e.preventDefault();inputs.mouse.stealthHeld=true;}
+  else{inputs.shotgunPendingPresses++;inputs.mouse.down=true;}
+  inputs.mouse.x=e.clientX;inputs.mouse.y=e.clientY;inputs.mouse.valid=true;
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('mouseup',e=>{
+  if(e.button===0)inputs.mouse.down=false;
+  if(e.button===2)inputs.mouse.stealthHeld=false;
+});
+addEventListener('pointercancel',()=>{inputs.mouse.down=false;inputs.mouse.stealthHeld=false;});
+addEventListener('blur',()=>{inputs.keys.clear();inputs.mouse.down=false;inputs.mouse.stealthHeld=false;inputs.move={x:0,y:0};inputs.aim={x:0,y:0};inputs.shotgunPendingPresses=0;inputs.shotgunTriggerHeld=false;if(game.mode==='PLAY')togglePause();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){inputs.mouse.down=false;inputs.mouse.stealthHeld=false;if(game.mode==='PLAY')togglePause();if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();}});
 addEventListener('pagehide',()=>{if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();});
 addEventListener('keydown',e=>{
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
