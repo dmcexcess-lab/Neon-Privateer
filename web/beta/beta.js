@@ -1,4 +1,4 @@
-import {buildReport, issueURL} from './feedback.mjs';
+import {buildReport, issueURL, loadSubmittedReports} from './feedback.mjs';
 const form = document.getElementById('feedback-form');
 const feedbackStatus = document.getElementById('feedback-status');
 const preview = document.getElementById('report-preview');
@@ -53,3 +53,19 @@ window.addEventListener('message', (event) => {
   if (event.data === 'dmc-game-failed') gameStatus.textContent = 'The game reported an error. Reload or send a report with your browser and what happened.';
 });
 readReport();
+
+document.getElementById('download-submitted').addEventListener('click', async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  feedbackStatus.textContent = 'Reading submitted public reports…';
+  try {
+    const text = await loadSubmittedReports(fetch, gameName, new Date().toISOString());
+    const url = URL.createObjectURL(new Blob([text], {type:'text/plain;charset=utf-8'}));
+    const link = document.createElement('a');
+    link.href = url; link.download = gameSlug + '-submitted-feedback.txt'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    feedbackStatus.textContent = 'Submitted reports downloaded. Local reports appear here only after the tester submits them via GitHub.';
+  } catch (error) {
+    feedbackStatus.textContent = error.message;
+  } finally { button.disabled = false; }
+});
