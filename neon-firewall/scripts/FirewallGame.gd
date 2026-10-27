@@ -275,7 +275,7 @@ func _setup_audio() -> void:
             data.encode_s16(i*2,int(amplitude*32767))
         var tone:=AudioStreamWAV.new();tone.format=AudioStreamWAV.FORMAT_16_BITS;tone.mix_rate=22050;tone.data=data;tones[key]=tone
     if not embedded:
-        music_player=AudioStreamPlayer.new();music_player.name="FirewallMusic";music_player.stream=load("res://assets/nineteen_steps.ogg");music_player.stream.loop=true;music_player.volume_db=-15
+        music_player=AudioStreamPlayer.new();music_player.name="FirewallMusic";music_player.stream=load("res://assets/do_androids_dream.ogg");music_player.stream.loop=true;music_player.volume_db=-15
         add_child(music_player);music_player.play()
     _sync_audio()
 
