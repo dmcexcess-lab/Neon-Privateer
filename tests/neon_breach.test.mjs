@@ -116,7 +116,7 @@ test('short yellow checks versus extended guard investigations',()=>{
 });
 
 test('out-of-range enemies do not sleep: radar-visible units keep moving',()=>{
-  const e=zombie(2500);
+  const e=zombie(2500,'square');
   e.state='investigate';e.hadSight=false;e.sees=false;e.lastKnown={x:2700,y:0};
   e.perceptionClock=999;
   b.game.world=openWorld();
