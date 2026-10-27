@@ -1,7 +1,11 @@
 extends Node
 ## Classic-only autoload. Game scenes never own or restart the soundtrack.
 
+# Neon Cathedral is the designated standalone theme; until its recording
+# exists, preserve the existing real music instead of synthesizing a substitute.
+const NEON_CATHEDRAL_PATH := "res://assets/audio/neon_cathedral.ogg"
 const TRACK_PATH := "res://assets/audio/nineteen_steps.ogg"
+var selected_track_path := ""
 const INITIAL_VOLUME_DB := -11.0
 
 var player: AudioStreamPlayer
@@ -13,8 +17,9 @@ var _resume_position := 0.0
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
     player = AudioStreamPlayer.new()
-    player.name = "NineteenSteps"
-    var track: AudioStreamOggVorbis = load(TRACK_PATH)
+    player.name = "ClassicMusic"
+    selected_track_path = NEON_CATHEDRAL_PATH if ResourceLoader.exists(NEON_CATHEDRAL_PATH) else TRACK_PATH
+    var track: AudioStreamOggVorbis = load(selected_track_path)
     # Set on the actual stream as well as in its checked-in import settings.
     track.loop = true
     track.loop_offset = 0.0
