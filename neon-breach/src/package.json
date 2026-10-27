@@ -1,0 +1,10 @@
+{
+  "name": "neon-breach",
+  "version": "1.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node build-standalone.mjs",
+    "test": "node --test ../../tests/neon_breach.test.mjs ../../tests/fullscreen.test.mjs ../../tests/breach_dungeon.test.mjs"
+  }
+}

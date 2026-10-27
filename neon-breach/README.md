@@ -1,46 +1,75 @@
-# Neon Breach — standalone tactical survivor
+# Neon Breach v1.1 — recovered features and mobile play
 
-Play via GitHub Pages at `/Neon-Privateer/breach/`. This is the single-file
-HTML5/Canvas subgame under `neon-breach/index.html`. It is independent of
-Privateer and the frozen Neon Driftline Classic Godot game.
+Play: https://dmcexcess-lab.github.io/Neon-Privateer/breach/
 
-## Current perception and balance pass
+The downloaded `Neon_Breach_Manual_Shotgun_v1.0.zip` contained features that
+had never reached this repository. This version merges that source with the
+subsequent full-floor AI, rotating posts, stronger zombie awareness, doubled
+shop prices (knife unchanged), and eight-second alarm extraction. Source now
+lives in `src/`; `index.html` is a reproducible self-contained build. CI rebuilds
+it and rejects a stale generated file before deployment.
 
-- All enemies are simulated over the entire map, independent of distance from
-  the player; the radar continues to reflect their updated world positions.
-  Only *rendering* outside the camera viewport is culled.
-- Wanderer zombie vision: **410 world units** ahead, **±82.8°**.
-  Patroller zombie vision: **500 units**, **±84.6°**. Standard walking in
-  their field of view gains a further 18% recognition range, while sneaking
-  retains concealment.
-- Red wanderers forget the player immediately when line of sight breaks;
-  they do not investigate noise or remembered positions.
-- Yellow squares briefly check only the last known location (1.25 s).
-  Shock troops search about 4.5 s, guards up to 11 s, heavy guards up to
-  14 s. Footsteps leave temporary investigation clues only for these units.
-- Alert wanderers move at **2.25×** their base movement speed, and alert
-  patrollers at **1.68×**. Their patrol/wander speeds are unchanged.
-- All purchasable weapons, radar, armor, and medkits cost **2× the original
-  baseline**, except the combat knife, unchanged at **95 credits**.
-  Example prices: revolver 330 credits; assault rifle 770 credits.
-- Full-map enemies continue simulating; local spatial buckets keep collision
-  separation from becoming an expensive quadratic operation.
-- Existing persistent credits, HQ storage, and equipment remain valid.
-  Prices apply on the next purchase; no saved profile conversion is needed.
+## Recovered and corrected
 
-## Validation
+- New Game, Continue, Load Save and Sound Settings on the title screen. The
+  HQ/pause menu has Save Game, Load Save, separate Music/SFX switches and
+  volume controls. New Game asks before clearing a career.
+- HQ purchases and loadout autosave together. Manual mission saves retain
+  enemies, opened chests, destroyed cover, magazines/reloads, bullets and
+  extraction progress. Navigation caches are rebuilt, not serialized with a
+  circular world reference. Backgrounding pauses and saves the game.
+- Magazines and automatic reloads: six-round revolver (individual rounds),
+  16-round auto pistol and 30-round AR (magazine change). No manual R reload
+  and no reserve-ammunition pickups. Reloads have sounds, HUD progress and
+  character animation.
+- Shotgun: click to fire five randomly spread pellets; release/click to pump.
+  Five shells per magazine; when empty, five separate insertions followed by
+  the final rack. Holding fire does not perform the pump for you.
+- Player/enemy footsteps, occasional creature sounds, gun and mechanism SFX.
+  One looping Nineteen Steps player continues across game states. The embedded
+  MP3 also supports older iPhone Safari versions that cannot play Ogg Vorbis.
+- HQ checkpoint insertion at floors 1/11/21/31 for 0/100/1,000/10,000 credits.
+  Reach each checkpoint before it becomes selectable; fares apply each time.
+- Floors 1–10: sewers; 11–20: maintenance; 21–30: lower archaeology (no
+  zombies, more cover); 31+: upper archaeology (sparse cover, more chests).
+  Size and enemy budgets increase, with explicit deep-floor caps.
+- First guard appears on a career's randomly chosen floor 7 or 8: posted
+  knife-equipped diamond. Floor 10 adds two melee patrollers and one ranged
+  patroller alongside the post. Later guards get progressively stronger guns,
+  and ranged guards can shelter behind cover and peek to fire.
+- Three base hit points, at most six with the best vest. Repair kits restore
+  one hit point, including vest capacity; five-kit carry limit. Creatures
+  award credits only. Destroyed furniture has a 0.5% supply/cache chance.
+- Lower completion cash, a smaller one-time all-hostiles-clear reward, and
+  a larger unseen-completion bonus. Enemy placement has no exit/depth bias.
+
+## Fullscreen and iPhone
+
+All three game pages offer Full screen. Native Element fullscreen is used
+when allowed; unsupported/denied requests expand the existing iframe to the
+viewport. Neither path creates a new game instance. Exit remains accessible.
+The existing ad panel and consent choices remain on the regular page.
+
+On iPhone: Safari → Share → Add to Home Screen → enable Open as Web App
+if offered. Open that icon, launch the game, tap Full screen and turn the
+phone sideways. Disable Portrait Orientation Lock in Control Center.
+The manifest requests landscape, and the button tries orientation lock where
+available; Safari/OS restrictions may still require manual rotation. No
+claim of a forced iPhone orientation lock or physical-device verification.
+Home Screen storage can be separate from Safari tab storage; use the same
+launch mode consistently. No offline service worker is installed.
+
+## Build and test
 
 ```sh
-node --test tests/neon_breach.test.mjs
+node neon-breach/src/build-standalone.mjs
+node --test tests/neon_breach.test.mjs tests/breach_dungeon.test.mjs tests/fullscreen.test.mjs tests/beta_feedback.test.mjs
+python3 -m unittest discover -s tests -p test_beta_wrapper.py
 ```
 
-This launches the complete game module in a browser-like Node VM and verifies
-shop prices, red loss-of-sight forgetfulness, tiered investigations,
-sight and stealth, noise, pursuit versus patrol speed, continued
-AI motion beyond the former 1650-unit sleeping boundary, and 120 full enemy
-updates on floors 15, 30 and 60 (the upper archaeology ceiling, a large
-security floor, and the maximum-sized generated layout). The stress test prints
-enemy count, room count, average AI update ms and p95 and applies a regression
-budget. A real-device browser/frame-rate playtest remains recommended because
-canvas rasterization, audio and mobile thermal throttling are not modeled in
-the Node AI benchmark.
+The geometry suite checks 1,520 seeded floors; runtime tests cover restored
+features plus the full-map AI and eight-second extraction regressions. Node
+AI timings do not establish physical iPhone frame rates. The Pages workflow
+also runs the existing Privateer/Classic Godot smoke, soundtrack and Classic
+balance tests, then exports all three Web pages. Privateer and Classic
+Godot gameplay/audio and Android advertising are unchanged.

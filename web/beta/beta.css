@@ -10,3 +10,18 @@ body:not([data-game-slug="neon-privateer"]) .game-frame{width:100%;height:100%;a
 body:not([data-game-slug="neon-privateer"]) .feedback-inner{max-width:920px;margin:auto}
 body[data-game-slug="neon-driftline-classic"] .game-stage{height:min(90svh,1000px)}
 @media(max-width:740px){body:not([data-game-slug="neon-privateer"]) .game-stage{height:calc(100svh - 200px);min-height:360px}}
+
+#fullscreen-game,.exit-fullscreen{background:#102d3b;border:1px solid var(--cyan);color:var(--cyan);padding:8px 12px;font:700 12px system-ui;min-height:40px;border-radius:4px;white-space:nowrap}
+.mobile-play-help{font-size:12px;color:var(--muted);padding:8px 16px;margin:0;border-top:1px solid var(--line)}
+.mobile-play-help summary{font-size:12px}.mobile-play-help p{margin:8px 0}
+.exit-fullscreen{display:none;position:absolute;right:max(7px,env(safe-area-inset-right));top:max(6px,env(safe-area-inset-top));z-index:30;background:#07101eee;opacity:.8}
+.landscape-hint{display:none;position:absolute;z-index:20;left:50%;bottom:10px;transform:translateX(-50%);width:min(350px,90%);padding:8px 12px;background:#07101eed;border:1px solid #4a808b;color:#b3e9ec;font:12px/1.4 system-ui;text-align:center;pointer-events:none}
+.game-stage{position:relative}
+body .game-stage.expanded-play{position:fixed;inset:0;z-index:10000;width:100%;height:100dvh!important;min-height:0!important;max-height:none;background:#050a13;border:0;display:flex;align-items:center;justify-content:center;padding:0}
+.game-stage.expanded-play .game-frame{height:100%;width:100%;max-height:none;aspect-ratio:auto}
+.expanded-play .exit-fullscreen{display:block}
+body.playing-expanded{overflow:hidden;overscroll-behavior:none}
+/* Reserve a slim independent rail for the exit control, above the in-game HUD. */
+.expanded-play .game-frame{height:calc(100% - 42px)!important;margin-top:42px}
+@media(orientation:portrait) and (max-width:700px){body[data-game-slug="neon-breach"] .expanded-play .landscape-hint{display:block}}
+@media(display-mode:standalone){.masthead{padding-top:max(12px,env(safe-area-inset-top))}}

@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="description" content="__DESCRIPTION__">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="touch-icon.png">
   <meta name="theme-color" content="#0a1019">
   <title>__GAME_NAME__ · Public Beta · DMC Oddworks</title>
   <link rel="stylesheet" href="beta.css?v=__BUILD__">
@@ -14,11 +18,12 @@
     <section class="intro"><div><p class="eyebrow"><span class="dot"></span> PUBLIC BETA / 01</p>__HEADING__<p class="lede">__LEDE__</p></div><div class="intro-note"><b>Free in your browser.</b><p>__OVERVIEW__</p><a href="#field-guide">Read the controls ↓</a></div></section>
     <div class="beta-layout">
       <section id="flight-deck" class="flight-deck" aria-labelledby="deck-title">
-        <div class="section-bar"><h2 id="deck-title">01 / PLAY WINDOW</h2><span>WINDOWED WEB BUILD</span></div>
+        <div class="section-bar"><h2 id="deck-title">01 / PLAY WINDOW</h2><button id="fullscreen-game" type="button" aria-pressed="false">Full screen</button></div>
         <iframe id="ad-support-strip" src="__AD_PATH__?layout=20261027" title="Advertising · Adsterra with permission or DMC Oddworks promos" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>
-        <div class="game-stage">
+        <details class="mobile-play-help"><summary>iPhone / iPad: play without Safari toolbars</summary><p>In Safari, tap Share → Add to Home Screen. Enable “Open as Web App” if offered, then launch that icon. For Breach, turn off Portrait Orientation Lock in Control Center and rotate the phone sideways. Safari may not allow a website to lock rotation; keep the phone sideways while playing. Saves stay in this browser; Home Screen storage can be separate.</p></details>
+        <div class="game-stage"><button id="exit-fullscreen" class="exit-fullscreen" type="button">Exit full screen ✕</button><p class="landscape-hint">Turn your iPhone sideways. If it will not rotate, turn off Portrait Orientation Lock in Control Center.</p>
           <div id="launch-card" class="launch-card"><div class="orbit" aria-hidden="true">✦</div><p class="eyebrow">__LAUNCH_EYEBROW__</p><h3>Ready to make a run?</h3><p>Desktop or phone. No account to play.</p><button id="launch" class="primary" type="button">Launch public beta <span>↗</span></button><p class="small">The first load downloads the game.<br>Tap inside it to enable sound.</p></div>
-          <iframe id="__GAME_SLUG__-game" class="game-frame" data-game-frame title="__GAME_NAME__ public beta game" allow="autoplay; fullscreen 'none'" hidden></iframe>
+          <iframe id="__GAME_SLUG__-game" class="game-frame" data-game-frame title="__GAME_NAME__ public beta game" allow="autoplay; fullscreen" allowfullscreen hidden></iframe>
         </div>
         <div class="deck-footer"><p id="game-status" role="status">Ready when you are.</p><button id="close-game" type="button" hidden>Close game</button><a href="#feedback">Something break? Report it ↓</a></div>
       </section>

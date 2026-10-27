@@ -9,12 +9,13 @@ const source=html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 assert.ok(source,'standalone game module is available');
 const makeElement=()=>({
   style:{},disabled:false,textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},
-  addEventListener(){},removeEventListener(){},setPointerCapture(){},appendChild(){},replaceChildren(){},
+  addEventListener(){},removeEventListener(){},setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
   getContext(){return new Proxy({}, {get:()=>()=>{}})},
   getBoundingClientRect(){return {left:0,top:0,width:120,height:120}},
   querySelector(){return makeElement()}
 });
-const elements=new Map();
+const elements=new Map(),storage=new Map();
+let musicInstances=0;
 // Reproducible headings, pauses and spawn offsets for traversal regressions.
 let randomSeed=0x1234abcd;
 const seededMath=Object.create(Math);
@@ -25,16 +26,19 @@ const document={
 };
 const sandbox={
   Math:seededMath,
-  document,localStorage:{getItem(){return null},setItem(){}},navigator:{getGamepads(){return []}},
+  console,document,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v))},navigator:{getGamepads(){return []}},
   innerWidth:1080,innerHeight:830,devicePixelRatio:1,performance,
   addEventListener(){},requestAnimationFrame(){},
-  Audio:class{addEventListener(){} play(){return Promise.resolve()} pause(){}},
+  Audio:class{constructor(){musicInstances++;this.paused=true;this.currentTime=0;}addEventListener(){} play(){this.paused=false;return Promise.resolve()} pause(){this.paused=true;}},
 };
 vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
   initializeBehavior,buildPostRoute,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
-  updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward};
+  updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
+  enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
+  useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
+  getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
 
@@ -250,4 +254,131 @@ test('archaeology and maximum generated floors sustain full-range AI',()=>{
     assert.ok(p95<45,'95th percentile AI tick remains bounded: '+JSON.stringify(stat));
   }
   console.log('NEON BREACH AI STRESS '+JSON.stringify(stats));
+});
+
+
+test('all four ascent bands and first guard encounters match the recovered brief',()=>{
+  const bands={1:'sewers',10:'sewers',11:'maintenance',20:'maintenance',21:'dig',30:'dig',31:'ruins',60:'ruins'};
+  for(const [floor,id] of Object.entries(bands))assert.equal(b.strata(Number(floor)).id,id);
+  b.game.profile.firstGuardFloor=8;
+  for(const floor of [6,7,8,9,10,21,31]){
+    generatedScenario(floor);const humans=b.game.enemies.filter(e=>!['circle','square'].includes(e.type));
+    if(floor<8)assert.equal(humans.length,0);
+    if(floor===8||floor===9){assert.equal(humans.length,1);assert.equal(humans[0].type,'diamond');assert.equal(humans[0].weapon,'knife');assert.equal(humans[0].duty,'post');}
+    if(floor===10)assert.deepEqual(Array.from(humans,e=>e.type),['diamond','diamond','diamond','trapezoid']);
+    if(floor===10)assert.deepEqual(Array.from(humans.slice(1),e=>e.duty),['patrol','patrol','patrol']);
+    if(floor>=21)assert.equal(humans.length,b.game.enemies.length,'archaeology has no zombies');
+  }
+});
+
+test('three base hits, six with best vest, one-hit repairs and five-kit carry cap',()=>{
+  b.enterHQ();b.game.loadout.armor=3;b.resetRun();assert.equal(b.game.player.maxHp,6);
+  b.game.player.hp=2;b.game.player.medkits=2;assert.equal(b.useMedkit(),true);assert.equal(b.game.player.hp,3);
+  b.game.player.medkits=5;assert.equal(b.collectPickup({kind:'med',x:0,y:0}),false);
+  b.enterHQ();b.game.loadout.medkits=5;b.game.profile.storage.medkit=4;assert.equal(b.equipFromStash('medkit'),false);
+  b.game.loadout.armor=0;b.resetRun();assert.equal(b.game.player.maxHp,3);
+});
+
+test('shotgun requires separate pump clicks and reloads five individual shells on empty',()=>{
+  b.enterHQ();b.game.loadout.weapon='shotgun';b.resetRun();const p=b.game.player;
+  assert.equal(b.WEAPONS.shotgun.pellets,5);
+  for(let shot=0;shot<5;shot++){
+    const old=b.game.bullets.length;b.shootPlayer(0);assert.equal(b.game.bullets.length-old,5);
+    if(shot<4){assert.equal(p.pumpNeeded,true);assert.equal(p.magazines.shotgun,4-shot);
+      const count=b.game.bullets.length;b.shootPlayer(0);assert.equal(b.game.bullets.length,count,'pump does not shoot');
+      assert.ok(p.pumpClock>0);b.updateWeaponTimers(1);
+    }
+  }
+  assert.ok(p.reloadClock>0);assert.equal(p.magazines.shotgun,0);
+  b.updateWeaponTimers(.59);assert.equal(p.magazines.shotgun,1);
+  b.updateWeaponTimers(2.32);assert.equal(p.magazines.shotgun,5);assert.equal(p.reloadStage,'rack');
+  b.updateWeaponTimers(1);assert.equal(p.reloadClock,0);assert.equal(p.pumpNeeded,false);
+  assert.equal(b.startReload(),false,'cannot reload a nonempty gun');
+});
+
+test('revolver loads rounds in sequence; AR reloads its magazine on empty',()=>{
+  for(const gun of ['revolver','ar','auto_pistol']){
+    b.enterHQ();b.game.loadout.weapon=gun;b.resetRun();const p=b.game.player,w=b.WEAPONS[gun];
+    for(let i=0;i<w.magazine;i++)b.shootPlayer(0);
+    assert.ok(p.reloadClock>0);b.updateWeaponTimers(w.reload/2+.001);
+    assert.equal(p.magazines[gun],gun==='revolver'?3:0);
+    b.updateWeaponTimers(w.reload);assert.equal(p.magazines[gun],w.magazine);
+  }
+});
+
+test('mission save serializes navigation safely and restores equipment, world, bullets and alarm',()=>{
+  b.enterHQ();b.game.loadout.weapon='shotgun';b.resetRun(30);const p=b.game.player;
+  b.game.profile.credits=987;b.game.world.rooms[1].visited=true;
+  if(b.game.world.rooms[1].cover.length)b.game.world.rooms[1].cover[0].hp=0;
+  b.game.floorClearPaid=true;b.game.detectedThisFloor=true;b.game.extraction={elapsed:2.5,remaining:6,room:1};
+  const enemy=b.game.enemies[0];enemy.x+=7;enemy.navigation={world:b.game.world,points:[{x:1,y:2}]};
+  b.shootPlayer(0);p.magazines.shotgun=0;b.startReload();b.updateWeaponTimers(.7);
+  b.game.bullets[0].hitIds.add(123);const expected={x:enemy.x,count:b.game.enemies.length,clock:p.reloadClock};
+  assert.equal(b.saveGame(),true);const slot=JSON.parse(storage.get('neon-breach.save.v1'));
+  assert.equal(slot.run.enemies[0].navigation,undefined);assert.equal(slot.run.bullets[0].hitIds[0],123);
+  b.enterHQ();b.game.profile.credits=1;assert.equal(b.loadGame(),true);
+  assert.equal(b.game.mode,'PLAY');assert.equal(b.game.floor,30);assert.equal(b.game.profile.credits,987);
+  assert.equal(b.game.enemies.length,expected.count);assert.equal(b.game.enemies[0].x,expected.x);
+  assert.equal(b.game.player.reloadClock,expected.clock);assert.ok(b.game.bullets[0].hitIds.has(123));
+  assert.equal(b.game.extraction.elapsed,2.5);assert.equal(b.game.floorClearPaid,true);assert.equal(b.game.detectedThisFloor,true);
+  assert.equal(b.game.world.rooms[1].visited,true);
+});
+
+test('checkpoint travel requires discovery and charges exactly once per deployment',()=>{
+  b.enterHQ();b.game.profile.credits=999;b.game.profile.unlockedFloor=1;b.openTravel();
+  assert.equal(b.fastTravel(11),false);assert.equal(b.game.profile.credits,999);
+  b.game.profile.unlockedFloor=11;assert.equal(b.fastTravel(11),true);assert.equal(b.game.floor,11);assert.equal(b.game.profile.credits,899);
+  assert.equal(b.fastTravel(11),false);assert.equal(b.game.profile.credits,899);
+  assert.equal(b.game.profile.unlockedFloor,11);
+});
+
+test('creatures never drop supplies and furniture rare loot only rolls once',()=>{
+  generatedScenario(5);b.game.pickups=[];const original=seededMath.random;seededMath.random=()=>0;
+  try{
+    for(const e of [...b.game.enemies])b.killEnemy(e);assert.equal(b.game.pickups.length,0);
+    const prop={x:0,y:0,w:30,h:30,hp:1};b.damageFurniture(prop,5);assert.equal(b.game.pickups.length,1);
+    b.damageFurniture(prop,5);assert.equal(b.game.pickups.length,1,'destroyed prop cannot roll twice');
+  }finally{seededMath.random=original;}
+});
+
+test('music/SFX settings persist independently without duplicate music players',()=>{
+  b.unlockAudio();b.unlockAudio();assert.equal(musicInstances,1);
+  b.setAudioSettings({musicOn:false,musicVolume:30,sfxOn:false,sfxVolume:20});
+  assert.equal(JSON.parse(storage.get('neon-breach.audio.v1')).musicVolume,30);
+  b.enterHQ();b.resetRun();b.setAudioSettings({musicOn:true});b.unlockAudio();
+  assert.equal(musicInstances,1);assert.equal(b.getAudioSettings().sfxOn,false);
+});
+
+test('completion awards encourage unseen exits more than combat clears',()=>{
+  for(const floor of [1,10,31,60]){
+    const advance=b.floorAdvanceAward(floor,30),clear=b.floorClearAward(floor,30);
+    assert.ok(clear<advance);assert.ok(b.stealthAward(floor)>advance+clear);
+    assert.ok(advance<35+floor*18+30*5,'completion credits reduced versus old build');
+  }
+});
+
+
+test('ranged guards shelter behind physical cover then peek toward the last observed position',()=>{
+  b.game.world=openWorld();b.game.world.rooms[0].cover=[{x:200,y:0,w:60,h:80,hp:4}];b.game.extraction=null;
+  const e={type:'trapezoid',state:'alert',x:400,y:0,r:21,lastKnown:{x:0,y:0}};
+  const shelter=b.rangedCoverIntent(e,.1);assert.ok(shelter,'reachable cover selected');
+  assert.equal(b.clearSight(b.game.world,0,0,shelter.x,shelter.y),false);
+  const peek=b.rangedCoverIntent(e,1.3);assert.notDeepEqual(peek,shelter);
+  assert.equal(b.clearSight(b.game.world,0,0,peek.x,peek.y),true,'peek opens a real firing line');
+  e.type='diamond';assert.equal(b.rangedCoverIntent(e,.1),null,'melee troops do not impersonate ranged guards');
+});
+
+test('HQ autosave keeps purchases and equipped inventory together',()=>{
+  b.enterHQ();b.game.profile.credits=2000;b.game.profile.storage.knife=1;
+  assert.equal(b.equipFromStash('knife'),true);assert.equal(b.purchase('medkit'),true);
+  const slot=JSON.parse(storage.get('neon-breach.save.v1'));
+  assert.equal(slot.mode,'HQ');assert.equal(slot.loadout.weapon,'knife');assert.equal(slot.profile.storage.knife,0);
+  assert.equal(slot.profile.credits,1910);assert.equal(slot.profile.storage.medkit,b.game.profile.storage.medkit);
+  assert.equal(b.loadGame(),true);assert.equal(b.game.profile.credits,1910);assert.equal(b.game.loadout.weapon,'knife');
+});
+
+test('pause freezes the mission clock and weapon reload timers',()=>{
+  b.enterHQ();b.game.loadout.weapon='revolver';b.resetRun();b.game.player.magazines.revolver=0;b.startReload();
+  const clock=b.game.player.reloadClock,time=b.game.time;b.togglePause();b.update(1);
+  assert.equal(b.game.time,time);assert.equal(b.game.player.reloadClock,clock);
 });

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#07101e">
+  <meta name="description" content="Neon Breach — an organic underground twin-stick stealth survivor.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <link rel="stylesheet" href="style.css">
+  <title>NEON BREACH — The Ascent v1.1.0</title>
+</head>
+<body>
+  <canvas id="game" aria-label="Neon Breach twin-stick shooter"></canvas>
+  <div id="crt" aria-hidden="true"></div>
+  <header id="hud" class="hidden" aria-live="off">
+    <div class="hud-block"><span class="hud-label">LEVEL</span><strong id="floorReadout">01</strong></div>
+    <div class="hud-block"><span class="hud-label">HEALTH</span><strong id="healthReadout">3 / 3</strong></div>
+    <div class="hud-block"><span class="hud-label">CREDITS</span><strong id="cashReadout">000</strong></div>
+    <div class="hud-block weapon"><span class="hud-label">WEAPON</span><strong id="weaponReadout">BARE HANDS</strong></div>
+    <button id="pauseButton" class="small-button" aria-label="Pause game">Ⅱ</button>
+  </header>
+  <button id="hqMenuButton" class="small-button hidden" aria-label="HQ game menu">MENU</button>
+  <div id="reloadTrack" aria-hidden="true"><div id="reloadMeter" class="hidden"></div></div>
+  <div id="location" class="hidden">SEWER NETWORK</div>
+  <div id="toast" class="hidden" aria-live="polite"></div>
+  <div id="aimTip" class="hidden">WASD MOVE · MOUSE AIM + ATTACK · SHIFT SNEAK · F REPAIR KIT · M MAP IF EQUIPPED · SHOTGUN: CLICK FIRE / CLICK PUMP</div>
+
+  <main id="menu" class="overlay">
+    <div class="menu-panel">
+      <div class="eyebrow"><span class="dot"></span> A NEON DRIFTLINE SPIN-OFF // FIELD FILE 01</div>
+      <div class="brand-symbol" aria-hidden="true"><span>⬡</span><span>◇</span><span>⬡</span></div>
+      <h1>NEON<br><em>BREACH</em></h1>
+      <p class="subhead">PROCEDURAL TWIN-STICK SURVIVAL</p>
+      <div class="hairline"></div>
+      <p class="intro">Deploy from Resistance HQ through ten sewer sectors, maintenance levels, and two tiers of guarded archaeology. Stash valuable gear, buy supplies, and plan stealth routes. Exfil preserves field equipment; death destroys carried gear, <b>never your credits</b>.</p>
+      <button id="startButton" class="primary">CONTINUE / LOAD GAME <span>→</span></button>
+      <div class="menu-actions"><button id="newButton" class="secondary">NEW GAME</button><button id="loadButton" class="secondary">LOAD SAVE</button><button id="menuSettingsButton" class="secondary">SOUND SETTINGS</button></div>
+      <p class="best" id="bestReadout">PERSONAL BEST // SECTOR 00</p>
+      <div class="controls-copy">
+        <div><b>DESKTOP</b>WASD move · mouse aim / click punch or shoot<br>Shift or C sneak · shotgun: click fire, click pump · auto-reload on empty · F repair kit · M map · ESC pause</div>
+        <div><b>PHONE / GAMEPAD</b>Left stick moves · right stick aims and attacks; shotgun release / push to pump<br>SNEAK button · Gamepad L3 to sneak</div>
+      </div>
+    </div>
+  </main>
+
+  <div id="hqPrompt" class="hidden" aria-live="polite"><button id="hqInteractButton" type="button">INTERACT · HQ STATION</button><span>PRESS E · USE THE LEFT STICK TO WALK</span></div>
+
+  <section id="hq" class="overlay hidden" aria-label="Resistance headquarters and equipment storage">
+    <div class="shop-panel">
+      <div class="eyebrow">SAFE ZONE // RESISTANCE NETWORK</div>
+      <div class="shop-heading"><div><h2 id="hqHeading">RESISTANCE HQ</h2><p id="hqSubheading">STORAGE IS SAFE. FIELD EQUIPMENT IS AT RISK.</p></div><strong id="hqCredits">000 <small>CR</small></strong></div>
+      <div class="hq-ribbon" id="hqLoadout">BARE HANDS · NO ARMOR · NO RADAR</div>
+      <h3 class="hq-section" id="hqSection">FIELD GEAR</h3>
+      <div id="hqItems" class="shop-grid"></div>
+      <div class="shop-footer"><p>Credits survive death. Only equipment deployed into missions is at risk. Walk to the deployment lift to start a sortie.</p><button id="hqCloseButton" class="primary">RETURN TO HQ MAP <span>→</span></button></div>
+    </div>
+  </section>
+
+  <section id="travel" class="overlay hidden" aria-label="HQ deployment and paid fast travel">
+    <div class="dialog-panel travel-panel"><div class="eyebrow">RESISTANCE HQ // DEPLOYMENT LIFT</div>
+      <h2>CHOOSE <em>INSERTION</em></h2><p>Reach sectors 11, 21 and 31 once to unlock their insertion points. Credits are deducted before deploying.</p>
+      <p id="travelWallet"></p><div id="travelOptions" class="travel-options"></div>
+      <button id="travelCloseButton" class="secondary">RETURN TO HQ</button>
+    </div>
+  </section>
+  <section id="settings" class="overlay hidden" aria-label="Sound settings">
+    <div class="dialog-panel settings-panel"><div class="eyebrow">NEON BREACH // AUDIO MIXER</div><h2>SOUND <em>SETTINGS</em></h2>
+      <label class="setting-toggle"><input id="musicOn" type="checkbox" checked> MUSIC ENABLED</label>
+      <label class="setting-volume">MUSIC VOLUME <strong id="musicVolumeValue">65%</strong><input id="musicVolume" type="range" min="0" max="100" value="65"></label>
+      <label class="setting-toggle"><input id="sfxOn" type="checkbox" checked> SOUND EFFECTS ENABLED</label>
+      <label class="setting-volume">EFFECTS VOLUME <strong id="sfxVolumeValue">80%</strong><input id="sfxVolume" type="range" min="0" max="100" value="80"></label>
+      <p>Sound preferences are stored locally in this browser.</p><button id="settingsCloseButton" class="primary">BACK</button>
+    </div>
+  </section>
+  <section id="pause" class="overlay hidden" aria-label="Pause menu">
+    <div class="dialog-panel">
+      <div class="eyebrow">SYSTEM HALTED</div>
+      <h2>PAUSED</h2>
+      <p>Enemies and the mission clock are stopped.</p>
+      <button id="resumeButton" class="primary">RESUME OPERATION <span>→</span></button>
+      <button id="saveButton" class="secondary">SAVE GAME</button>
+      <button id="pauseLoadButton" class="secondary">LOAD SAVE</button>
+      <button id="pauseSettingsButton" class="secondary">SOUND SETTINGS</button>
+      <button id="returnTitleButton" class="secondary">SAVE & RETURN TO TITLE</button>
+      <button id="quitButton" class="secondary">ABORT // LOSE FIELD GEAR, KEEP CREDITS</button>
+    </div>
+  </section>
+
+  <section id="death" class="overlay hidden" aria-label="Game over">
+    <div class="dialog-panel">
+      <div class="eyebrow">SIGNAL LOST // OPERATOR DOWN</div>
+      <h2>RUN <em>TERMINATED</em></h2>
+      <p id="deathStats">SECTOR 01 · 0 ELIMINATIONS</p>
+      <p>Credits and HQ storage are safe. Deployed weapons, armor, map and unused repair kits are lost.</p>
+      <button id="retryButton" class="primary">RETURN TO RESISTANCE HQ <span>→</span></button>
+      <button id="titleButton" class="secondary">RETURN TO TITLE</button>
+    </div>
+  </section>
+
+  <div id="touchUI" class="hidden" aria-label="Touch controls">
+    <div class="stick" id="moveStick" role="application" aria-label="Movement stick"><span class="stick-label">MOVE</span><div class="stick-base"><div class="stick-knob"></div></div></div>
+    <div class="stick" id="aimStick" role="application" aria-label="Aim and attack stick"><span class="stick-label">AIM / ATTACK</span><div class="stick-base"><div class="stick-knob"></div></div></div>
+    <button id="sneakButton" type="button" aria-label="Toggle stealth mode">SNEAK</button>
+    <button id="medkitButton" type="button" aria-label="Use carried repair kit">REPAIR KIT <span id="medkitCount">0</span></button>
+  </div>
+  <script type="module" src="game.js"></script>
+</body>
+</html>

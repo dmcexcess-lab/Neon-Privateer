@@ -1,6 +1,7 @@
 """Install the same windowed beta page around each game's unmodified export."""
 from pathlib import Path
 import re
+import json
 import shutil
 import sys
 
@@ -40,10 +41,10 @@ PROFILES = {
   'LEDE': 'The credits are safe.<br>The gear you took underground is not.',
   'OVERVIEW': 'Deploy from Resistance HQ into sewer tunnels and a guarded archaeological dig. Sneak, fight, find credits and decide when to extract.',
   'LAUNCH_EYEBROW': 'THE ASCENT / TACTICAL SURVIVAL',
-  'READY_TEXT': 'Breach online. Enter Resistance HQ; interact inside the game for sound.',
-  'CLOSED_TEXT': 'Game closed. Saved credits, HQ storage and best floor stay in this browser. An active sortie is not a manual save.',
+  'READY_TEXT': 'Breach v1.1 online. Save/load and Sound Settings are in the game menu.',
+  'CLOSED_TEXT': 'Game closed. Saved credits, HQ storage and best floor stay in this browser. Use Save Game in the in-game menu to keep an active sortie.',
   'GUIDE_HEADING': 'Bring gear.<br>Bring it back.',
-  'GUIDE': '<li><b>Enter HQ.</b> Move with WASD or arrows and press E at a station. On touch, use the movement stick and INTERACT.</li><li><b>Choose a route through the floor.</b> Move with WASD, aim with the mouse and click to attack. On touch, use the two sticks. Shift or C sneaks; F uses a carried medkit.</li><li><b>Read the radar.</b> M enlarges the map when radar is equipped. Sight lines and cover matter; enemies keep moving outside your view.</li><li><b>Extract or keep climbing.</b> Enter the EXFIL marker, then hold its larger ring for 8 seconds. Every hostile converges; leaving cancels the timer. Stairs continue the sortie. Death loses deployed equipment but keeps credits and HQ storage. Escape pauses.</li>',
+  'GUIDE': '<li><b>Enter HQ.</b> Move with WASD or arrows and press E at a station. On touch, use the movement stick and INTERACT.</li><li><b>Choose a route through the floor.</b> Move with WASD, aim with the mouse and click to attack. On touch, use the two sticks. Shift or C sneaks; F uses a carried repair kit. The menu has Save, Load and Sound Settings.</li><li><b>Read the radar.</b> M enlarges the map when radar is equipped. Sight lines and cover matter; enemies keep moving outside your view.</li><li><b>Extract or keep climbing.</b> Enter the EXFIL marker, then hold its larger ring for 8 seconds. Every hostile converges; leaving cancels the timer. Stairs continue the sortie. Death loses deployed equipment but keeps credits and HQ storage. Escape pauses.</li>',
   'MUSIC_HEADING': 'From the safe room<br>to the next floor.',
   'MUSIC': '<div><dt>RESISTANCE HQ + THE ASCENT</dt><dd>Nineteen Steps</dd></div>',
  },
@@ -63,7 +64,6 @@ def wrap(path: Path, build: str, game: str = 'privateer'):
         assert 'function displayFailureNotice(err) {' in original
     guard = '''<script>
 if(window.top===window.self){window.location.replace('./')}
-document.addEventListener('fullscreenchange',()=>{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})});
 window.addEventListener('error',()=>window.parent.postMessage('dmc-game-failed',window.location.origin));
 </script>'''
     original = original.replace('</head>', guard + '\n</head>', 1)
@@ -87,8 +87,15 @@ window.addEventListener('error',()=>window.parent.postMessage('dmc-game-failed',
         # Existing embedded play.html URLs and save origin continue to work.
         (path.parent / 'play.html').write_text(original)
     path.write_text(page)
-    for name in ('beta.css', 'beta.js', 'feedback.mjs'):
+    for name in ('beta.css', 'beta.js', 'feedback.mjs', 'fullscreen.mjs', 'touch-icon.png'):
         shutil.copy2(source / name, path.parent / name)
+    (path.parent / 'manifest.webmanifest').write_text(json.dumps({
+        'name': profile['GAME_NAME'], 'short_name': profile['GAME_NAME'],
+        'id': './', 'start_url': './?homescreen=1#flight-deck', 'scope': './',
+        'display': 'standalone', 'orientation': 'landscape' if game == 'breach' else 'any',
+        'background_color': '#050a13', 'theme_color': '#0a1019',
+        'icons': [{'src': 'touch-icon.png', 'sizes': '180x180', 'type': 'image/png'}]
+    }, indent=2))
     print(f'{profile["GAME_NAME"]}: windowed beta, ad strip and copy/download feedback installed')
 
 if __name__ == '__main__':

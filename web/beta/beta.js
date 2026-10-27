@@ -69,3 +69,22 @@ document.getElementById('download-submitted').addEventListener('click', async (e
     feedbackStatus.textContent = error.message;
   } finally { button.disabled = false; }
 });
+
+// Keep the same iframe alive when enlarging or rotating; no reload/save reset.
+import {createPlayView} from './fullscreen.mjs';
+const stage = document.querySelector('.game-stage');
+const fullButton = document.getElementById('fullscreen-game');
+const playView = createPlayView({stage, doc: document, orientation: screen.orientation,
+  changed(expanded) {
+    stage.classList.toggle('expanded-play', expanded);
+    document.body.classList.toggle('playing-expanded', expanded);
+    fullButton.setAttribute('aria-pressed', String(expanded));
+    fullButton.textContent = expanded ? 'Exit full screen' : 'Full screen';
+  }
+});
+fullButton.addEventListener('click', async () => {
+  const mode = await playView.toggle();
+  if (mode === 'expanded') gameStatus.textContent = 'Play area expanded. On iPhone: Share → Add to Home Screen → Open as Web App for a screen without Safari toolbars. Rotate the phone sideways for Breach.';
+});
+document.getElementById('exit-fullscreen').addEventListener('click', () => playView.exit());
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && playView.expanded) playView.exit(); });
