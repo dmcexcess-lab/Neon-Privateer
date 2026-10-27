@@ -350,6 +350,10 @@ CI requires the production-closure marker before the frozen Classic regression, 
 
 ### Public Web beta
 
+The game window now occupies the full available playtest width, with the reporting form **underneath** rather than in a right-hand desktop column. Fullscreen behavior, ad consent and report copy/download remain unchanged.
+
+The **Neon Quartet** mapping is recorded in `assets/audio/README.md`: Breach standalone = Nineteen Steps, Classic standalone = Neon Cathedral, Firewall standalone = Do Androids Dream, and Privateer rotates those three through ordinary gameplay while reserving J-Space for incarceration alone. The recordings for Neon Cathedral and J-Space are not yet in the repo; no synthetic tracks are substituted. 
+
 The repository's Pages root is the windowed **Neon Privateer public beta**. The
 game is embedded beneath the existing consent-based Adsterra strip; declining
 third-party ads leaves DMC Oddworks house promotions visible. The game frame
