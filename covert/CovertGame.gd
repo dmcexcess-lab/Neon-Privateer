@@ -1,10 +1,15 @@
 extends Node2D
 ## Shared career menu, real on-foot operations, custody and native hacking.
 signal career_changed(data: Dictionary, cash: int)
+signal crime_reported(offense: String,severity: int)
+signal justice_resolved(faction: String,escaped: bool)
 signal exit_requested
 const Career=preload("CovertCareer.gd")
 const Ground=preload("GroundSimulation.gd")
 const Hacker=preload("res://hacking/FirewallGame.gd")
+const Guild=preload("GuildProgress.gd")
+const Justice=preload("JusticeSystem.gd")
+const Prison=preload("PrisonLife.gd")
 const INK=Color("e0faff")
 const CYAN=Color("5af0ff")
 const GREEN=Color("75ffb0")
@@ -33,26 +38,45 @@ var mouse_attack:=false
 var mouse_stealth:=false
 var save_clock:=0.0
 var origin_kind:=""
+var jurisdiction:=""
+var authority_label:=""
+var return_to_flight:=false
+var job_page:=0
+var job_tier:=1
+var prison=Prison.new()
+var prison_npc:=0
 var sound_requested:Callable
 func _ready() -> void:
     hack=Hacker.new();hack.embedded=true;hack.visible=false
     hack.challenge_finished.connect(_hack_finished)
     hack.career_changed.connect(_hack_checkpoint)
     add_child(hack)
-func configure(saved: Dictionary,balance: int,location: String,label: String,research: Dictionary) -> void:
+func configure(saved: Dictionary,balance: int,location: String,label: String,research: Dictionary,law_faction: String="",law_name: String="") -> void:
+    return_to_flight=false
     data=Career.decode(saved);cash=balance;planet=location;port_name=label;phase="BOARD";page=0
-    clear_inputs();sim=Ground.new()
-    if not data.ground.is_empty() and sim.restore(data.ground):phase="GROUND"
-    elif data.incarcerated:begin_ground("prison")
+    authority_label=law_name if not law_name.is_empty() else port_name+" authority"
+    jurisdiction=law_faction if not law_faction.is_empty() else "port:"+planet
+    if not String(data.justice.forced_faction).is_empty():jurisdiction=data.justice.forced_faction
+    clear_inputs();sim=Ground.new();prison=Prison.new()
+    if not data.justice.sentence.is_empty():
+        data.incarcerated=true
+        if not prison.restore(data.prison_life):prison.start(data.justice.sentence,planet.hash())
+        if not data.ground.is_empty() and data.ground.get("kind","")=="prison_escape" and sim.restore(data.ground):phase="GROUND"
+        else:phase="PRISON"
+    elif not data.ground.is_empty() and sim.restore(data.ground):phase="GROUND"
+    elif data.captured:begin_ground("mission_escape")
+    elif not String(data.justice.forced_faction).is_empty():phase="JUSTICE"
     data["research"]=research.duplicate(true)
     if is_instance_valid(hack):hack.visible=false
 func clear_inputs() -> void:
     keys.clear();sticks.clear();move_axis=Vector2.ZERO;aim_axis=Vector2.ZERO;mouse_aim=Vector2.ZERO;mouse_attack=false;mouse_stealth=false
 func persist() -> void:
     data.ground=sim.snapshot() if phase=="GROUND" and not sim.state.is_empty() else {}
+    data.prison_life=prison.data.duplicate(true) if data.incarcerated else {}
     career_changed.emit(data.duplicate(true),cash)
 func pause_game() -> void:
     if phase=="GROUND" and not sim.state.is_empty():sim.state.paused=true
+    if phase=="PRISON" and not prison.data.is_empty():prison.data.paused=true
     if is_instance_valid(hack) and hack.visible:hack.pause_game()
     clear_inputs();persist()
 func _notification(what: int) -> void:
@@ -68,17 +92,29 @@ func buy(item: String) -> bool:
     else:data.gear.armor+=1
     notice="FIELD GEAR PURCHASED";persist();return true
 func accept(kind: String) -> bool:
-    if kind not in ["track","recover","assault"]:return false
-    var offer:Dictionary=Career.offer(planet,kind,data.sequence);offer["port_label"]=port_name
+    if not Career.JOBS.has(kind):return false
+    var offer:Dictionary=Career.offer(planet,kind,data.sequence,job_tier);offer["port_label"]=port_name
+    var reason:=Career.blocker(data,offer)
+    if not reason.is_empty():notice=reason;return false
     if not Career.accept(data,offer):return false
-    notice="CONTRACT ACCEPTED // OBJECTIVE LOG UPDATED";persist();return true
+    notice="JOB ACCEPTED // OBJECTIVE LOG UPDATED";persist();return true
 func current_task() -> String:return Career.next_task(data.active)
 func begin_ground(kind: String) -> bool:
-    if data.incarcerated and kind!="prison":return false
-    if kind!="port" and kind!="prison":
+    if kind=="prison_escape" and not prison.data.get("escape_active",false):return false
+    if kind=="mission_escape" and not data.captured:return false
+    if data.incarcerated and kind!="prison_escape":return false
+    if data.captured and kind!="mission_escape":return false
+    if kind not in ["port","mission_escape","prison_escape"]:
         if data.active.is_empty() or data.active.planet!=planet or kind!=current_task():return false
     var seed_number:int=int(data.active.get("seed",planet.hash()))+int(data.active.get("stage",0))*71
-    sim.new_mission(kind,seed_number,data.gear);phase="GROUND";clear_inputs();persist();return true
+    var gear:Dictionary=data.gear
+    if kind=="mission_escape":gear=data.get("impounded",gear)
+    elif kind=="prison_escape":gear=data.get("prison_impounded",gear)
+    var tier:int=clampi(1+int(data.justice.sentence.get("days",0))/180,1,5) if kind=="prison_escape" else int(data.active.get("difficulty",1))
+    sim.new_mission(kind,seed_number,gear,tier);phase="GROUND"
+    if kind not in ["mission_escape","prison_escape"]:
+        sim.state.max_hp+=mini(30,int(data.fitness));sim.state.hp=sim.state.max_hp
+    clear_inputs();persist();return true
 func _rumor() -> void:
     var speaker:="Dock contact"
     for npc in sim.state.npcs:
@@ -90,31 +126,80 @@ func resolve_ground(result: String) -> void:
     if phase!="GROUND" or sim.state.is_empty():return
     var kind:=String(sim.state.kind)
     if result=="caught":
-        data.arrests+=1;data.incarcerated=true;data.challenge={}
-        Career.add_entry(data,"ARREST: compound security confiscated field gear. Escape detention or pay the release fine from carried cash; bank funds are protected.")
-        # Failed escape restarts custody, not the contract; equipment remains impounded.
-        if kind!="prison":data["impounded"]=data.gear.duplicate(true)
-        data.gear={"pistol":false,"armor":0}
-        var held:Dictionary=data.get("impounded",{"pistol":false,"armor":0})
-        sim.new_mission("prison",int(sim.state.seed)+113,held)
-        notice="DETAINED // BADGE DESK WEST, GEAR NORTH, EXIT SOUTHWEST";clear_inputs();persist();return
+        data.challenge={}
+        if kind=="prison_escape":
+            prison.failed_escape();phase="PRISON";sim=Ground.new()
+            Career.add_entry(data,"PRISON ESCAPE FAILED: recaptured, 30 days added; the legal sentence continues.")
+        else:
+            data.captures+=1;data.captured=true
+            Career.add_entry(data,"MISSION CAPTURE: held by site security. Escape through Breach; this is not a criminal sentence.")
+            if kind!="mission_escape":data["impounded"]=data.gear.duplicate(true)
+            data.gear={"pistol":false,"armor":0}
+            sim.new_mission("mission_escape",int(sim.state.seed)+113,data.get("impounded",{}))
+            notice="CAPTURED // RECOVER GEAR AND ESCAPE // NO SENTENCE CLOCK"
+        clear_inputs();persist();return
     if result!="extracted":return
-    if kind=="prison":
-        data.incarcerated=false
+    if kind=="prison_escape":
+        var faction:=Justice.escape(data.justice,prison.remaining_days(),float(prison.data.served_days));data.incarcerated=false
+        if sim.state.gear_recovered:data.gear=data.get("prison_impounded",data.gear).duplicate(true)
+        data.erase("prison_impounded");data.prison_life={};prison=Prison.new()
+        justice_resolved.emit(faction,true)
+        Career.add_entry(data,"ESCAPED PRISON: original charges remain outstanding and an escape charge was added. No lawful release or prison wages.")
+        notice="FUGITIVE // SENTENCE NOT SERVED"
+    elif kind=="mission_escape":
+        data.captured=false
         if sim.state.gear_recovered:data.gear=data.get("impounded",data.gear).duplicate(true)
-        data.erase("impounded");Career.add_entry(data,"ESCAPED DETENTION. "+("Equipment recovered." if sim.state.gear_recovered else "Impounded equipment left behind."))
-        notice="ESCAPED // CONTRACT LEADS RETAINED"
+        data.erase("impounded");Career.add_entry(data,"ESCAPED MISSION CAPTIVITY. "+("Equipment recovered." if sim.state.gear_recovered else "Field equipment left behind."))
+        notice="ESCAPED // EXISTING LEGAL CHARGES UNCHANGED"
     elif not data.active.is_empty() and data.active.planet==planet and Career.advance(data,kind):
+        var illegal_job:bool=bool(data.active.get("criminal",false))
         var reward:=Career.settle(data);cash+=reward
-        notice="CONTRACT PAID: %d CR"%reward if reward>0 else "LEAD SECURED // NEXT OBJECTIVE AVAILABLE"
+        notice=("STOLEN PROCEEDS: %d CR" if illegal_job else "JOB PAID: %d CR")%reward if reward>0 else "LEAD SECURED // NEXT OBJECTIVE AVAILABLE"
     data.ground={};data.challenge={};phase="BOARD";sim=Ground.new();clear_inputs();persist()
+    if kind=="prison_escape" and return_to_flight:exit_requested.emit()
 func pay_release() -> bool:
-    if not data.incarcerated or cash<300:return false
-    cash-=300;data.incarcerated=false;data.gear=data.get("impounded",data.gear).duplicate(true);data.erase("impounded")
-    Career.add_entry(data,"RELEASE FINE: 300 CR paid from carried cash; equipment returned.")
-    data.challenge={};sim=Ground.new();phase="BOARD";clear_inputs();persist();return true
+    # Fine is a court disposition, never a button to skip mission captivity.
+    if data.captured or data.incarcerated:return false
+    var amount:=Justice.pay(data.justice,jurisdiction,cash)
+    if amount<0:notice="Insufficient carried cash or no pending charges.";return false
+    cash-=amount;Career.add_entry(data,"FINE PAID: %d CR. Charges resolved in %s."%[amount,authority_label])
+    justice_resolved.emit(jurisdiction,false);phase="BOARD";persist()
+    if return_to_flight:exit_requested.emit()
+    return true
+func serve_sentence() -> bool:
+    if data.captured or data.incarcerated:return false
+    var term:=Justice.sentence(data.justice,jurisdiction)
+    if term.is_empty():return false
+    data.arrests+=1;data.incarcerated=true;data["prison_impounded"]=data.gear.duplicate(true)
+    data.gear={"pistol":false,"armor":0};data.challenge={};sim=Ground.new()
+    prison.start(term,int(planet.hash())+int(data.arrests));phase="PRISON"
+    Career.add_entry(data,"SENTENCED: %d legal days. Serve accelerated prison time; meals, training, work, sleep, relationships and conduct matter."%term.days)
+    clear_inputs();persist();return true
+func _release_sentence() -> void:
+    if not data.incarcerated or not prison.data.get("released",false) or prison.remaining_days()>0 or data.justice.sentence.is_empty():return
+    var wages:=int(prison.data.wages);data.fitness+=int(prison.data.fitness);cash+=wages
+    var faction:=Justice.release(data.justice,float(prison.data.served_days));data.incarcerated=false
+    data.gear=data.get("prison_impounded",data.gear).duplicate(true);data.erase("prison_impounded")
+    Career.add_entry(data,"SENTENCE SERVED: lawful release, gear returned, %d work credits paid. Training retained; charges discharged."%wages)
+    data.prison_life={};prison=Prison.new();phase="BOARD";notice="RELEASED // SENTENCE SERVED"
+    justice_resolved.emit(faction,false);persist()
+    if return_to_flight:exit_requested.emit()
+func begin_prison_escape() -> bool:
+    if phase!="PRISON" or not prison.begin_escape():return false
+    Career.add_entry(data,"PRISON ESCAPE ATTEMPT: left the routine through a temporary laundry-gate opportunity.")
+    return begin_ground("prison_escape")
+func _crime(offense: String,severity: int) -> void:
+    Justice.record(data.justice,jurisdiction,offense,severity)
+    Career.add_entry(data,"CRIME RECORDED: %s. Legal fine or prison time may follow."%offense)
+    crime_reported.emit(offense,severity);persist()
+func file_charges() -> bool:
+    if data.active.is_empty() or data.active.planet!=planet or current_task()!="file_charges":return false
+    var filed:Dictionary={"case_id":data.active.id,"target":data.active.target,"authority":jurisdiction,"evidence":["dock_contact","overheard_meeting","extracted_terminal_manifest"],"status":"charges_filed"}
+    if not Career.advance(data,"file_charges"):return false
+    data.prosecutions.append(filed)
+    cash+=Career.settle(data);notice="EVIDENCE FILED // INVESTIGATION PAID";persist();return true
 func _start_hack() -> void:
-    if sim.state.is_empty() or sim.state.kind not in ["intel","prison"]:return
+    if sim.state.is_empty() or sim.state.kind not in ["intel","evidence","station_hack","robbery","mission_escape","prison_escape"]:return
     sim.state.paused=true;clear_inputs()
     var profile:Dictionary=data.challenge.duplicate(true)
     if profile.is_empty():profile=Hacker.default_profile();profile.research=data.get("research",{}).duplicate(true)
@@ -124,15 +209,23 @@ func _hack_checkpoint(profile: Dictionary,_balance: int) -> void:
     data.challenge=profile.duplicate(true);persist()
 func _hack_finished(success: bool) -> void:
     hack.visible=false;data.challenge={};sim.hack_result(success);clear_inputs()
+    if success and sim.state.kind in ["station_hack","robbery"] and not sim.state.get("crime_reported",false):
+        sim.state["crime_reported"]=true;_crime("station_robbery" if sim.state.kind=="robbery" else "terminal_intrusion",3 if sim.state.kind=="robbery" else 2)
     notice="TERMINAL OPEN // EXTRACT TO SECURE RECORDS" if success else "FIREWALL HELD // YOU CAN RETRY OR RETREAT"
     persist();queue_redraw()
 func return_to_board() -> bool:
-    if phase!="GROUND" or data.incarcerated:return false
+    if phase!="GROUND" or data.incarcerated or data.captured:return false
     if sim.state.kind!="port":Career.add_entry(data,"RETREATED: no extraction, no new lead, no payout. Contract remains active.")
     phase="BOARD";sim=Ground.new();data.challenge={};clear_inputs();persist();return true
 func _process(delta: float) -> void:
     if not is_visible_in_tree():return
     if is_instance_valid(hack) and hack.visible:return
+    if phase=="PRISON":
+        prison.step(delta)
+        if prison.data.get("released",false):_release_sentence()
+        save_clock+=delta
+        if save_clock>=2:save_clock=0;persist()
+        queue_redraw();return
     if phase=="GROUND" and not sim.state.is_empty():
         var keyboard:=Vector2(float(keys.get(KEY_D,false))-float(keys.get(KEY_A,false)),float(keys.get(KEY_S,false))-float(keys.get(KEY_W,false)))
         var movement:Vector2=move_axis if move_axis.length()>.1 else keyboard
@@ -144,6 +237,7 @@ func _process(delta: float) -> void:
         for event in pending:
             match String(event.kind):
                 "rumor":_rumor()
+                "civilian_robbed":_crime("citizen_robbery",2)
                 "lower_weapon":notice="CONTACT: HOLSTER YOUR WEAPON FIRST"
                 "hack":_start_hack()
                 "caught","extracted":resolve_ground(event.kind)
@@ -157,6 +251,7 @@ func _input(event: InputEvent) -> void:
     if event.device==InputEvent.DEVICE_ID_EMULATION:return
     if event is InputEventKey:
         keys[event.keycode]=event.pressed
+        if event.pressed and not event.echo and phase=="PRISON" and event.keycode in [KEY_ESCAPE,KEY_P]:prison.data.paused=not prison.data.paused;persist()
         if event.pressed and not event.echo and phase=="GROUND":
             if event.keycode in [KEY_ESCAPE,KEY_P]:sim.state.paused=not sim.state.paused;clear_inputs();persist()
             elif event.keycode==KEY_H and not sim.state.paused:sim.toggle_draw()
@@ -186,33 +281,61 @@ func _stick(which: String,pos: Vector2) -> void:
     if which=="move":move_axis=vector.limit_length()
     else:aim_axis=vector.limit_length()
 func _tap(p: Vector2) -> void:
+    if phase=="PRISON":
+        if Rect2(280,20,95,46).has_point(p):prison.data.paused=not prison.data.paused;persist();return
+        if prison.data.paused:return
+        for i in 3:
+            if p.distance_to(Prison.inmate_position(i,float(prison.data.hours)))<22:
+                prison_npc=i;prison.act("socialize",["Dax","Loa","Brin"][i]);persist();return
+        for i in 6:
+            if Rect2(20+(i%2)*180,485+(i/2)*65,170,54).has_point(p):
+                prison.act(["eat","train","work","socialize","sleep","check_in"][i],["Dax","Loa","Brin"][prison_npc]);persist();return
+        if Rect2(20,700,170,48).has_point(p):prison_npc=(prison_npc+1)%3;return
+        if Rect2(200,700,170,48).has_point(p):begin_prison_escape();return
+        return
     if phase=="GROUND":
         if sim.state.paused:
             if Rect2(28,300,334,54).has_point(p):sim.state.paused=false;clear_inputs()
             elif Rect2(28,370,334,54).has_point(p):persist();notice="CAREER SAVED"
-            elif Rect2(28,440,334,54).has_point(p):
-                if data.incarcerated:pay_release()
-                else:return_to_board()
+            elif Rect2(28,440,334,54).has_point(p):return_to_board()
         elif Rect2(290,20,86,46).has_point(p):sim.state.paused=true;clear_inputs();persist()
         elif STEALTH.has_point(p):sim.state.stealth=not sim.state.stealth
         elif DRAW.has_point(p):sim.toggle_draw()
         elif ACT.has_point(p):sim.interact()
         return
-    if Rect2(14,20,90,46).has_point(p):persist();exit_requested.emit();return
+    if Rect2(14,20,90,46).has_point(p):
+        if data.incarcerated or data.captured or not String(data.justice.forced_faction).is_empty():notice="Resolve custody: pay the assessed fine or serve the sentence.";return
+        persist();exit_requested.emit();return
+    if phase=="JUSTICE":
+        if Rect2(20,460,350,56).has_point(p):pay_release()
+        elif Rect2(20,532,350,56).has_point(p):serve_sentence()
+        elif Rect2(20,755,350,52).has_point(p) and String(data.justice.forced_faction).is_empty():phase="BOARD"
+        return
+    if phase=="CAREER":
+        if Rect2(20,430,350,56).has_point(p):phase="JUSTICE"
+        elif Rect2(20,680,350,52).has_point(p):phase="BOARD"
+        return
     if phase=="JOURNAL":
         if Rect2(20,740,160,52).has_point(p):page=maxi(0,page-1)
         elif Rect2(210,740,160,52).has_point(p):page+=1
         elif Rect2(20,85,350,48).has_point(p):phase="BOARD"
         return
     if Rect2(250,20,126,46).has_point(p):phase="JOURNAL";page=0;return
-    if Rect2(20,170,350,52).has_point(p):begin_ground("port");return
+    if Rect2(20,170,350,48).has_point(p):begin_ground("port");return
     if data.active.is_empty():
+        if Rect2(20,228,350,44).has_point(p):job_tier=job_tier%5+1;return
         for i in 3:
-            if Rect2(20,245+i*86,350,74).has_point(p):accept(["track","recover","assault"][i]);return
+            if Rect2(20,285+i*86,350,74).has_point(p):accept(Career.JOBS[job_page*3+i]);return
+        if Rect2(20,550,170,48).has_point(p):job_page=(job_page+2)%3;return
+        if Rect2(200,550,170,48).has_point(p):job_page=(job_page+1)%3;return
     elif Rect2(20,395,350,54).has_point(p):
-        var task:=current_task();begin_ground("port" if task=="rumor" else task);return
-    if Rect2(20,535,350,52).has_point(p):buy("pistol")
-    elif Rect2(20,599,350,52).has_point(p):buy("armor")
+        var task:=current_task()
+        if task=="file_charges":file_charges()
+        else:begin_ground("port" if task=="rumor" else task)
+        return
+    if Rect2(20,620,170,48).has_point(p):buy("pistol")
+    elif Rect2(200,620,170,48).has_point(p):buy("armor")
+    elif Rect2(20,720,350,48).has_point(p):phase="CAREER"
 func _label(text: String,pos: Vector2,size: int=14,color: Color=INK) -> void:draw_string(ThemeDB.fallback_font,pos,text,HORIZONTAL_ALIGNMENT_LEFT,-1,size,color)
 func _wrap(text: String,pos: Vector2,width: float=330,size: int=14,color: Color=DIM) -> float:
     var line:="";var y:=pos.y
@@ -227,6 +350,7 @@ func _button(rect: Rect2,text: String,color: Color=CYAN) -> void:
 func _draw() -> void:
     if not is_visible_in_tree() or (is_instance_valid(hack) and hack.visible):return
     draw_rect(Rect2(0,0,390,844),Color("080e19"))
+    if phase=="PRISON":_draw_prison();return
     if phase=="GROUND":_draw_ground();return
     _button(Rect2(14,20,90,46),"DOCK")
     _label("PORT OPERATIONS",Vector2(20,109),23,CYAN)
@@ -239,36 +363,45 @@ func _draw() -> void:
         _button(Rect2(20,740,160,52),"NEWER")
         _button(Rect2(210,740,160,52),"OLDER")
         return
+    if phase=="CAREER":_draw_career();return
+    if phase=="JUSTICE":_draw_justice();return
     _button(Rect2(250,20,126,46),"JOURNAL")
     _label(port_name.left(32),Vector2(20,140),15,DIM)
-    _button(Rect2(20,170,350,52),"WALK PORT / CONTACTS")
+    _button(Rect2(20,170,350,48),"WALK PORT / CONTACTS")
     if data.active.is_empty():
-        var labels:=["TRACK BOUNTY // 900 CR","RECOVER RECORDS // 650 CR","RAIDER SWEEP // 450 CR"]
-        for i in 3:_button(Rect2(20,245+i*86,350,74),labels[i],GREEN)
+        _button(Rect2(20,228,350,44),"JOB TIER %d / TAP TO CHANGE"%job_tier,GOLD)
+        for i in 3:
+            var offer:Dictionary=Career.offer(planet,Career.JOBS[job_page*3+i],data.sequence,job_tier)
+            var reason:=Career.blocker(data,offer)
+            _button(Rect2(20,285+i*86,350,74),"%s / %d CR"%[String(offer.type).replace("_"," ").to_upper(),offer.reward],PINK if offer.criminal else GREEN if reason.is_empty() else DIM)
+            _label("CRIME / NO GUILD CREDIT" if offer.criminal else "MERC RANK %d REQUIRED"%offer.required_rank,Vector2(32,345+i*86),10,DIM)
+        _button(Rect2(20,550,170,48),"PREVIOUS JOBS")
+        _button(Rect2(200,550,170,48),"MORE JOBS")
     else:
-        _label("%s / %s"%[String(data.active.type).to_upper(),data.active.target],Vector2(20,250),17,GOLD)
+        _label("%s / TIER %d"%[String(data.active.type).to_upper(),data.active.get("difficulty",1)],Vector2(20,250),17,GOLD)
         _wrap(Career.objective(data.active),Vector2(20,282),346,14,INK)
         var local:bool=data.active.planet==planet
-        _button(Rect2(20,395,350,54),"FOLLOW LEAD: "+current_task().to_upper() if local else "RETURN TO CONTRACT'S ORIGIN PORT",GREEN if local else DIM)
-        if not local:_wrap("Travel to %s using the ship map; this lead is tied to that port."%data.active.get("port_label",data.active.planet),Vector2(20,477),345,12)
-    _button(Rect2(20,535,350,52),"PULSE PISTOL / "+("OWNED" if data.gear.pistol else "350 CR"),GOLD)
-    _button(Rect2(20,599,350,52),"ARMOR %d/3 / 250 CR"%data.gear.armor,GOLD)
-    _label("CASH %d / CLOSED %d / ARRESTS %d"%[cash,data.completed,data.arrests],Vector2(20,691),12,GREEN)
-    _wrap(notice,Vector2(20,730),345,13,GOLD)
-    _wrap("Your investigation, ship travel and field work share one career. Combat jobs skip the clue chain.",Vector2(20,790),345,12)
+        _button(Rect2(20,395,350,54),("FILE EVIDENCE / BRING CHARGES" if current_task()=="file_charges" else "FOLLOW LEAD: "+current_task().to_upper()) if local else "RETURN TO CONTRACT'S ORIGIN PORT",GREEN if local else DIM)
+        if not local:_wrap("Travel to %s using the ship map."%data.active.get("port_label",data.active.planet),Vector2(20,477),345,12)
+    _button(Rect2(20,620,170,48),"PISTOL / "+("OWNED" if data.gear.pistol else "350 CR"),GOLD)
+    _button(Rect2(200,620,170,48),"ARMOR %d / 250"%data.gear.armor,GOLD)
+    _label("CASH %d / CLOSED %d / CAPTURES %d"%[cash,data.completed,data.captures],Vector2(20,698),12,GREEN)
+    _button(Rect2(20,720,350,48),"GUILDS / CRIME / JUSTICE",GOLD)
+    _wrap(notice,Vector2(20,795),345,12,GOLD)
 func _map(p: Vector2) -> Vector2:return p-Vector2(sim.state.pos)+VIEW.get_center()
 func _draw_ground() -> void:
     var s:Dictionary=sim.state
-    _label("BREACH / "+String(s.kind).to_upper(),Vector2(15,43),20,CYAN)
+    _label("BREACH / "+String({"mission_escape":"CAPTIVITY","prison_escape":"ESCAPE","station_hack":"STATION HACK"}.get(s.kind,String(s.kind).replace("_"," "))).to_upper(),Vector2(15,43),20,CYAN)
     _button(Rect2(290,20,86,46),"PAUSE")
     _label("HP %d / %s / %s"%[s.hp,"PISTOL" if s.pistol else "HANDS","DRAWN" if s.drawn else "HOLSTERED"],Vector2(15,86),13,GOLD)
     var tip:="PORT: WALK TO A CONTACT / INTERACT"
     match String(s.kind):
         "tail":tip="NE ROOM: LISTEN %.1f / 6s UNSEEN"%s.heard
-        "intel":tip="NE TERMINAL: "+("OPEN / EXTRACT SW" if s.hacked else "HACK / THEN EXTRACT SW")
-        "bounty":tip="SE TARGET / DEAD OR ALIVE / EXTRACT SW"
+        "intel","evidence","station_hack","robbery":tip="NE TERMINAL: "+("OPEN / EXTRACT SW" if s.hacked else "HACK / THEN EXTRACT SW")
+        "bounty","assassinate":tip="SE TARGET / DEAD OR ALIVE / EXTRACT SW"
         "assault":tip="DEFEAT ALL HOSTILES / EXTRACT SW"
-        "prison":tip="WEST BADGE / NORTH GEAR / SW EXIT"
+        "prison","mission_escape","prison_escape":tip="WEST BADGE / NORTH GEAR / SW EXIT"
+        "mug":tip="NE CITIZEN / DRAW WEAPON / INTERACT / EXTRACT"
     _label(tip,Vector2(15,113),11,GREEN)
     if s.exit_hold>0:_label("HOLD EXTRACTION %.1f / 8s // ALARM"%s.exit_hold,Vector2(15,136),12,PINK)
     draw_set_transform(Vector2.ZERO)
@@ -304,13 +437,13 @@ func _draw_ground() -> void:
             draw_line(r.position+Vector2(12+stripe*8,198),r.position+Vector2(16+stripe*8,190),GOLD.darkened(.55),2)
     var exit:=_map(sim.center(6));draw_arc(exit,44,0,TAU,40,GREEN,2)
     _label("EXIT / 8s",exit+Vector2(-32,-51),12,GREEN)
-    if s.kind in ["intel","prison"]:
+    if s.kind in ["intel","evidence","station_hack","robbery","prison","mission_escape","prison_escape"]:
         var t:=_map(sim.center(2));draw_rect(Rect2(t-Vector2(14,14),Vector2(28,28)),GREEN if s.hacked else GOLD);_label("TERMINAL",t+Vector2(-30,-24),11,GOLD)
     if s.kind=="tail":_label("MEETING",_map(sim.center(2))+Vector2(-25,-45),12,GOLD)
-    if s.kind=="prison":
+    if s.kind in ["prison","mission_escape","prison_escape"]:
         for item in [{"p":sim.center(3),"t":"BADGE"},{"p":sim.center(1),"t":"GEAR"}]:
             var pos:=_map(item.p);draw_circle(pos,12,GOLD);_label(item.t,pos+Vector2(-25,-22),12,GOLD)
-    if s.kind in ["port","tail"]:
+    if s.kind in ["port","tail","mug"]:
         for npc in s.npcs:
             var p:=_map(npc.pos);draw_circle(p,12,GREEN)
             if s.kind=="port":_label(String(npc.name).split(" · ")[0],p+Vector2(-22,-20),11,GREEN)
@@ -319,13 +452,13 @@ func _draw_ground() -> void:
         var color:=DIM if g.hp<=0 else PINK if g.mode=="alert" else GOLD
         draw_circle(pos,12,color);draw_line(pos,pos+Vector2.from_angle(g.angle)*25,color,2)
         if g.hp>0:_label("!" if g.mode=="alert" else "?" if g.mode=="search" else "",pos+Vector2(-3,-18),18,color)
-        if s.kind=="bounty" and i==s.guards.size()-1:_label("TARGET",pos+Vector2(-23,-32),12,GOLD)
+        if s.kind in ["bounty","assassinate"] and i==s.guards.size()-1:_label("TARGET",pos+Vector2(-23,-32),12,GOLD)
     for b in s.bullets:draw_circle(_map(b.pos),3,PINK if b.owner=="guard" else CYAN)
     draw_circle(VIEW.get_center(),12,GREEN if s.stealth else CYAN)
     if s.drawn:draw_line(VIEW.get_center(),VIEW.get_center()+Vector2.from_angle(s.facing)*25,GOLD,4)
     # Masks keep world geometry outside the play window out of the HUD/controls.
     for r in [Rect2(0,0,390,145),Rect2(0,625,390,219),Rect2(0,145,14,480),Rect2(376,145,14,480)]:draw_rect(r,Color("080e19"))
-    _label("BREACH / "+String(s.kind).to_upper(),Vector2(15,43),20,CYAN);_button(Rect2(290,20,86,46),"PAUSE")
+    _label("BREACH / "+String({"mission_escape":"CAPTIVITY","prison_escape":"ESCAPE","station_hack":"STATION HACK"}.get(s.kind,String(s.kind).replace("_"," "))).to_upper(),Vector2(15,43),20,CYAN);_button(Rect2(290,20,86,46),"PAUSE")
     _label("HP %d / %s / %s"%[s.hp,"PISTOL" if s.pistol else "HANDS","DRAWN" if s.drawn else "HOLSTERED"],Vector2(15,86),13,GOLD)
     _label(tip,Vector2(15,113),11,GREEN)
     if s.exit_hold>0:_label("HOLD %.1f / 8s // ALL GUARDS ALERT"%s.exit_hold,Vector2(15,136),12,PINK)
@@ -350,5 +483,58 @@ func _draw_ground() -> void:
         _wrap("Progress saves with your career. Backgrounding pauses patrols, gunfire and extraction.",Vector2(28,250),330,14)
         _button(Rect2(28,300,334,54),"RESUME")
         _button(Rect2(28,370,334,54),"SAVE CAREER")
-        _button(Rect2(28,440,334,54),"PAY RELEASE FINE / 300 CR" if data.incarcerated else "LEAVE / RETREAT TO PORT",GOLD)
-        _wrap("Recover gear in the north room; take the badge from the west desk or hack the northeast terminal. Reach the southwest exit and hold for 8 seconds." if data.incarcerated else "WASD / move. Right mouse / hold stealth. H / draw. E / interact. Mouse or right stick attacks only when drawn.",Vector2(28,550),330,14,INK)
+        _button(Rect2(28,440,334,54),"ESCAPE REQUIRED / CANNOT RETREAT" if data.captured or data.incarcerated else "LEAVE / RETREAT TO PORT",GOLD)
+        _wrap("Recover gear in the north room; take the badge from the west desk or hack the northeast terminal. Reach the southwest exit and hold for 8 seconds." if data.incarcerated or data.captured else "WASD / move. Right mouse / hold stealth. H / draw. E / interact. Mouse or right stick attacks only when drawn.",Vector2(28,550),330,14,INK)
+
+func _draw_career() -> void:
+    _label("GUILD STANDING",Vector2(20,170),22,GOLD)
+    for i in 2:
+        var guild:String=["trader","merc"][i];var rank:=Guild.rank(data.guilds,guild)
+        _label("%s: RANK %d / %s"%[guild.to_upper(),rank,Guild.TITLES[rank]],Vector2(20,215+i*80),15,GREEN)
+        _label("%d XP / HARDER JOBS REQUIRE HIGHER RANK"%int(data.guilds[guild]),Vector2(20,242+i*80),11,DIM)
+    _label("FITNESS %d / PRISON TERMS SERVED %d"%[data.fitness,data.justice.served],Vector2(20,345),11,GOLD)
+    var bill:=Justice.assessment(data.justice,jurisdiction)
+    _wrap("CURRENT AUTHORITY: %s. Outstanding fine: %d CR. Alternative sentence: %d days."%[authority_label,bill.fine,bill.days],Vector2(20,365),345,14)
+    _button(Rect2(20,430,350,56),"REVIEW CHARGES / FINE OR JAIL",GOLD)
+    _wrap("Delivery and transport earn Trader standing. Authorized mercenary jobs earn Merc standing. Cargo, investments and criminal proceeds remain separate income paths. Crime earns no guild standing.",Vector2(20,535),345,14)
+    _button(Rect2(20,680,350,52),"BACK TO OPERATIONS")
+func _draw_justice() -> void:
+    var bill:=Justice.assessment(data.justice,jurisdiction)
+    _label("CRIME AND JUSTICE",Vector2(20,172),24,GOLD)
+    _wrap("Authority: "+authority_label,Vector2(20,209),345,14)
+    var y:=254.0;var cases:=Justice.pending(data.justice,jurisdiction)
+    for i in mini(4,cases.size()):
+        y=_wrap("%s: %d CR / %d days"%[String(cases[i].offense).replace("_"," "),cases[i].fine,cases[i].days],Vector2(20,y),345,14,INK)+9
+    if cases.is_empty():_wrap("No pending charges here. A failed mission is captivity, not a prison sentence.",Vector2(20,260),345,15)
+    _label("TOTAL: %d CR OR %d DAYS"%[bill.fine,bill.days],Vector2(20,428),18,GOLD)
+    _button(Rect2(20,460,350,56),"PAY FINE / CASH %d"%cash,GREEN if not bill.ids.is_empty() and cash>=bill.fine else DIM)
+    _button(Rect2(20,532,350,56),"SERVE SENTENCE / PRISON LIFE",PINK if not bill.ids.is_empty() else DIM)
+    _wrap("One prison day represents 30 sentence days. Time passes only during active prison play. Meals, training, work, relationships and good behavior give you things to do while serving time. Escape leaves charges outstanding.",Vector2(20,625),345,13)
+    if String(data.justice.forced_faction).is_empty():_button(Rect2(20,755,350,52),"RETURN TO OPERATIONS")
+    _wrap(notice,Vector2(20,825),345,11,GOLD)
+func _draw_prison() -> void:
+    var d:Dictionary=prison.data
+    _label("PRISON / SERVING TIME",Vector2(20,46),21,GOLD)
+    _button(Rect2(280,20,95,46),"RESUME" if d.paused else "PAUSE")
+    _label("%.1f DAYS REMAIN / %.1f REMISSION"%[prison.remaining_days(),d.remission],Vector2(20,92),14,GREEN)
+    _label("DAY %d / %02d:00 / 1 DAY = 30 LEGAL DAYS"%[int(d.hours/24)+1,int(d.hours)%24],Vector2(20,120),11,DIM)
+    # A scheduled common room: inmates move between bunks, meals, yard and work.
+    var room:=Rect2(20,145,350,240);draw_rect(room,Color("142c38"));draw_rect(room,CYAN,false,2)
+    for i in 3:
+        draw_rect(Rect2(32+i*110,157,92,45),Color("263e4e"));_label("BUNK %d"%(i+1),Vector2(42+i*110,185),11,DIM)
+    _label("MESS",Vector2(36,243),13,GOLD);_label("YARD",Vector2(283,243),13,GREEN)
+    _label("WORK DETAIL / CHECK-IN",Vector2(70,365),12,CYAN)
+    var hour:=fmod(float(d.hours),24)
+    for i in 3:
+        var p:=Prison.inmate_position(i,float(d.hours))
+        p+=Vector2(sin(float(d.hours)*.7+i)*10,cos(float(d.hours)*.5+i)*7)
+        draw_circle(p,8,GREEN);_label(["Dax","Loa","Brin"][i],p+Vector2(-14,-15),10,INK)
+    draw_circle(Vector2(d.get("position",Vector2(195,300))),10,CYAN)
+    _label("FOOD %d / ENERGY %d / MORALE %d"%[d.hunger,d.energy,d.morale],Vector2(20,411),12,GREEN)
+    _label("FITNESS +%d / WORK PAY %d / CONDUCT %.0f"%[d.fitness,d.wages,d.conduct],Vector2(20,438),12,GOLD)
+    _label("%s %.1fh"%[String(d.activity).to_upper(),d.remaining] if not String(d.activity).is_empty() else "FREE TIME / CHOOSE AN ACTIVITY",Vector2(20,466),13,CYAN)
+    for i in 6:_button(Rect2(20+(i%2)*180,485+(i/2)*65,170,54),["EAT / 1h","TRAIN / 3h","WORK / 4h","SOCIALIZE / 2h","SLEEP / 8h","CHECK IN / 1h"][i],DIM if not String(d.activity).is_empty() else CYAN)
+    var npc:String=["Dax","Loa","Brin"][prison_npc]
+    _button(Rect2(20,700,170,48),"%s / RELATION %d"%[npc,d.relations[npc]],GREEN)
+    _button(Rect2(200,700,170,48),"TRY ESCAPE" if prison.can_escape() else "NO OPENING",PINK if prison.can_escape() else DIM)
+    _wrap("PAUSED / SENTENCE CLOCK STOPPED" if d.paused else String(d.notice),Vector2(20,781),345,12,GOLD)

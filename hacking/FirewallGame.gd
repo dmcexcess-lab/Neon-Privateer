@@ -2,6 +2,7 @@ extends Node2D
 ## Native presentation and profile lifecycle shared with Privateer.
 signal career_changed(profile: Dictionary, balance: int)
 signal challenge_finished(success: bool)
+var pay_brick_rewards := true
 var challenge_mode := false
 var challenge_settled := false
 signal exit_requested
@@ -114,7 +115,7 @@ func start_new_run(seed_number: int = 0) -> void:
     sim.new_run(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1)
     credited_earned=0;credited_destroyed=0;cleared_stage=0;death_recorded=false
     profile.run=sim.snapshot();phase="PLAY";confirm_new=false
-    notice="HOLD THE LINE // CLICK OR SPACE TO LAUNCH";notice_clock=3.0
+    notice="HOLD THE LINE // CLICK OR SPACE TO LAUNCH" if pay_brick_rewards else "PRACTICE / NO CASH PAYOUT";notice_clock=3.0
     particles.clear();floats.clear();persist()
 
 func resume_run() -> void:
@@ -165,7 +166,7 @@ func _process(delta: float) -> void:
 
 func _settle_events() -> void:
     var gain:int=maxi(0,int(sim.earned)-credited_earned)
-    if challenge_mode:gain=0
+    if challenge_mode or not pay_brick_rewards:gain=0
     balance+=gain;profile.total_earned=int(profile.total_earned)+gain;credited_earned=int(sim.earned)
     profile.bricks=int(profile.bricks)+maxi(0,int(sim.destroyed)-credited_destroyed);credited_destroyed=int(sim.destroyed)
     profile.best=maxi(int(profile.best),int(sim.stage))
@@ -177,7 +178,7 @@ func _settle_events() -> void:
                 if particles.size()<280:
                     var angle:=float(i)*TAU/9+ui_time
                     particles.append({"pos":Vector2(float(event.x),float(event.y)),"vel":Vector2(cos(angle),sin(angle))*75.0,"life":.4+float(i%3)*.1,"color":PINK if i%2 else CYAN})
-            floats.append({"x":event.x,"y":event.y,"text":"+%d" % int(event.cash),"life":.9,"color":GOLD})
+            floats.append({"x":event.x,"y":event.y,"text":"NODE" if challenge_mode or not pay_brick_rewards else "+%d" % int(event.cash),"life":.9,"color":GOLD})
         elif kind=="effect":
             notice=String(EFFECT_LABELS.get(event.effect,event.effect));notice_clock=2.2
         elif kind=="miss":notice="TRACE HIT // CREDITS SAFE";notice_clock=2.0
@@ -327,7 +328,7 @@ func _draw() -> void:
     _center("DMC ODDWORKS // NEON ARCADE",48,10,MUTED)
     _center("NEON",117,48)
     _center("FIREWALL",177,48,PINK)
-    _center("BREAK THE WALL. KEEP THE CREDITS.",216,11,MUTED)
+    _center("PRACTICE / RESEARCH SUPPORTS FIELD HACKS" if not pay_brick_rewards else "BREAK THE WALL. KEEP THE CREDITS.",216,11,MUTED)
     _panel(Rect2(28,239,334,86),GOLD)
     _center("CREDITS %07d" % balance,269,22,GOLD)
     _center("%s   BEST L%d   CLEARS %d" % ["CAREER LINK" if embedded else "PROFILE %d" % slot,int(profile.get("best",1)),int(profile.get("clears",0))],297,12,MUTED)

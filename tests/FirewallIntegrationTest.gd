@@ -19,9 +19,9 @@ func _run() -> void:
     check(scene.research_credits==1750 and scene.firewall_profile.research.width==1,"upgrade uses actual career cash")
     view.start_new_run(1234);view.sim.damage_brick(0,99);view._settle_events()
     var cash:int=scene.research_credits
-    # Payout is live and must be flushed with its run ledger for reload safety.
+    # Privateer practice cannot mint money outside missions or crime.
     view.persist()
-    check(scene.research_credits>1750 and scene.bank_balance==444,"earnings use carried cash without moving bank")
+    check(scene.research_credits==1750 and scene.bank_balance==444,"practice cannot mint career money or touch bank")
     cash=scene.research_credits
     var progress:Dictionary=view.sim.snapshot()
     scene._close_firewall()

@@ -90,6 +90,9 @@ jobs:
           XDG_DATA_HOME="$RUNNER_TEMP/covert-tests" timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --path . --script res://tests/CovertIntegrationTest.gd 2>&1 | tee /tmp/covert-tests.log
           if grep -E 'SCRIPT ERROR|Parse Error|COVERT FAIL' /tmp/covert-tests.log; then exit 1; fi
           grep -q 'NEON COVERT OK' /tmp/covert-tests.log
+          XDG_DATA_HOME="$RUNNER_TEMP/justice-tests" timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --path . --script res://tests/JusticeCareerTest.gd 2>&1 | tee /tmp/justice-tests.log
+          if grep -E 'SCRIPT ERROR|Parse Error|JUSTICE FAIL' /tmp/justice-tests.log; then exit 1; fi
+          grep -q 'NEON JUSTICE OK' /tmp/justice-tests.log
 
       - name: Test Privateer soundtrack state and real loops
         shell: bash
@@ -181,6 +184,9 @@ jobs:
           (cd /tmp/privateer-pack-empty && XDG_DATA_HOME="$RUNNER_TEMP/privateer-pack-covert" timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --main-pack "$PRIVATEER_PACK" --script res://tests/CovertIntegrationTest.gd) 2>&1 | tee /tmp/privateer-pack-covert.log
           if grep -E 'SCRIPT ERROR|Parse Error|COVERT FAIL' /tmp/privateer-pack-covert.log; then exit 1; fi
           grep -q 'NEON COVERT OK' /tmp/privateer-pack-covert.log
+          (cd /tmp/privateer-pack-empty && XDG_DATA_HOME="$RUNNER_TEMP/privateer-pack-justice" timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --main-pack "$PRIVATEER_PACK" --script res://tests/JusticeCareerTest.gd) 2>&1 | tee /tmp/privateer-pack-justice.log
+          if grep -E 'SCRIPT ERROR|Parse Error|JUSTICE FAIL' /tmp/privateer-pack-justice.log; then exit 1; fi
+          grep -q 'NEON JUSTICE OK' /tmp/privateer-pack-justice.log
 
           # Assert the reconstructed/generated atlas is inside the Web PCK.
           grep -a -q "privateer_ui_atlas.res" "build/web/${BASENAME}.pck"

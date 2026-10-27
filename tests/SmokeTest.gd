@@ -233,6 +233,16 @@ func _production_world_issue(scene, world: Dictionary) -> String:
         return "route connectivity"
     return ""
 
+func _funded_career(scene: Node,slot: int) -> bool:
+    # These economy/combat fixtures need an equipped, licensed test pilot.
+    # JusticeCareerTest separately verifies the true zero-cash start and rank gates.
+    var created:bool=scene._create_new_career(slot)
+    if created:
+        scene.research_credits=1200
+        scene.covert_profile.guilds.trader=500;scene.covert_profile.guilds.merc=500
+        scene._save_all_state()
+    return created
+
 func _initialize() -> void:
     var packed: PackedScene = load("res://main.tscn")
     if packed == null:
@@ -437,7 +447,7 @@ func _initialize() -> void:
 
     # Fresh career = one persistent 32-world political system.
     scene.rng.seed = 7101 # Repeatable initial career; production seeds are swept above.
-    if not scene._create_new_career(1):
+    if not _funded_career(scene,1):
         _fail("could not create career slot 1")
         return
     if scene.planet_names.size() != 32 or scene.political_world.get("planets", []).size() != 32:
@@ -1247,12 +1257,13 @@ func _initialize() -> void:
     if not scan_legal.is_empty() and int(scene.cargo.get(scan_legal, 0)) != 2:
         _fail("scan confiscated grey cargo legal to the scanning faction")
         return
-    if scene.research_credits >= credits_before_scan:
-        _fail("contraband scan did not apply a cash fine")
+    if scene.research_credits != credits_before_scan:
+        _fail("contraband scan auto-debited cash before the fine-or-jail choice")
         return
     if scene._faction_heat(scan_faction) < 30 or not scene.encounter_hostile:
         _fail("contraband discovery did not create hostile criminal enforcement state")
         return
+    scene.covert_profile.justice.forced_faction=""
     var scan_after_record: Dictionary = scene.PoliticalWorld.faction_record(scene.political_world, scan_faction)
     if String(scan_after_record.last_offense) != "contraband_scan":
         _fail("contraband discovery did not record scan offense")
@@ -1922,7 +1933,7 @@ func _initialize() -> void:
     scene.currency_holdings[slot_one_currency] = 3
     var slot_one_planet: String = String(scene.current_planet)
     scene._save_all_state()
-    if not scene._create_new_career(2):
+    if not _funded_career(scene,2):
         _fail("could not create career slot 2")
         return
     if scene.research_credits != 1200 or scene.bank_balance != 0 or int(scene.cargo.get("Grain", 0)) != 0:
@@ -1946,7 +1957,7 @@ func _initialize() -> void:
         return
 
     # Legacy four-world world file migrates once to schema 2 and matching archetype.
-    if not scene._create_new_career(3):
+    if not _funded_career(scene,3):
         _fail("could not create career slot 3 for migration test")
         return
     var legacy_cfg: ConfigFile = ConfigFile.new()
@@ -2025,7 +2036,7 @@ func _initialize() -> void:
         return
 
     # Return to a clean generated career for economy/contract/flight regression.
-    if not scene._create_new_career(1):
+    if not _funded_career(scene,1):
         _fail("could not reset career 1 for gameplay regression")
         return
     lush = scene.PoliticalWorld.find_planet_by_type(scene.political_world, "LUSH")
@@ -2617,6 +2628,10 @@ func _initialize() -> void:
         _fail("legacy contract commodity did not migrate to economy-3 ID")
         return
 
+    # Relationship fixture: prior illegal-market regression tests now correctly
+    # damage reputation; this board-composition test needs eligible issuers.
+    for faction in scene.political_world.factions:faction.relation=0;faction.heat=0
+    scene.covert_profile.justice.forced_faction=""
     # Contract board still supplies all three contract classes against generated IDs.
     scene.current_planet = lush
     scene.active_contract.clear()
@@ -2634,7 +2649,7 @@ func _initialize() -> void:
             "passenger": saw_passenger = true
             "bounty": saw_bounty = true
     if not saw_delivery or not saw_passenger or not saw_bounty:
-        _fail("contract board lost required job classes")
+        _fail("contract board lost required job classes: types=%s profiles=%d planet=%s range=%d"%[str(scene.contract_board.map(func(c):return c.type)),scene._contract_destination_profiles(scene.current_planet).size(),scene.current_planet,scene._jump_range()])
         return
     # Acceptance regression: docked taps must provide visible feedback rather
     # than silently failing, and persisted active jobs must be abandonable.
@@ -2739,10 +2754,12 @@ func _initialize() -> void:
         _fail("Slice 9 contract schema did not persist")
         return
 
-    # Special deliveries are timed multi-jump jobs; passengers are multi-jump
+    # Use basic jump range to provide actual multi-hop destinations. At max
+    # range a central origin can reach all worlds directly, which is valid.
+    # Special deliveries are timed multi-jump jobs; passengers prefer multi-jump
     # and untimed for normal play but abandon after an extreme delay.
     scene.current_planet = lush
-    scene.research_jump_range = scene.JUMP_RANGE_MAX - scene.JUMP_RANGE_BASE
+    scene.research_jump_range = 0
     var contract_profiles: Array = scene._contract_destination_profiles(lush)
     var special_profile: Dictionary = scene._best_special_delivery_profile(contract_profiles)
     if special_profile.is_empty():

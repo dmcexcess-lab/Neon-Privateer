@@ -8,19 +8,22 @@ const SIZE := 900.0
 const CENTERS := [150.0,450.0,750.0]
 const CIRCUIT := [0,1,2,5,8,7,6,3,4,1,4,7,8,5,2,1,0,3,6,7,4,3]
 func center(index: int) -> Vector2:return Vector2(CENTERS[index%3],CENTERS[index/3])
-func new_mission(kind: String, seed_number: int, gear: Dictionary) -> void:
+func new_mission(kind: String, seed_number: int, gear: Dictionary,difficulty: int=1) -> void:
+    var tier:=clampi(difficulty,1,5)
     var random:=RandomNumberGenerator.new();random.seed=seed_number
-    state={"schema":1,"kind":kind,"seed":seed_number,"pos":center(6),"facing":-PI/2,"hp":100.0+float(gear.get("armor",0))*35,"max_hp":100.0+float(gear.get("armor",0))*35,"drawn":false,"stealth":false,"pistol":bool(gear.get("pistol",false)) and kind!="prison","saved_gear":gear.duplicate(true),"gear_recovered":false,"cool":0.0,"clock":0.0,"exit_hold":0.0,"heard":0.0,"intel":false,"hacked":false,"badge":false,"alerted":false,"result":"","guards":[],"bullets":[],"npcs":[],"paused":false}
+    state={"schema":1,"kind":kind,"difficulty":tier,"robbed":false,"seed":seed_number,"pos":center(6),"facing":-PI/2,"hp":100.0+float(gear.get("armor",0))*35,"max_hp":100.0+float(gear.get("armor",0))*35,"drawn":false,"stealth":false,"pistol":bool(gear.get("pistol",false)) and kind not in ["prison","mission_escape","prison_escape"],"saved_gear":gear.duplicate(true),"gear_recovered":false,"cool":0.0,"clock":0.0,"exit_hold":0.0,"heard":0.0,"intel":false,"hacked":false,"badge":false,"alerted":false,"result":"","guards":[],"bullets":[],"npcs":[],"paused":false}
     # Spacious rooms connected through narrow cross-floor corridors.
     if kind!="port":
-        for i in 7:
-            var room: int=[0,1,2,3,4,5,8][i]
-            state.guards.append({"pos":center(room)+Vector2(random.randf_range(-50,50),random.randf_range(-50,50)),"angle":random.randf()*TAU,"hp":60.0,"mode":"patrol","suspicion":0.0,"route":i*3,"post":i==0,"turn":2.5,"wait":0.0,"nav":[],"nav_time":0.0,"last":center(room),"cool":0.0})
+        for i in 4+tier*3:
+            var room: int=[0,1,2,3,4,5,8][i%7]
+            state.guards.append({"pos":center(room)+Vector2(random.randf_range(-50,50),random.randf_range(-50,50)),"angle":random.randf()*TAU,"hp":60.0+float(tier-1)*20,"mode":"patrol","suspicion":0.0,"route":i*3,"post":i==0,"turn":2.5,"wait":0.0,"nav":[],"nav_time":0.0,"last":center(room),"cool":0.0})
     for i in 3:
         state.npcs.append({"name":["Rook · dock runner","Sella · freight clerk","Venn · fixer"][i],"pos":center([6,4,2][i])+Vector2(40,0),"base":center([6,4,2][i]),"phase":float(i)*2})
     if kind=="tail":
         state.npcs[0].base=center(2)+Vector2(-22,0);state.npcs[1].base=center(2)+Vector2(22,0)
-    if kind=="prison":state.hp=100.0;state.max_hp=100.0
+    if kind in ["prison","mission_escape","prison_escape"]:state.hp=100.0;state.max_hp=100.0
+    if kind in ["bounty","assassinate"] and not state.guards.is_empty():state.guards[-1].pos=center(8)
+    if kind=="mug":state.npcs[0].base=center(2);state.npcs[0].pos=center(2)
     events.clear();nav_cache.clear()
 func restore(data: Dictionary) -> bool:
     if data.get("schema",0)!=1 or not data.get("pos") is Vector2 or not data.get("guards") is Array:return false
@@ -82,16 +85,20 @@ func near_marker() -> String:
         for npc in state.npcs:
             if state.pos.distance_to(npc.pos)<65:return "contact"
         return ""
-    if state.kind=="prison":
+    if state.kind in ["prison","mission_escape","prison_escape"]:
         if state.pos.distance_to(center(3))<65 and not state.badge:return "badge"
         if state.pos.distance_to(center(1))<65 and not state.gear_recovered:return "locker"
-    if state.pos.distance_to(center(2))<65 and not state.hacked and state.kind in ["intel","prison"]:return "terminal"
+    if state.pos.distance_to(center(2))<65 and not state.hacked and state.kind in ["intel","evidence","station_hack","robbery","prison","mission_escape","prison_escape"]:return "terminal"
+    if state.kind=="mug" and not state.get("robbed",false) and state.pos.distance_to(state.npcs[0].pos)<65:return "victim"
     return ""
 func interact() -> String:
     var marker:=near_marker()
     if marker=="badge":state.badge=true;events.append({"kind":"badge"})
     elif marker=="locker":state.gear_recovered=true;state.pistol=bool(state.saved_gear.get("pistol",false));events.append({"kind":"locker"})
     elif marker=="terminal":events.append({"kind":"hack"})
+    elif marker=="victim" and state.drawn:
+        state.robbed=true;state.alerted=true;events.append({"kind":"civilian_robbed"})
+        for g in state.guards:g.mode="alert";g.last=state.pos
     elif marker=="contact":events.append({"kind":"rumor" if not state.drawn else "lower_weapon"})
     return marker
 func hack_result(success: bool) -> void:
@@ -101,9 +108,10 @@ func objective_ready() -> bool:
     match String(state.kind):
         "port":return true
         "tail":return state.intel
-        "intel":return state.hacked
-        "prison":return state.badge or state.hacked
-        "bounty":return float(state.guards[-1].hp)<=0
+        "intel","evidence","station_hack","robbery":return state.hacked
+        "mug":return state.get("robbed",false)
+        "prison","mission_escape","prison_escape":return state.badge or state.hacked
+        "bounty","assassinate":return float(state.guards[-1].hp)<=0
         "assault":
             for g in state.guards:
                 if g.hp>0:return false
@@ -154,7 +162,7 @@ func step(dt: float, movement: Vector2, aim: Vector2, trigger: bool) -> void:
         if not g.nav.is_empty():
             var point:Vector2=g.nav[0];var dir:Vector2=point-g.pos
             if dir.length()<12:g.nav.pop_front()
-            else:g.angle=dir.angle();g.pos=move(g.pos,dir.normalized()*(105 if g.mode=="alert" else 65)*dt)
+            else:g.angle=dir.angle();g.pos=move(g.pos,dir.normalized()*(105 if g.mode=="alert" else 65+8*int(state.get("difficulty",1)-1))*dt)
     var keep:Array=[]
     for b in state.bullets:
         b.life-=dt
@@ -163,7 +171,7 @@ func step(dt: float, movement: Vector2, aim: Vector2, trigger: bool) -> void:
         for sub in 3:
             b.pos+=b.vel*dt/3
             if not walkable(b.pos,0):hit=true;break
-            if b.owner=="guard" and b.pos.distance_to(state.pos)<14:state.hp-=15;hit=true;break
+            if b.owner=="guard" and b.pos.distance_to(state.pos)<14:state.hp-=15+3*int(state.get("difficulty",1)-1);hit=true;break
             if b.owner=="player":
                 for g in state.guards:
                     if g.hp>0 and b.pos.distance_to(g.pos)<17:g.hp-=30;g.mode="alert";g.last=state.pos;state.alerted=true;hit=true;break

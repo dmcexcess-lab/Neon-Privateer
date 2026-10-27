@@ -3,6 +3,10 @@ extends Node2D
 const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
+const Justice = preload("res://covert/JusticeSystem.gd")
+const GuildProgress = preload("res://covert/GuildProgress.gd")
+const RAID_RECT := Rect2(22,270,236,44)
+const SURRENDER_RECT := Rect2(270,216,104,44)
 const CovertGame = preload("res://covert/CovertGame.gd")
 const CovertCareer = preload("res://covert/CovertCareer.gd")
 const HUB_OPERATIONS_RECT := Rect2(105,174,180,48)
@@ -11,7 +15,7 @@ const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 4
 const CRIME_SCHEMA_VERSION := 1
 const ENFORCEMENT_SCHEMA_VERSION := 1
-const CONTRACT_SCHEMA_VERSION := 3
+const CONTRACT_SCHEMA_VERSION := 4
 const PRIVATEER_UI_ATLAS_PATH := "res://assets/privateer_ui/privateer_ui_atlas.res"
 const GRAPHICS_REVISION := 2
 
@@ -199,6 +203,7 @@ const ENEMY_MISSILE_DAMAGE := 2
 const ENEMY_MISSILE_TURN_RATE := 3.2
 const HIT_INVULN_TIME := 0.5
 
+var justice_flight_hold := false
 var covert_open := false
 var covert_profile: Dictionary = CovertCareer.default_profile()
 var covert: Node2D
@@ -217,7 +222,7 @@ var shop_open := false
 var last_level_bonus := 0
 var score := 0
 # Legacy variable name retained across the codebase: this is now carried CASH.
-var research_credits := 1200
+var research_credits := 0
 var bank_balance := 0
 var market_index_holdings: Dictionary = {"green": 0, "grey": 0}
 var market_indices: Dictionary = {
@@ -268,6 +273,7 @@ var market_open := false
 var trade_open := false
 var contracts_open := false
 var contract_notice := ""
+var contract_page := 0
 var contract_abandon_confirm := false
 var travel_open := false
 var travel_selected_planet := ""
@@ -406,6 +412,7 @@ var result_reason := ""
 var neutral_spawn_clock := 0.0
 var fire_clock := 0.0
 var repair_clock := 0.0
+var raid_owned_crates := false
 var weapon_systems_online := true
 var current_weapon := "none"
 var weapon_banner_timer := 0.0
@@ -470,12 +477,14 @@ func _setup_covert() -> void:
     covert=CovertGame.new();covert.name="PortOperations";covert.visible=false
     covert.career_changed.connect(_covert_changed)
     covert.exit_requested.connect(_close_covert)
+    covert.crime_reported.connect(_covert_crime_reported)
+    covert.justice_resolved.connect(_justice_resolved)
     covert.sound_requested=func(kind: String):_play_sfx(shot_sfx if kind=="shot" else hit_sfx)
     add_child(covert)
 
 func _open_covert() -> bool:
     if active_career_slot<=0 or playing or route_active or not hub_open:return false
-    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}))
+    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),_planet_primary_faction(current_planet),_contract_issuer_name(_planet_primary_faction(current_planet)))
     covert_open=true;covert.visible=true;hub_open=false;_clear_control_holds();queue_redraw();return true
 
 func _covert_changed(data: Dictionary,cash: int) -> void:
@@ -485,13 +494,62 @@ func _covert_changed(data: Dictionary,cash: int) -> void:
 
 func _close_covert() -> void:
     if not covert_open:return
-    covert.persist();covert.visible=false;covert_open=false;hub_open=true
+    covert.persist();covert.visible=false;covert_open=false
+    if justice_flight_hold:
+        justice_flight_hold=false;hub_open=false;run_paused=true;_save_run_snapshot()
+    else:hub_open=true
     _save_all_state();queue_redraw()
+
+func _covert_crime_reported(offense: String,severity: int) -> void:
+    var faction:=_planet_primary_faction(current_planet)
+    if not faction.is_empty():PoliticalWorld.record_crime(political_world,faction,severity*5,severity*12,offense)
+    _save_privateer_state()
+
+func _justice_resolved(faction: String,escaped: bool) -> void:
+    var spent_days:float=float(covert.data.justice.get("time_served_days",0))-float(covert_profile.justice.get("time_served_days",0))
+    if spent_days>0:
+        _update_active_contract_clock(spent_days*86400.0)
+        _simulate_economy(clampi(int(ceil(spent_days/30)),1,24))
+    if escaped:
+        if not faction.begins_with("port:"):PoliticalWorld.record_crime(political_world,faction,25,60,"prison_escape")
+    elif not faction.begins_with("port:") and Justice.pending(covert.data.justice,faction).is_empty():
+        _adjust_faction_heat(faction,-_faction_heat(faction),false)
+        # Paying/serving discharges the criminal threshold, not every reputation loss.
+        if _faction_relation(faction)<-50:_adjust_faction_relation(faction,-50-_faction_relation(faction),false)
+        if encounter_faction_id==faction:encounter_hostile=false
+    _save_privateer_state()
+
+func _open_justice_review(faction: String) -> bool:
+    if active_career_slot<=0 or faction.is_empty() or covert_open:return false
+    var serving:bool=not covert_profile.justice.sentence.is_empty() and covert_profile.justice.sentence.get("faction","")==faction
+    if Justice.pending(covert_profile.justice,faction).is_empty() and not serving:return false
+    justice_flight_hold=playing or route_active or shop_open
+    if justice_flight_hold:run_paused=true;_clear_control_holds();_save_run_snapshot()
+    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),faction,_contract_issuer_name(faction))
+    covert.return_to_flight=justice_flight_hold
+    if not covert.data.incarcerated:covert.phase="JUSTICE"
+    covert_open=true;covert.visible=true;hub_open=false
+    _save_all_state();queue_redraw();return true
+
+func _surrender_to_patrol() -> bool:
+    if not playing or not encounter_active or encounter_mode!="police" or encounter_faction_id.is_empty():return false
+    var faction:=encounter_faction_id
+    if Justice.pending(covert_profile.justice,faction).is_empty():
+        if not _is_criminal_with_faction(faction):return false
+        Justice.record(covert_profile.justice,faction,"outstanding_warrant",3)
+    covert_profile.justice.forced_faction=faction
+    _save_meta();_save_run_snapshot();return _open_justice_review(faction)
+
+func _market_crime(commodity: String) -> void:
+    if _planet_commodity_legality(current_planet,commodity).get("status","")!="ILLEGAL":return
+    var faction:=_planet_primary_faction(current_planet)
+    if not faction.is_empty():_record_faction_crime(faction,4,8,"black_market_trade",false)
 
 func _setup_firewall() -> void:
     firewall = FirewallGame.new()
     firewall.name = "FirewallTerminal"
     firewall.embedded = true
+    firewall.pay_brick_rewards = false
     firewall.visible = false
     firewall.configure(firewall_profile, research_credits)
     firewall.career_changed.connect(_firewall_changed)
@@ -503,6 +561,8 @@ func _open_firewall() -> bool:
         return false
     firewall.configure(firewall_profile, research_credits)
     firewall.visible = true
+    firewall.notice="PRACTICE / NO CASH PAYOUT / RESEARCH SUPPORTS MISSIONS"
+    firewall.notice_clock=5
     firewall_open = true
     hub_open = false
     _clear_control_holds()
@@ -658,14 +718,16 @@ func _migrate_legacy_career_if_needed() -> void:
     _save_career_index()
 
 func _reset_career_state() -> void:
+    justice_flight_hold=false
     covert_open=false;covert_profile=CovertCareer.default_profile()
     if is_instance_valid(covert):covert.visible=false
+    raid_owned_crates=false
     weapon_systems_online = true
     firewall_open = false
     firewall_profile = FirewallGame.default_profile()
     if is_instance_valid(firewall):
         firewall.visible = false
-    research_credits = 1200
+    research_credits = 0
     bank_balance = 0
     market_index_holdings = {"green": 0, "grey": 0}
     market_indices = {
@@ -954,6 +1016,11 @@ func _adjust_faction_heat(faction_id: String, delta: int, persist: bool = true) 
 
 func _record_faction_crime(faction_id: String, relation_loss: int, heat_gain: int, offense: String = "", persist: bool = true) -> Dictionary:
     var state := PoliticalWorld.record_crime(political_world, faction_id, relation_loss, heat_gain, offense)
+    if not state.is_empty() and not offense.is_empty():
+        var severity:int={"container_theft":1,"reinforced_container_theft":2,"black_market_trade":1,"contraband_scan":2,"police_ship_destroyed":6,"heavy_enforcement_destroyed":8}.get(offense,2)
+        Justice.record(covert_profile.justice,faction_id,offense,severity)
+        if covert_open:covert.data.justice=covert_profile.justice.duplicate(true)
+        _save_meta()
     if persist and not state.is_empty():
         _save_all_state()
     queue_redraw()
@@ -1887,6 +1954,7 @@ func _buy_commodity(commodity: String) -> bool:
     cargo[commodity] = int(cargo.get(commodity, 0)) + 1
     data["stock"] = maxf(0.0, float(data.get("stock", 0.0)) - 1.0)
     markets[current_planet][commodity] = data
+    _market_crime(commodity)
     _play_sfx(buy_sfx, 1.05, -3.0)
     _save_all_state()
     return true
@@ -1900,6 +1968,7 @@ func _sell_commodity(commodity: String) -> bool:
     var data: Dictionary = markets[current_planet][commodity]
     data["stock"] = minf(140.0, float(data.get("stock", 0.0)) + 1.0)
     markets[current_planet][commodity] = data
+    _market_crime(commodity)
     _play_sfx(buy_sfx, 0.94, -3.0)
     _save_all_state()
     return true
@@ -2114,6 +2183,15 @@ func _best_passenger_profile(profiles: Array, issuer_faction: String) -> Diction
             best_score = score
             best = profile.duplicate(true)
             best["jump_spec"] = jump_spec
+    # Better jump range can turn every destination into a direct flight.
+    # Transport jobs must not disappear when there is no multi-hop candidate.
+    if best.is_empty():
+        var nearest:=INF
+        for candidate in profiles:
+            var spec:Dictionary=_jump_route_spec(current_planet,String(candidate.get("destination","")))
+            if spec.get("path",[]).size()<2:continue
+            var distance:=float(spec.get("distance",999))
+            if distance<nearest:nearest=distance;best=candidate.duplicate(true);best["jump_spec"]=spec
     return best
 
 func _best_special_delivery_profile(profiles: Array) -> Dictionary:
@@ -2253,6 +2331,8 @@ func _make_contract(kind: String, origin: String, profile: Dictionary, commodity
         "origin": origin,
         "destination": destination,
         "difficulty": int(reward_data.difficulty),
+        "guild": "" if smuggling else "merc" if kind=="bounty" else "trader",
+        "required_rank": 0 if smuggling else GuildProgress.required(clampi(int(ceil(float(reward_data.difficulty)/2.0)),1,5)),
         "reward": int(reward_data.reward),
         "base_reward": int(reward_data.base_reward),
         "risk_premium": int(reward_data.risk_premium),
@@ -2290,6 +2370,8 @@ func _upgrade_contract_record(contract: Dictionary, fallback_origin: String) -> 
     var issuer_faction := String(upgraded.get("issuer_faction", _planet_primary_faction(origin)))
     if smuggling:
         issuer_faction = ""
+    upgraded["guild"]=String(upgraded.get("guild","" if smuggling else "merc" if kind=="bounty" else "trader"))
+    upgraded["required_rank"]=int(upgraded.get("required_rank",0))
     upgraded["schema"] = CONTRACT_SCHEMA_VERSION
     upgraded["origin"] = origin
     upgraded["commodity"] = commodity
@@ -2333,6 +2415,7 @@ func _ensure_contract_schema() -> bool:
     return changed
 
 func _regenerate_contracts() -> void:
+    contract_page=0
     contract_board.clear()
     var profiles := _contract_destination_profiles(current_planet)
     if profiles.is_empty():
@@ -2352,8 +2435,11 @@ func _regenerate_contracts() -> void:
     if not passenger_profile.is_empty():
         contract_board.append(_make_contract("passenger", current_planet, passenger_profile))
 
+    var bounty_number:=0
     for bounty_profile in _best_bounty_profiles(profiles, 2):
-        contract_board.append(_make_contract("bounty", current_planet, bounty_profile))
+        var bounty:=_make_contract("bounty",current_planet,bounty_profile)
+        if bounty_number==1:bounty.role="SPACE ASSASSINATION";bounty["mission_role"]="space_assassination"
+        contract_board.append(bounty);bounty_number+=1
 
     var smuggling_profile := _best_smuggling_profile(current_planet, profiles)
     if not smuggling_profile.is_empty():
@@ -2362,10 +2448,27 @@ func _regenerate_contracts() -> void:
         var alternate := _best_legal_delivery_profile(current_planet, profiles)
         if not alternate.is_empty():
             contract_board.append(_make_contract("delivery", current_planet, alternate, String(alternate.get("commodity", "Grain")), false))
+    _ensure_starter_courier(profiles)
+
+func _ensure_starter_courier(profiles: Array) -> void:
+    var nearest:Dictionary={};var shortest:=INF
+    for candidate in profiles:
+        var destination:=String(candidate.get("destination",""));var spec:=_direct_route_spec(current_planet,destination)
+        if spec.is_empty() or int(spec.get("distance",999))>JUMP_RANGE_BASE:continue
+        var distance:=_system_planet_world_position(current_planet).distance_to(_system_planet_world_position(destination))
+        if distance<shortest:shortest=distance;nearest=candidate
+    if nearest.is_empty():return
+    var courier:=_make_contract("delivery",current_planet,nearest,"Grain",false)
+    courier.difficulty=1;courier.required_rank=0;courier.guild="trader";courier.role="ENTRY COURIER";courier.reward=160;courier.special_delivery=false
+    courier["starter"]=true;courier["time_limit"]=0.0
+    contract_board.push_front(courier)
 
 func _contract_blocker(contract: Dictionary) -> String:
     if not active_contract.is_empty():
         return "ACTIVE JOB — ABANDON FIRST"
+    var guild:=String(contract.get("guild",""));var required:=int(contract.get("required_rank",0))
+    if not guild.is_empty() and GuildProgress.rank(covert_profile.guilds,guild)<required:
+        return "%s GUILD RANK %d REQUIRED"%[guild.to_upper(),required]
     var kind := String(contract.get("type", ""))
     if kind == "delivery" and _cargo_used() >= _cargo_capacity():
         return "CARGO HOLD FULL"
@@ -2388,6 +2491,7 @@ func _accept_contract(index: int) -> bool:
     if String(contract.type) == "passenger":
         passengers += 1
     contract_board.remove_at(index)
+    contract_page=0
     contract_notice = "CONTRACT ACCEPTED — OPEN TRAVEL TO DEPART"
     contract_abandon_confirm = false
     _play_sfx(buy_sfx, 1.10)
@@ -2658,19 +2762,22 @@ func _complete_police_scan() -> Dictionary:
         loot_banner_timer = 2.4
 
     var fine := POLICE_SCAN_FINE_BASE + int(round(float(total_value) * POLICE_SCAN_FINE_VALUE_FACTOR))
-    var paid := mini(research_credits, fine)
-    research_credits -= paid
+    var paid := 0 # Court choice: pay the whole fine or serve time; no auto-debit.
     var relation_loss := mini(20, POLICE_SCAN_RELATION_BASE_LOSS + total_units * 2)
     var heat_gain := mini(50, POLICE_SCAN_HEAT_BASE_GAIN + maxi(0, total_units - 1) * 3)
     _record_faction_crime(faction_id, relation_loss, heat_gain, "contraband_scan", false)
+    var legal_case:Dictionary=covert_profile.justice.cases[-1]
+    legal_case.fine=fine;legal_case.days=30+mini(330,total_units*15)
+    covert_profile.justice.forced_faction=faction_id
+    _save_meta()
     encounter_hostile = _police_hostile_eligible(faction_id)
-    police_scan_result_text = "CONTRABAND %d  FINE %d" % [total_units, paid]
+    police_scan_result_text = "CONTRABAND %d / COURT: FINE %d OR JAIL" % [total_units, fine]
     police_scan_result_timer = 2.5
     police_scan_faction_id = ""
     weapon_banner_text = "CONTRABAND FOUND"
     weapon_banner_timer = 1.8
     _save_privateer_state()
-    return {"clear": false, "units": total_units, "fine": paid, "contract_confiscated": contract_confiscated}
+    return {"clear": false, "units": total_units, "fine": paid,"assessed_fine":fine,"justice_pending":true, "contract_confiscated": contract_confiscated}
 
 func _update_police_scan(delta: float) -> void:
     police_scan_result_timer = maxf(0.0, police_scan_result_timer - delta)
@@ -2828,7 +2935,7 @@ func _begin_bounty_boss() -> void:
         "lane_min": LEFT,
         "lane_max": RIGHT
     })
-    weapon_banner_text = "BOUNTY: %s" % archetype.to_upper()
+    weapon_banner_text = ("SPACE HIT: " if active_contract.get("mission_role","")=="space_assassination" else "BOUNTY: ")+archetype.to_upper()
     weapon_banner_timer = 2.4
     shake = 4.0
 
@@ -2861,6 +2968,8 @@ func _complete_contract_if_ready() -> int:
     var relation_reward := int(completed.get("relation_reward", 0))
     if not issuer_faction.is_empty() and relation_reward > 0:
         _adjust_faction_relation(issuer_faction, relation_reward, false)
+    var guild:=String(completed.get("guild",""))
+    if not guild.is_empty():GuildProgress.award(covert_profile.guilds,"ship:"+str(completed.id),guild,clampi(int(completed.get("difficulty",1)),1,5))
     active_contract.clear()
     return reward
 
@@ -3106,6 +3215,8 @@ func _save_all_state() -> void:
     _save_privateer_state()
 
 func _process(delta: float) -> void:
+    if active_career_slot>0 and not profile_menu_open and not covert_open and not String(covert_profile.justice.forced_faction).is_empty():
+        if _open_justice_review(covert_profile.justice.forced_faction):return
     _sync_soundtrack()
     if not covert_open and not run_paused and not (firewall_open and firewall.phase != "PLAY"):
         _update_active_contract_clock(delta)
@@ -3213,7 +3324,7 @@ func _process(delta: float) -> void:
 func _sync_soundtrack() -> void:
     var soundtrack := get_node_or_null("/root/PrivateerSoundtrack")
     if soundtrack != null:
-        soundtrack.set_flight(not profile_menu_open and (playing or route_active or shop_open))
+        soundtrack.set_flight(not covert_open and not profile_menu_open and (playing or route_active or shop_open))
 
 func _toggle_weapon_systems() -> void:
     if not playing or run_paused:return
@@ -3933,6 +4044,9 @@ func _handle_contracts_tap(pos: Vector2) -> void:
         hub_open = true
         queue_redraw()
         return
+    if CONTRACT_ABANDON_RECT.has_point(pos) and active_contract.is_empty() and contract_board.size()>5:
+        contract_page=(contract_page+1)%int(ceil(float(contract_board.size())/5))
+        queue_redraw();return
     if CONTRACT_ABANDON_RECT.has_point(pos) and not active_contract.is_empty():
         if not contract_abandon_confirm:
             contract_abandon_confirm = true
@@ -3944,10 +4058,10 @@ func _handle_contracts_tap(pos: Vector2) -> void:
             _save_all_state()
         queue_redraw()
         return
-    for i in contract_board.size():
+    for i in mini(5,contract_board.size()-contract_page*5):
         if _contract_row_rect(i).has_point(pos):
             contract_abandon_confirm = false
-            _accept_contract(i)
+            _accept_contract(contract_page*5+i)
             queue_redraw()
             return
 
@@ -3987,6 +4101,13 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         return
     if not playing:
         _handle_hub_tap(pos)
+        return
+    if RAID_RECT.has_point(pos):
+        raid_owned_crates=not raid_owned_crates
+        _save_meta();_save_run_snapshot();queue_redraw()
+        return
+    if SURRENDER_RECT.has_point(pos):
+        _surrender_to_patrol()
         return
     if SYSTEMS_RECT.has_point(pos):
         _toggle_weapon_systems()
@@ -4508,6 +4629,7 @@ func _bank_run_score() -> void:
 func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
+    cfg.set_value("meta","raid_owned_crates",raid_owned_crates)
     cfg.set_value("meta", "firewall", var_to_bytes(firewall_profile))
     cfg.set_value("meta", "covert", var_to_bytes(covert_profile))
     cfg.set_value("meta", "bank_balance", bank_balance)
@@ -4536,6 +4658,7 @@ func _load_meta() -> void:
     if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
+    raid_owned_crates=bool(cfg.get_value("meta","raid_owned_crates",false))
     covert_profile=CovertCareer.decode(cfg.get_value("meta","covert",{}))
     firewall_profile = FirewallGame.decode_profile(cfg.get_value("meta", "firewall", FirewallGame.default_profile()))
     bank_balance = int(cfg.get_value("meta", "bank_balance", 0))
@@ -4586,6 +4709,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "dash_score_timer", dash_score_timer)
     cfg.set_value("run", "current_weapon", current_weapon)
     cfg.set_value("run", "weapon_systems_online", weapon_systems_online)
+    cfg.set_value("run","raid_owned_crates",raid_owned_crates)
     cfg.set_value("run", "world_scroll", world_scroll)
     cfg.set_value("run", "last_level_bonus", last_level_bonus)
     cfg.set_value("run", "route_active", route_active)
@@ -4657,6 +4781,7 @@ func _load_run_snapshot() -> bool:
     dash_score_timer = float(cfg.get_value("run", "dash_score_timer", 0.0))
     current_weapon = String(cfg.get_value("run", "current_weapon", "none"))
     weapon_systems_online = bool(cfg.get_value("run", "weapon_systems_online", true))
+    raid_owned_crates=bool(cfg.get_value("run","raid_owned_crates",false))
     world_scroll = float(cfg.get_value("run", "world_scroll", 0.0))
     last_level_bonus = int(cfg.get_value("run", "last_level_bonus", 0))
     route_active = bool(cfg.get_value("run", "route_active", false))
@@ -5027,6 +5152,7 @@ func _ship_is_hostile(obj: Dictionary) -> bool:
 
 func _player_can_damage_hazard(obj: Dictionary) -> bool:
     var kind := int(obj.get("kind", 0))
+    if kind in [1,2] and not String(obj.get("owner_faction","")).is_empty() and not raid_owned_crates:return false
     if kind != 3 and kind != 4:
         return true
     if bool(obj.get("boss", false)):
@@ -6317,6 +6443,12 @@ func _draw_hud() -> void:
     draw_rect(SYSTEMS_RECT, Color("16392f") if weapon_systems_online else Color("361c2e"))
     draw_rect(SYSTEMS_RECT, Color("75ffb0") if weapon_systems_online else Color("ff627f"),false,1)
     _text_center("WEAPONS %s  [H]" % ("ON" if weapon_systems_online else "OFF"),246,13,Color("e0faff"),22,258)
+    draw_rect(RAID_RECT,Color("39291b") if raid_owned_crates else Color("132834"))
+    draw_rect(RAID_RECT,Color("ff627f") if raid_owned_crates else Color("77f7ff"),false,1)
+    _text_center("OWNED CRATES: "+("RAID / CRIME" if raid_owned_crates else "IGNORE"),300,11,Color("ff627f") if raid_owned_crates else Color("77f7ff"),22,258)
+    if encounter_active and encounter_mode=="police":
+        draw_rect(SURRENDER_RECT,Color("39291b"));draw_rect(SURRENDER_RECT,Color("ffd166"),false,1)
+        _text_center("SURRENDER",246,10,Color("ffd166"),270,374)
 
     if boss_active:
         var boss := _active_boss_object()
@@ -6908,8 +7040,9 @@ func _draw_contracts_menu() -> void:
         _text("TAP A JOB TO ACCEPT", Vector2(30, 94), 14, Color("8ea9b8"))
     if not contract_notice.is_empty():
         _text_center(contract_notice, 137.0, 9, Color("ffb347"), 22.0, 368.0)
-    for i in contract_board.size():
-        var contract: Dictionary = contract_board[i]
+    contract_page=clampi(contract_page,0,maxi(0,int(ceil(float(contract_board.size())/5))-1))
+    for i in mini(5,contract_board.size()-contract_page*5):
+        var contract: Dictionary = contract_board[contract_page*5+i]
         var rect := _contract_row_rect(i)
         var blocker := _contract_blocker(contract)
         draw_rect(rect, Color(0.035, 0.065, 0.10, 0.91), true)
@@ -6932,11 +7065,14 @@ func _draw_contracts_menu() -> void:
             _text(_contract_status_suffix(contract), rect.position + Vector2(238, 23), 9, Color("bdeef4"))
         else:
             _text(_contract_status_suffix(contract), rect.position + Vector2(230, 23), 9, Color("ff8fa6"))
-        _text(_short_map_label(blocker, 32) if not blocker.is_empty() else "AVAILABLE — TAP TO ACCEPT", rect.position + Vector2(12, 88), 8, Color("ffb347") if not blocker.is_empty() else Color("6bffb0"))
+        _text(_short_map_label(blocker, 32) if not blocker.is_empty() else "%s RANK %d / ACCEPT"%[String(contract.get("guild","free")).to_upper(),int(contract.get("required_rank",0))], rect.position + Vector2(12, 88), 8, Color("ffb347") if not blocker.is_empty() else Color("6bffb0"))
     if not active_contract.is_empty():
         draw_rect(CONTRACT_ABANDON_RECT, Color(0.24, 0.085, 0.10, 0.96), true)
         draw_rect(CONTRACT_ABANDON_RECT, Color("ff8fa6"), false, 2.0)
         _text_center("CONFIRM ABANDON CONTRACT" if contract_abandon_confirm else "ABANDON ACTIVE CONTRACT", CONTRACT_ABANDON_RECT.position.y + 32.0, 16, Color("f0fbff"), CONTRACT_ABANDON_RECT.position.x, CONTRACT_ABANDON_RECT.end.x)
+    elif contract_board.size()>5:
+        draw_rect(CONTRACT_ABANDON_RECT,Color("142d39"));draw_rect(CONTRACT_ABANDON_RECT,Color("77f7ff"),false,2)
+        _text_center("MORE JOBS / PAGE %d OF %d"%[contract_page+1,int(ceil(float(contract_board.size())/5))],714,14,Color("77f7ff"),26,364)
     else:
         _text_center("BOUNTIES REQUIRE AN UNLOCKED STARTING WEAPON", 708.0, 10, Color("8ea9b8"), 22.0, 368.0)
     _draw_submenu_back()
