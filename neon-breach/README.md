@@ -1,4 +1,4 @@
-# Neon Breach v1.2.2 — recovered features and mobile play
+# Neon Breach v1.3.0 — recovered features and mobile play
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/breach/
 
@@ -130,3 +130,8 @@ suppresses the browser context menu. Shift remains a hold alternative and C
 remains a toggle; the phone SNEAK toggle and gamepad L3 also remain available.
 Losing focus, hiding the tab, pointer cancellation or pausing releases mouse
 buttons so stealth/attacks cannot remain stuck after an interrupted gesture.
+
+
+## Draw / holster (v1.3.0)
+
+Touch controls have separate STEALTH and DRAW/HOLSTER buttons beside their respective sticks in landscape; portrait stacks them above the sticks. Targets are at least 44px high and account for the iPhone safe area. H toggles drawing on desktop. The right stick can aim while holstered, but it cannot fire, swing fists/knife, or pump a shotgun. Drawing clears buffered attack presses. Holster state is saved with the mission; legacy saves keep their existing drawn behavior. Right mouse / Shift still hold stealth; C toggles it.

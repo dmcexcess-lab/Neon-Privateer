@@ -436,6 +436,7 @@ func _initialize() -> void:
         return
 
     # Fresh career = one persistent 32-world political system.
+    scene.rng.seed = 7101 # Repeatable initial career; production seeds are swept above.
     if not scene._create_new_career(1):
         _fail("could not create career slot 1")
         return
@@ -632,7 +633,12 @@ func _initialize() -> void:
             if String(grey_legality.status) != expected_grey:
                 _fail("capital grey-good legality does not match faction item law")
                 return
-        law_profiles[str(legal_grey_count)] = true
+        # Equal legal-item COUNTS do not mean equal laws (e.g. legal stims
+        # versus legal arms). Compare the actual item permissions.
+        var law_signature := ""
+        for grey_good in scene.grey_commodity_names:
+            law_signature += "1" if bool(grey_laws.get(grey_good,false)) else "0"
+        law_profiles[law_signature] = true
         var capital_context: Dictionary = scene._get_political_context_at(scene._system_planet_world_position(capital_id))
         if String(capital_context.state) != "CORE":
             _fail("faction capital is not CORE")

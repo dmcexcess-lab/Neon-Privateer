@@ -1,6 +1,9 @@
 extends Node2D
 ## Native presentation and profile lifecycle shared with Privateer.
 signal career_changed(profile: Dictionary, balance: int)
+signal challenge_finished(success: bool)
+var challenge_mode := false
+var challenge_settled := false
 signal exit_requested
 const Simulation = preload("FirewallSimulation.gd")
 const W := 390.0
@@ -100,6 +103,13 @@ func persist() -> void:
         else:notice="SAVE FAILED // KEEP THIS TAB OPEN";notice_clock=5
     save_clock=0.0
 
+func start_challenge(data: Dictionary, seed_number: int) -> void:
+    challenge_mode=true;challenge_settled=false
+    configure(data,0)
+    if not sim.bricks.is_empty() and sim.state in ["ready","play"]:phase="PLAY"
+    else:start_new_run(seed_number)
+    notice="SAFEHOUSE FIREWALL // CLEAR ONE LAYER";notice_clock=4
+
 func start_new_run(seed_number: int = 0) -> void:
     sim.new_run(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1)
     credited_earned=0;credited_destroyed=0;cleared_stage=0;death_recorded=false
@@ -128,13 +138,13 @@ func pause_game() -> void:
     if phase=="PLAY":phase="PAUSE";left_held=false;right_held=false;touch_index=-1;persist()
 
 func _notification(what: int) -> void:
-    if not visible:return
+    if not is_visible_in_tree():return
     if what in [NOTIFICATION_WM_WINDOW_FOCUS_OUT,NOTIFICATION_APPLICATION_FOCUS_OUT,NOTIFICATION_APPLICATION_PAUSED]:
         pause_game()
         if not profile.is_empty():persist()
 
 func _process(delta: float) -> void:
-    if not visible:return
+    if not is_visible_in_tree():return
     ui_time+=delta;notice_clock=maxf(0,notice_clock-delta)
     for particle in particles.duplicate():
         particle.pos+=particle.vel*delta;particle.life-=delta
@@ -155,6 +165,7 @@ func _process(delta: float) -> void:
 
 func _settle_events() -> void:
     var gain:int=maxi(0,int(sim.earned)-credited_earned)
+    if challenge_mode:gain=0
     balance+=gain;profile.total_earned=int(profile.total_earned)+gain;credited_earned=int(sim.earned)
     profile.bricks=int(profile.bricks)+maxi(0,int(sim.destroyed)-credited_destroyed);credited_destroyed=int(sim.destroyed)
     profile.best=maxi(int(profile.best),int(sim.stage))
@@ -175,15 +186,17 @@ func _settle_events() -> void:
     if sim.state=="clear":
         if cleared_stage!=int(sim.stage):profile.clears=int(profile.clears)+1;cleared_stage=int(sim.stage)
         phase="SHOP";persist()
+        if challenge_mode and not challenge_settled:challenge_settled=true;challenge_finished.emit(true)
     elif sim.state=="dead":
         if not death_recorded:profile.deaths=int(profile.deaths)+1;death_recorded=true
         phase="DEAD";persist()
+        if challenge_mode and not challenge_settled:challenge_settled=true;challenge_finished.emit(false)
 
 func _move_paddle(x: float) -> void:
     sim.target_x=Simulation.LEFT+Simulation.RIGHT-x if sim.effects.has("reverse") else x
 
 func _input(event: InputEvent) -> void:
-    if not visible:return
+    if not is_visible_in_tree() or event.device==InputEvent.DEVICE_ID_EMULATION:return
     if event is InputEventKey:
         if event.keycode in [KEY_A,KEY_LEFT]:left_held=event.pressed
         if event.keycode in [KEY_D,KEY_RIGHT]:right_held=event.pressed
@@ -202,6 +215,12 @@ func _input(event: InputEvent) -> void:
     elif event is InputEventScreenDrag and phase=="PLAY" and event.index==touch_index:_move_paddle(event.position.x)
 
 func _tap(pos: Vector2) -> void:
+    if challenge_mode and phase=="PAUSE":
+        if Rect2(28,310,334,58).has_point(pos):phase="PLAY"
+        elif Rect2(28,390,334,58).has_point(pos):persist()
+        elif Rect2(28,470,334,58).has_point(pos):
+            if not challenge_settled:challenge_settled=true;challenge_finished.emit(false)
+        return
     if phase=="PLAY":
         if Rect2(298,24,74,44).has_point(pos) or Rect2(266,754,106,52).has_point(pos):pause_game()
         elif Rect2(18,754,106,52).has_point(pos):sim.launch()
@@ -300,7 +319,7 @@ func _draw() -> void:
             _center("CREDITS SAFE: %d" % balance,272,17,GOLD)
             _button(Rect2(28,310,334,58),"RESUME")
             _button(Rect2(28,390,334,58),"SAVE GAME")
-            _button(Rect2(28,470,334,58),"SAVE / MAIN MENU")
+            _button(Rect2(28,470,334,58),"ABORT HACK / RETURN TO FIELD" if challenge_mode else "SAVE / MAIN MENU")
             if notice_clock>0:_center(notice,600,12,GREEN)
         return
     if phase=="PROFILES":_draw_profiles();return

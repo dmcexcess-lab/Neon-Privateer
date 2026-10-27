@@ -412,3 +412,21 @@ The **Download submitted reports (.txt)** button exports public `beta-feedback` 
 ## Neon Firewall: standalone and integrated hacking arcade
 
 [Play Neon Firewall](https://dmcexcess-lab.github.io/Neon-Privateer/firewall/) or open **NETWORK / NEON FIREWALL** while docked in Privateer. This is a native shared Godot minigame: seeded growing brick grids, armor/caches, explosive chains, multiball, relays/locks, phase and moving bricks, steel, turrets, beneficial/harmful drops, permanent research and a between-level run store. Standalone profiles retain credits on death; the Privateer terminal uses the real career's carried cash, preserves its bank, and saves research plus active-run/reward history in the career meta file. This is currently a docked arcade/security terminal; opening physical doors, disabling ground alarms and boarding/mission objectives are future integration hooks. See [neon-firewall/README.md](neon-firewall/README.md).
+
+
+## Port operations and covert careers (2026-10-27)
+
+Open **PORT / OPERATIONS** on the docked planet portrait. Field work shares your career's carried credits, protected bank, save slot and location. The JOURNAL records leads, actions, payments and arrests.
+
+- **Track bounty:** ask a walking dock contact while holstered, eavesdrop on a meeting in the northeast room for six seconds, recover the safehouse manifest through a playable Firewall challenge, then secure the identified southeast target. Each field lead must be extracted. Completion pays 900 credits once.
+- **Recover records:** rumor, safehouse terminal and extraction; 650 credits.
+- **Raider sweep:** known target, no mandatory detective work; clear the compound and extract for 450 credits.
+- **Capture and custody:** losing a ground fight starts the native prison mission. Gear is impounded; recover it from the north locker. Take the west badge or hack the northeast terminal, then reach the southwest extraction circle. Leaving gear behind loses it. Alternatively pay a 300-credit release fine from carried cash. Bank balances and unfinished contracts remain intact.
+
+Ground controls: WASD / left stick move; right mouse or Shift hold stealth, C toggles it; H / DRAW toggles weapon readiness; mouse click / Space / right stick attack only while drawn; E / USE interacts. The first guard rotates at a post, other guards follow multi-stop routes across the floor, and all remain active off camera. An eight-second extraction hold alerts the whole floor and resets if you leave its circle. Suspension pauses the world; restored missions start paused.
+
+Flight has an on-screen **WEAPONS ON/OFF** control and H shortcut. It disables new shots and laser damage/visuals, preserves existing flying projectiles, and is saved with the active flight. Soundtrack, adverts and Classic gameplay are unchanged.
+
+This is the first native Privateer ground/case slice, not a claim that every standalone Breach feature has been ported. The standalone Breach inventory, research and creature catalog remain separate. Native field maps currently use one connected nine-room layout; broader layouts, branching informants, faction-specific case outcomes and a larger prison campaign remain expansion work. Firewall is genuinely integrated; Classic/Driftline has not yet been converted into a mission objective device. The career/case graph deliberately owns progression rather than an arcade score screen.
+
+Validation: `tests/CovertIntegrationTest.gd` runs causal objective, physical navigation, listening/extraction, real Firewall completion/resume, custody, gear, reward-ledger, save-isolation and flight-toggle checks against both source and an exported PCK from an empty directory in CI. Physical iPhone Safari and touch ergonomics still require device testing.

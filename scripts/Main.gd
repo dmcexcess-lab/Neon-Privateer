@@ -3,6 +3,9 @@ extends Node2D
 const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
+const CovertGame = preload("res://covert/CovertGame.gd")
+const CovertCareer = preload("res://covert/CovertCareer.gd")
+const HUB_OPERATIONS_RECT := Rect2(105,174,180,48)
 const FirewallGame = preload("res://hacking/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 4
@@ -67,6 +70,7 @@ const WEAPON_LASER_RECT := Rect2(35.0, 368.0, 320.0, 54.0)
 const WEAPON_CONE_RECT := Rect2(35.0, 436.0, 320.0, 54.0)
 const WEAPON_SEEKER_RECT := Rect2(35.0, 504.0, 320.0, 54.0)
 const WEAPON_RESEARCH_BACK_RECT := Rect2(54.0, 620.0, 282.0, 58.0)
+const SYSTEMS_RECT := Rect2(22,216,236,44)
 const PAUSE_RECT := Rect2(300.0, 16.0, 72.0, 38.0)
 const PAUSE_RESUME_RECT := Rect2(55.0, 360.0, 280.0, 74.0)
 const PAUSE_QUIT_RECT := Rect2(55.0, 458.0, 280.0, 74.0)
@@ -195,6 +199,9 @@ const ENEMY_MISSILE_DAMAGE := 2
 const ENEMY_MISSILE_TURN_RATE := 3.2
 const HIT_INVULN_TIME := 0.5
 
+var covert_open := false
+var covert_profile: Dictionary = CovertCareer.default_profile()
+var covert: Node2D
 var firewall_open := false
 var firewall: Node2D
 var firewall_profile: Dictionary = FirewallGame.default_profile()
@@ -399,6 +406,7 @@ var result_reason := ""
 var neutral_spawn_clock := 0.0
 var fire_clock := 0.0
 var repair_clock := 0.0
+var weapon_systems_online := true
 var current_weapon := "none"
 var weapon_banner_timer := 0.0
 var weapon_banner_text := ""
@@ -438,6 +446,7 @@ func _ready() -> void:
     _load_privateer_ui_art()
     _setup_audio()
     _setup_firewall()
+    _setup_covert()
     _load_career_index()
     _migrate_legacy_career_if_needed()
     profile_menu_open = true
@@ -448,12 +457,36 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
+        if covert_open:
+            covert.pause_game()
         if firewall_open:
             firewall.pause_game()
         if (playing or shop_open) and not game_over:
             _pause_run()
         if active_career_slot > 0:
             _save_all_state()
+
+func _setup_covert() -> void:
+    covert=CovertGame.new();covert.name="PortOperations";covert.visible=false
+    covert.career_changed.connect(_covert_changed)
+    covert.exit_requested.connect(_close_covert)
+    covert.sound_requested=func(kind: String):_play_sfx(shot_sfx if kind=="shot" else hit_sfx)
+    add_child(covert)
+
+func _open_covert() -> bool:
+    if active_career_slot<=0 or playing or route_active or not hub_open:return false
+    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}))
+    covert_open=true;covert.visible=true;hub_open=false;_clear_control_holds();queue_redraw();return true
+
+func _covert_changed(data: Dictionary,cash: int) -> void:
+    if not covert_open:return
+    covert_profile=data.duplicate(true);research_credits=maxi(0,cash)
+    _save_meta()
+
+func _close_covert() -> void:
+    if not covert_open:return
+    covert.persist();covert.visible=false;covert_open=false;hub_open=true
+    _save_all_state();queue_redraw()
 
 func _setup_firewall() -> void:
     firewall = FirewallGame.new()
@@ -625,6 +658,9 @@ func _migrate_legacy_career_if_needed() -> void:
     _save_career_index()
 
 func _reset_career_state() -> void:
+    covert_open=false;covert_profile=CovertCareer.default_profile()
+    if is_instance_valid(covert):covert.visible=false
+    weapon_systems_online = true
     firewall_open = false
     firewall_profile = FirewallGame.default_profile()
     if is_instance_valid(firewall):
@@ -3063,6 +3099,7 @@ func _load_privateer_state() -> void:
 
 
 func _save_all_state() -> void:
+    if covert_open:covert.persist()
     if firewall_open:
         firewall.persist()
     _save_meta()
@@ -3070,9 +3107,9 @@ func _save_all_state() -> void:
 
 func _process(delta: float) -> void:
     _sync_soundtrack()
-    if not run_paused and not (firewall_open and firewall.phase != "PLAY"):
+    if not covert_open and not run_paused and not (firewall_open and firewall.phase != "PLAY"):
         _update_active_contract_clock(delta)
-    if firewall_open:
+    if firewall_open or covert_open:
         queue_redraw()
         return
     if not playing and market_open and not run_paused:
@@ -3126,9 +3163,9 @@ func _process(delta: float) -> void:
     var difficulty := _level_difficulty()
     _update_route_encounter(travel_delta)
 
-    if current_weapon == "laser":
+    if weapon_systems_online and current_weapon == "laser":
         _apply_laser_damage(game_delta)
-    elif current_weapon != "none" and fire_clock <= 0.0:
+    elif weapon_systems_online and current_weapon != "none" and fire_clock <= 0.0:
         _fire_weapon()
         fire_clock = _weapon_interval()
 
@@ -3178,7 +3215,19 @@ func _sync_soundtrack() -> void:
     if soundtrack != null:
         soundtrack.set_flight(not profile_menu_open and (playing or route_active or shop_open))
 
+func _toggle_weapon_systems() -> void:
+    if not playing or run_paused:return
+    weapon_systems_online = not weapon_systems_online
+    fire_clock = maxf(fire_clock,0.18)
+    _save_run_snapshot()
+    queue_redraw()
+
 func _input(event: InputEvent) -> void:
+    if covert_open:return
+    if event.device==InputEvent.DEVICE_ID_EMULATION:return
+    if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_H:
+        _toggle_weapon_systems()
+        return
     if firewall_open:
         return
     if travel_open:
@@ -3711,7 +3760,10 @@ func _contract_status_suffix(contract: Dictionary) -> String:
     return "H%d" % hops
 
 func _handle_hub_tap(pos: Vector2) -> void:
-    if HUB_TRAVEL_RECT.has_point(pos):
+    if HUB_OPERATIONS_RECT.has_point(pos):
+        _open_covert()
+        get_viewport().set_input_as_handled()
+    elif HUB_TRAVEL_RECT.has_point(pos):
         travel_selected_planet = _default_travel_selection()
         _reset_system_map_view()
         travel_open = true
@@ -3935,6 +3987,9 @@ func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
         return
     if not playing:
         _handle_hub_tap(pos)
+        return
+    if SYSTEMS_RECT.has_point(pos):
+        _toggle_weapon_systems()
         return
     if PAUSE_RECT.has_point(pos):
         _clear_control_holds()
@@ -4454,6 +4509,7 @@ func _save_meta() -> void:
     var cfg := ConfigFile.new()
     cfg.set_value("meta", "credits", research_credits)
     cfg.set_value("meta", "firewall", var_to_bytes(firewall_profile))
+    cfg.set_value("meta", "covert", var_to_bytes(covert_profile))
     cfg.set_value("meta", "bank_balance", bank_balance)
     cfg.set_value("meta", "fuel", ship_fuel)
     cfg.set_value("meta", "jump_range", research_jump_range)
@@ -4471,7 +4527,8 @@ func _save_meta() -> void:
     var path := _active_meta_path()
     if path.is_empty():
         return
-    cfg.save(path)
+    if cfg.save(path+".tmp")==OK:
+        DirAccess.rename_absolute(ProjectSettings.globalize_path(path+".tmp"),ProjectSettings.globalize_path(path))
 
 func _load_meta() -> void:
     var cfg := ConfigFile.new()
@@ -4479,6 +4536,7 @@ func _load_meta() -> void:
     if path.is_empty() or cfg.load(path) != OK:
         return
     research_credits = int(cfg.get_value("meta", "credits", 0))
+    covert_profile=CovertCareer.decode(cfg.get_value("meta","covert",{}))
     firewall_profile = FirewallGame.decode_profile(cfg.get_value("meta", "firewall", FirewallGame.default_profile()))
     bank_balance = int(cfg.get_value("meta", "bank_balance", 0))
     ship_fuel = clampi(int(cfg.get_value("meta", "fuel", FUEL_CAPACITY)), 0, FUEL_CAPACITY)
@@ -4527,6 +4585,7 @@ func _save_run_snapshot() -> void:
     cfg.set_value("run", "dash_timer", dash_timer)
     cfg.set_value("run", "dash_score_timer", dash_score_timer)
     cfg.set_value("run", "current_weapon", current_weapon)
+    cfg.set_value("run", "weapon_systems_online", weapon_systems_online)
     cfg.set_value("run", "world_scroll", world_scroll)
     cfg.set_value("run", "last_level_bonus", last_level_bonus)
     cfg.set_value("run", "route_active", route_active)
@@ -4597,6 +4656,7 @@ func _load_run_snapshot() -> bool:
     dash_timer = float(cfg.get_value("run", "dash_timer", 0.0))
     dash_score_timer = float(cfg.get_value("run", "dash_score_timer", 0.0))
     current_weapon = String(cfg.get_value("run", "current_weapon", "none"))
+    weapon_systems_online = bool(cfg.get_value("run", "weapon_systems_online", true))
     world_scroll = float(cfg.get_value("run", "world_scroll", 0.0))
     last_level_bonus = int(cfg.get_value("run", "last_level_bonus", 0))
     route_active = bool(cfg.get_value("run", "route_active", false))
@@ -5092,7 +5152,7 @@ func _spawn_shot(x: float, y: float, vx: float, vy: float, damage: float, homing
     })
 
 func _fire_weapon() -> void:
-    if not playing:
+    if not playing or not weapon_systems_online:
         return
     match current_weapon:
         "none":
@@ -5190,7 +5250,7 @@ func _consume_shot_hit(obj: Dictionary) -> bool:
 
 
 func _apply_laser_damage(delta: float) -> void:
-    if current_weapon != "laser" or not playing:
+    if current_weapon != "laser" or not playing or not weapon_systems_online:
         return
     var target_index := -1
     var target_y := -INF
@@ -5713,7 +5773,7 @@ func _active_boss_object() -> Dictionary:
     return {}
 
 func _draw() -> void:
-    if firewall_open:
+    if firewall_open or covert_open:
         return
     var offset := Vector2(rng.randf_range(-shake, shake), rng.randf_range(-shake, shake)) if shake > 0.0 else Vector2.ZERO
     draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color("080b14"))
@@ -5798,7 +5858,7 @@ func _draw() -> void:
             draw_line(ep - dir2 * 9.0, ep + dir2 * 2.0, Color(0.72, 0.35, 1.0, 0.36), 5.0)
             draw_line(ep - dir2 * 6.0, ep + dir2 * 2.0, Color("ead7ff"), 2.0)
 
-    if current_weapon == "laser" and playing:
+    if current_weapon == "laser" and playing and weapon_systems_online:
         var laser_x := player_x + offset.x
         var laser_start := Vector2(laser_x, player_y - 25.0 + offset.y)
         _draw_soft_glow(Vector2(laser_x, H * 0.38), 10.0, Color("77f7ff"), 0.35)
@@ -6254,6 +6314,9 @@ func _draw_hud() -> void:
         status_text = "DASH BONUS"
         status_color = Color("ffd166")
     _text_center(status_text, 157.0, 13, status_color, 30.0, 360.0)
+    draw_rect(SYSTEMS_RECT, Color("16392f") if weapon_systems_online else Color("361c2e"))
+    draw_rect(SYSTEMS_RECT, Color("75ffb0") if weapon_systems_online else Color("ff627f"),false,1)
+    _text_center("WEAPONS %s  [H]" % ("ON" if weapon_systems_online else "OFF"),246,13,Color("e0faff"),22,258)
 
     if boss_active:
         var boss := _active_boss_object()
@@ -6460,6 +6523,9 @@ func _draw_title() -> void:
 
     _text_center("NEON PRIVATEER", 62.0, 30, Color("77f7ff"), 24.0, 366.0)
     _draw_planet_art(current_planet, Rect2(126.0, 78.0, 138.0, 138.0), 1.0)
+    draw_rect(HUB_OPERATIONS_RECT,Color("132d39"))
+    draw_rect(HUB_OPERATIONS_RECT,Color("75ffb0"),false,2)
+    _text_center("PORT / OPERATIONS",205,14,Color("e0faff"),105,285)
     _text_center(_planet_display_name(current_planet), 244.0, 25, Color("f0fbff"), 60.0, 330.0)
     _text_center("CASH %07d   BANK %07d" % [research_credits, bank_balance], 276.0, 15, Color("ffd166"), 38.0, 352.0)
     _text_center("CARGO %d/%d  PAX %d/%d  FUEL %d/%d" % [_cargo_used(), _cargo_capacity(), passengers, _passenger_capacity(), ship_fuel, FUEL_CAPACITY], 304.0, 11, Color("bdeef4"), 38.0, 352.0)

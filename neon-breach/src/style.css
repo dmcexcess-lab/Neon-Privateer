@@ -66,3 +66,14 @@ body.hq-mode #location{top:19px;font-size:10px;max-width:calc(100vw - 185px)}
  #hqPrompt{bottom:14px;left:60%;min-width:180px;max-width:45vw}#hqPrompt span{display:none}#hqPrompt button{padding:8px;font-size:10px;min-height:38px}
  #hqMenuButton{top:6px;right:max(8px,env(safe-area-inset-right))}body.hq-mode #location{left:max(8px,env(safe-area-inset-left));top:12px}
 }
+
+/* Separate thumb-side actions: never share the aim stick's attack state. */
+#sneakButton,#drawButton{position:absolute;pointer-events:auto;touch-action:manipulation;min-height:44px;min-width:78px;max-width:92px;padding:8px 6px;bottom:max(56px,env(safe-area-inset-bottom,0px));transform:none;border:2px solid #75ffb080;border-radius:6px;background:#051e1aee;color:#b7ffe5;font:800 10px ui-monospace,monospace;letter-spacing:.04em}
+#sneakButton{left:calc(max(14px,env(safe-area-inset-left,0px)) + 154px)}
+#drawButton{right:calc(max(14px,env(safe-area-inset-right,0px)) + 154px);border-color:#ff7fca99;background:#301528ee;color:#ffcee9}
+#drawButton[aria-pressed="false"]{background:#112530;color:#a2bac9;border-color:#527488}
+body.hq-mode #drawButton{display:none!important}
+@media(max-width:690px) and (min-height:531px){#sneakButton{left:26px;bottom:184px}#drawButton{right:26px;bottom:184px}}
+@media(max-height:530px){#sneakButton{left:calc(max(10px,env(safe-area-inset-left,0px)) + 112px);bottom:max(35px,env(safe-area-inset-bottom,0px))}#drawButton{right:calc(max(10px,env(safe-area-inset-right,0px)) + 112px);bottom:max(35px,env(safe-area-inset-bottom,0px))}#medkitButton{bottom:34px;min-height:44px}}
+
+@media(max-width:510px) and (min-height:531px){#medkitButton{bottom:246px;min-height:44px}}

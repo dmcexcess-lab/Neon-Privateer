@@ -18,7 +18,7 @@ const eventTarget=()=>{
 const makeElement=()=>({
   ...eventTarget(),
   style:{},disabled:false,textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},
-  setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
+  setAttribute(){},setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
   getContext(){return new Proxy({}, {get:()=>()=>{}})},
   getBoundingClientRect(){return {left:0,top:0,width:120,height:120}},
   querySelector(){return makeElement()}
@@ -47,7 +47,7 @@ vm.runInNewContext(source+`
   initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
   updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
-  useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
+  toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
@@ -534,4 +534,36 @@ test('legacy saves gain global patrols without moving actors or resetting their 
   assert.equal(e.state,'search');assert.equal(e.searchTime,5);assert.equal(e.lastKnown.x,123);
   assert.equal(new Set(e.route.map(p=>p.room)).size,b.game.world.rooms.length);
   e.routeIndex=3;b.restoreFloorPatrols();assert.equal(e.routeIndex,3,'current save keeps its patrol phase');
+});
+
+
+test('holstered hands and firearms cannot attack through any input or buffered shotgun press',()=>{
+  b.resetRun();b.game.mode='PLAY';
+  for(const weapon of ['hands','knife','revolver','shotgun']){
+    const p=b.game.player;p.weapon=weapon;p.weaponDrawn=true;p.cool=0;
+    b.inputs.shotgunPendingPresses=3;b.inputs.mouse.down=true;b.inputs.keys.add('Space');
+    assert.equal(b.toggleWeaponDraw(),true);assert.equal(p.weaponDrawn,false);
+    assert.equal(b.inputs.shotgunPendingPresses,0);
+    b.inputs.aim={x:1,y:0};b.inputs.mouse.down=true;b.inputs.keys.add('Space');
+    assert.equal(b.captureInputs().shoot,false);assert.equal(b.shootPlayer(0),false);
+    const shots=b.game.bullets.length;b.update(.016);assert.equal(b.game.bullets.length,shots);
+    assert.equal(b.toggleWeaponDraw(),true);assert.equal(p.weaponDrawn,true);
+    b.inputs.aim={x:1,y:0};assert.equal(b.captureInputs().shoot,true);
+    b.toggleWeaponDraw();b.saveGame();b.loadGame();assert.equal(b.game.player.weaponDrawn,false);
+    b.game.mode='PLAY';
+  }
+  b.inputs.aim={x:0,y:0};b.inputs.mouse.down=false;b.inputs.keys.clear();
+});
+
+
+test('draw button gates gamepad trigger and legacy saves remain drawn',()=>{
+  b.resetRun();b.game.mode='PLAY';const p=b.game.player;
+  delete p.weaponDrawn;
+  sandbox.navigator.getGamepads=()=>[{axes:[0,0,1,0],buttons:Array.from({length:11},(_,i)=>({pressed:i===7}))}];
+  assert.equal(b.captureInputs().shoot,true);
+  elements.get('drawButton').dispatch('click');
+  assert.equal(p.weaponDrawn,false);assert.equal(b.captureInputs().shoot,false);
+  elements.get('drawButton').dispatch('click');
+  assert.equal(p.weaponDrawn,true);assert.equal(b.captureInputs().shoot,true);
+  sandbox.navigator.getGamepads=()=>[];
 });

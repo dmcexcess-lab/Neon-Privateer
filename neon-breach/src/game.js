@@ -88,7 +88,9 @@ function updateUI(){
  $('weaponReadout').textContent=w.label+(w.magazine?` · ${game.player.magazines?.[game.player.weapon]??w.magazine}/${w.magazine}`:'')+
    (game.player.reloadClock>0?(game.player.weapon==='shotgun'?` · ${game.player.reloadStage==='rack'?'RACKING':'LOADING SHELLS'} ${Math.ceil(game.player.reloadClock*10)/10}s`:` · RELOAD ${Math.ceil(game.player.reloadClock*10)/10}s`):'')+
    (game.player.pumpClock>0?' · PUMPING':game.player.weapon==='shotgun'&&game.player.pumpNeeded?' · CLICK TO PUMP':'')+
-   (game.player.sneaking?' · STEALTH':'')+(game.player.map?' · RADAR':'');
+   (game.player.weaponDrawn===false?' · HOLSTERED':' · DRAWN')+(game.player.sneaking?' · STEALTH':'')+(game.player.map?' · RADAR':'');
+ $('drawButton').textContent=game.player.weaponDrawn===false?'DRAW':'HOLSTER';
+ $('drawButton').setAttribute('aria-pressed',String(game.player.weaponDrawn!==false));
  const meter=$('reloadMeter');if(meter){
    const working=game.player.reloadClock>0||game.player.pumpClock>0;
    meter.classList.toggle('hidden',!working);
@@ -494,7 +496,7 @@ function captureInputs(){
   const a=Math.hypot(ax,ay);if(a>.05){ax/=a;ay/=a;}
   else{ax=Math.cos(game.player.facing);ay=Math.sin(game.player.facing);}
   if(game.player.sneaking!==wasSneaking)updateUI();
-  return {mx,my,ax,ay,shoot};
+  return {mx,my,ax,ay,shoot:shoot&&game.player.weaponDrawn!==false};
 }
 function moveWithCollisions(obj,dx,dy,r,locked=null){
   const x=obj.x+dx,y=obj.y+dy;
@@ -581,8 +583,16 @@ function updateWeaponTimers(dt){
     if(p.pumpClock===0)updateUI();
   }
 }
+function toggleWeaponDraw(){
+  if(game.mode!=='PLAY'||!game.player)return false;
+  game.player.weaponDrawn=game.player.weaponDrawn===false;
+  inputs.mouse.down=false;inputs.aim={x:0,y:0};inputs.keys.delete('Space');
+  inputs.shotgunPendingPresses=0;inputs.shotgunTriggerHeld=false;
+  updateUI();return true;
+}
 function shootPlayer(angle){
   const p=game.player,w=WEAPONS[p.weapon];
+  if(p.weaponDrawn===false)return false;
   if(w.magazine){
     if(p.reloadClock>0||p.pumpClock>0)return false;
     p.magazines??=initialMagazines();
@@ -1053,7 +1063,7 @@ function update(dt){
   // The right stick must recenter before the next fire/pump action.
   // Pointer/keyboard events are queued so rapid clicks between render frames
   // are not lost. Sticks/gamepads also generate their own rising edges.
-  const queuedPress=inputs.shotgunPendingPresses>0;
+  const queuedPress=inputs.shotgunPendingPresses>0&&p.weaponDrawn!==false;
   if(queuedPress)inputs.shotgunPendingPresses--;
   const triggerPress=queuedPress||(control.shoot&&!inputs.shotgunTriggerHeld);
   inputs.shotgunTriggerHeld=control.shoot;
@@ -1295,7 +1305,9 @@ function drawPlayer(){
   ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.facing+Math.PI/2);
   glowCircle(0,0,18,C.cyan,'#153b4f',3,14);
   path([[0,-23],[14,11],[0,7],[-14,11]],'#2c6275',C.cyan,2.5,12);
-  if(WEAPONS[p.weapon].melee){
+  if(p.weaponDrawn===false){
+    glowCircle(-13,8,4,C.cyan,'#165267',1,2);glowCircle(13,8,4,C.cyan,'#165267',1,2);
+  }else if(WEAPONS[p.weapon].melee){
     const swing=p.punchTimer>0?18:0;
     const left=p.weapon==='hands'&&p.swingHand===0;
     const glove=p.weapon==='knife'?C.green:C.cyan;
@@ -1472,6 +1484,7 @@ addEventListener('keydown',e=>{
   if(!e.repeat&&game.mode==='HQ'&&e.code==='Escape'){togglePause();return;}
   if(!e.repeat&&(e.code==='Escape'||e.code==='KeyP')){if(game.mode==='PLAY'||game.mode==='PAUSE')togglePause();return;}
   if(!e.repeat&&e.code==='KeyM'&&game.mode==='PLAY'&&game.player?.map){inputs.map=!inputs.map;return;}
+  if(!e.repeat&&e.code==='KeyH'&&game.mode==='PLAY'){toggleWeaponDraw();return;}
   if(!e.repeat&&e.code==='KeyF'&&game.mode==='PLAY'){useMedkit();return;}
   if(!e.repeat&&e.code==='Space'&&game.mode==='PLAY')inputs.shotgunPendingPresses++;
   if(!e.repeat&&e.code==='KeyC'&&game.mode==='PLAY'){inputs.sneakTouch=!inputs.sneakTouch;document.getElementById('sneakButton').classList.toggle('active',!!inputs.sneakTouch);return;}
@@ -1501,6 +1514,7 @@ for(const k of ['musicOn','sfxOn','musicVolume','sfxVolume'])$(k).addEventListen
 });
 $('quitButton').addEventListener('click',quitRun);
 $('titleButton').addEventListener('click',returnToTitle);
+$('drawButton').addEventListener('click',toggleWeaponDraw);
 $('sneakButton').addEventListener('click',()=>{inputs.sneakTouch=!inputs.sneakTouch;$('sneakButton').classList.toggle('active',!!inputs.sneakTouch);});
 $('medkitButton').addEventListener('click',useMedkit);
 requestAnimationFrame(frame);
