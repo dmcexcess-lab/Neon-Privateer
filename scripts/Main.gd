@@ -3324,7 +3324,9 @@ func _process(delta: float) -> void:
 func _sync_soundtrack() -> void:
     var soundtrack := get_node_or_null("/root/PrivateerSoundtrack")
     if soundtrack != null:
-        soundtrack.set_flight(not covert_open and not profile_menu_open and (playing or route_active or shop_open))
+        # A prison sentence (including a Breach escape attempt) is the only
+        # context allowed to play J-Space. All other play uses one rotation.
+        soundtrack.set_prison(covert_open and bool(covert.data.get("incarcerated", false)))
 
 func _toggle_weapon_systems() -> void:
     if not playing or run_paused:return
