@@ -1,10 +1,26 @@
-# Neon Privateer soundtrack
+# Neon Quartet — soundtrack assignment
 
-User-supplied songs, installed permanently in this project:
+The four user-defined Neon songs have distinct standalone and Privateer roles:
 
-- **Do Androids Dream** — spaceport, title and docked menus. Original `Do_Androids_Dream.mp3`, 182.33 seconds, converted to 44.1kHz stereo Vorbis quality4 with brief anti-click edge fades.
-- **Nineteen Steps** — spaceflight, including its pause screen. Same optimized Ogg derived from the user's `Nineteen_Steps.wav` for Classic:176.79 seconds, trailing dead silence removed. This is a separate asset/controller; Classic is unchanged.
+| Song | Standalone role | Privateer role | Recording state |
+| --- | --- | --- | --- |
+| Nineteen Steps | Neon Breach | Normal playlist, track 1 | Installed |
+| Neon Cathedral | Neon Driftline Classic | Normal playlist, track 2 | Awaiting user audio |
+| Do Androids Dream | Neon Firewall | Normal playlist, track 3 | Installed |
+| J-Space | None | Prison only, continuous loop | Awaiting user audio |
 
-Both actual Ogg streams loop from0 at their original musical ending. This is continuous decoder looping, not a beat-matched remix. A single autoload player at−11dB switches between contexts, remembering each position. Changing a docked submenu or pausing a flight does not replay a song. Sound effects are independent.
+Normal Privateer gameplay plays **Nineteen Steps → Neon Cathedral → Do Androids Dream → repeat** through title, dock, flight, Breach ground missions and embedded Firewall. A single persistent streaming player advances at each real track ending, without resetting on menus or gameplay transitions. Missing recordings are omitted from the normal playlist, never synthesized. For now that leaves Nineteen Steps and Do Androids Dream alternating.
 
-Web audio may require the first real click/tap/key inside the game frame. Android lifecycle handling is implemented for future exports, but this public beta is a Web launch; physical-device interruptions are not claimed tested.
+An actual sentence changes context to J-Space only, including prison escape sorties while the inmate is still incarcerated. Normal playlist position is remembered and resumes on release. Without an actual J-Space recording, prison is temporarily silent; no other quartet recording leaks into prison. Only the J-Space stream itself loops; the three normal tracks finish naturally.
+
+On the standalone games, Breach's existing Nineteen Steps MP3 remains in its audio engine. Classic selects Neon Cathedral if its real Ogg exists, otherwise retains its preexisting Nineteen Steps recording. Firewall now plays a separate actual copy of Do Androids Dream, with no changes to its embedded Privateer mode. All sound effects remain independent.
+
+Install the missing user-supplied recordings at these exact paths (stereo Ogg Vorbis, 44.1 kHz recommended):
+
+- `assets/audio/neon_cathedral.ogg` — Privateer playlist
+- `neon-driftline-classic/assets/audio/neon_cathedral.ogg` — Classic standalone
+- `assets/audio/j_space.ogg` — Privateer prison
+
+The existing Nineteen Steps and Do Androids Dream files were converted from the user's supplied recordings. They remain real compressed music, not replacement arrangements. Web Audio may require a first real click/tap/key in the game frame. Android suspension/audio-focus handling keeps a track position; actual physical-device behavior remains to be verified.
+
+Until the two missing recordings are supplied, this is a **partial audio rollout** rather than confirmation that all four songs are audible.
