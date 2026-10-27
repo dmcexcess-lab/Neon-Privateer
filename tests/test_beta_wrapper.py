@@ -32,6 +32,12 @@ function ready() {setStatusMode('hidden');}</script></body>''')
             with self.assertRaises(ValueError):
                 wrapper.wrap(path, 'abc123')
 
+    def test_privateer_feedback_is_below_full_width_game(self):
+        css = (SCRIPT.parents[1] / 'web' / 'beta' / 'beta.css').read_text()
+        self.assertIn('body[data-game-slug="neon-privateer"] .beta-layout{grid-template-columns:minmax(0,1fr)', css)
+        self.assertIn('body[data-game-slug="neon-privateer"] .feedback-inner{max-width:920px', css)
+        self.assertIn('body[data-game-slug="neon-privateer"] .game-stage{height:clamp(', css)
+
     def test_standalone_games_have_complete_independent_pages(self):
         fixtures = {
             'firewall': '<head></head><canvas id="canvas"></canvas><script>function displayFailureNotice(err) {} function ready() {setStatusMode(\'hidden\');}</script>',
