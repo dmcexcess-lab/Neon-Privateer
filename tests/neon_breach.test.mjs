@@ -25,10 +25,10 @@ const sandbox={
   addEventListener(){},requestAnimationFrame(){},
   Audio:class{addEventListener(){} play(){return Promise.resolve()} pause(){}},
 };
-vm.runInNewContext(source+\`
+vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
   canSpot,patrolIntent,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount};
-\`,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
+`,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
 
 test('all equipment and weapons cost exactly 50% more, rounded up',()=>{
