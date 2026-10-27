@@ -1,4 +1,4 @@
-import {RNG,generateFloor,createHQWorld,enemyBudget,chooseEnemy,chooseGuardWeapon,randomSpot,walkable,propAt,roomAt,TILESETS} from './dungeon.js';
+import {RNG,generateFloor,createHQWorld,enemyBudget,chooseEnemy,chooseGuardWeapon,randomSpot,walkable,propAt,roomAt,TILESETS,planFloorPoints} from './dungeon.js';
 import {VISION,canSpot,canHear,clearSight,turnToward,angleDifference,navigationPoint} from './ai.js';
 import {unlockAudio,sound,step,melee,weaponShot,reloadSound,pumpSound,monsterSound,enemyFootstep,getAudioSettings,setAudioSettings} from './audio.js';
 
@@ -246,12 +246,10 @@ function beginFloor(){
   game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];game.exitClock=0;game.extraction=null;game.floorClearPaid=false;game.detectedThisFloor=false;
   const start=game.world.rooms[0];game.player.x=start.cx;game.player.y=start.cy;
   game.player.cool=0;game.player.invuln=1.15;game.activeRoom=0;
-  // Every room, cache, and enemy is present at floor creation. The starter
-  // room remains the single safe insertion point; no combat locks exist.
-  for(const room of game.world.rooms){
-    room.spawned=true;
-    if(room.id!==0)spawnEnemies(room);
-  }
+  // Populate the whole floor at once. Only a small arrival bubble is safe;
+  // crossing an architectural boundary never creates or confines an enemy.
+  for(const room of game.world.rooms){room.spawned=true;room.enemies=[];}
+  spawnFloorEnemies();
   finalizeGuardRoster();
   camera.x=game.player.x;camera.y=game.player.y;game.shake=0;
   updateUI();
@@ -264,19 +262,14 @@ function enterRoom(r){
   if(firstVisit)announce(r.exit?'STAIRWAY LOCATED':r.exfil?'OPTIONAL EXFIL LOCATED':'AREA DISCOVERED  //  STAY ALERT',1.2);
   updateUI();
 }
-function spawnEnemies(room){
+function spawnFloorEnemies(){
   const floor=game.floor,rng=game.world.rng;
-  const count=room.quota; // Single floor budget; some rooms are completely empty.
-  const roster=[];
+  const positions=planFloorPoints(game.world,game.world.spawnBudget);
+  game.world.spawnSites=positions;
+  const count=positions.length;
   for(let k=0;k<count;k++){
-    const type=chooseEnemy(rng,floor),def=TYPE[type];let pos=null;
-    for(let tries=0;tries<65;tries++){
-      const candidate=randomSpot(game.world,room,rng,def.r+5,95);
-      if(room.exit&&Math.hypot(candidate.x-room.cx,candidate.y-room.cy)<110)continue;
-      if(roster.some(e=>Math.hypot(e.x-candidate.x,e.y-candidate.y)<e.r+def.r+22))continue;
-      pos=candidate;break;
-    }
-    if(!pos)continue;
+    const type=chooseEnemy(rng,floor),def=TYPE[type],pos=positions[k];
+    const room=roomAt(game.world,pos.x,pos.y);
     const hpScale=1+(floor-1)*.058+room.depth*.012;
     const guardWeapon=type==='trapezoid'?chooseGuardWeapon(rng,floor):type==='diamond'?'knife':null;
     const e={id:Math.random(),room:room.id,homeRoom:room.id,type,x:pos.x,y:pos.y,r:def.r,
@@ -286,17 +279,8 @@ function spawnEnemies(room){
       state:'idle',alertTime:0,searchTime:0,sees:false,suspicion:0,perceptionClock:rand(.02,.23),
       anchor:{x:pos.x,y:pos.y},patrol:{x:pos.x,y:pos.y},patrolClock:0,lastKnown:null,
       route:[],routeIndex:0,stareClock:0,stareAngle:0,lookIndex:0,lookClock:0,searchNodes:[],searchIndex:0,hadSight:false};
-    initializeBehavior(e);
-    roster.push(e);game.enemies.push(e);
+    game.enemies.push(e);room.enemies.push(e);
   }
-  room.enemies=roster;
-  if(!roster.length)room.cleared=true;
-}
-function secureRoom(room){
-  if(room.cleared)return;
-  room.cleared=true;room.enemies=[];
-  if(room.id===game.activeRoom){announce('ROOM SECURE  //  PATHS REMAIN OPEN',1.7);playSound('door');}
-  for(let i=0;i<12;i++)particle(room.cx,room.cy,C.green,rand(70,210));
 }
 function alertEnemy(e,x,y,duration=6,state='alert'){
   e.lastKnown={x,y};
@@ -412,6 +396,7 @@ function loadGame(){
       game.bullets=(r.bullets||[]).map(b=>({...b,hitIds:new Set(b.hitIds||[])}));game.particles=[];
       game.extraction=r.extraction?{...r.extraction}:null;game.floorClearPaid=!!r.floorClearPaid;game.detectedThisFloor=!!r.detectedThisFloor;
       for(const room of game.world.rooms)room.enemies=game.enemies.filter(e=>e.homeRoom===room.id);
+      restoreFloorPatrols();
       game.player={...r.player,magazines:{...initialMagazines(),...r.player.magazines},reloadClock:r.player.reloadClock||0,pumpClock:r.player.pumpClock||0,
         pumpNeeded:!!r.player.pumpNeeded,reloadShells:r.player.reloadShells||0,reloadStage:r.player.reloadStage||null};
       // Import legacy v0.9 automatic shotgun reloads as a five-shell sequence.
@@ -516,6 +501,7 @@ function damageFurniture(prop,damage,x=prop.x,y=prop.y){
   const color=TILESETS[game.world.stratum.id].trim;
   burst(x,y,color,prop.hp<=0?12:3,prop.hp<=0?.9:.35);
   if(prop.hp<=0){
+    game.world.navigationRevision=(game.world.navigationRevision||0)+1;
     floating('DESTROYED',prop.x,prop.y,C.gold);
     if(!game.world.isHQ&&Math.random()<.005){
       const kinds=['chest','weapon','equipment','med'];makePickup(kinds[Math.floor(Math.random()*kinds.length)],prop.x,prop.y,1);
@@ -671,39 +657,49 @@ function guardFireCooldown(e){
 // Patrol nodes, staring periods, and search points are precomputed per NPC;
 // no enemy AI is created when a player walks into a new area.
 function validPost(e,x,y){return walkable(game.world,x,y,e.r+3);}
+function floorPatrolCircuit(){
+  const world=game.world;
+  if(world.patrolCircuit)return world.patrolCircuit;
+  const points=planFloorPoints(world,Math.max(16,world.rooms.length*2),{safeRadius:0});
+  // Include tiny architectural branches too; the positions remain one global
+  // circuit, with no NPC home-room limits or room-entry triggers.
+  for(const r of world.rooms)if(!points.some(p=>roomAt(world,p.x,p.y)?.id===r.id))points.push({x:r.cx,y:r.cy});
+  const remaining=points.map(p=>({...p,room:roomAt(world,p.x,p.y)?.id})),circuit=[remaining.shift()];
+  while(remaining.length){
+    const last=circuit[circuit.length-1];let closest=0;
+    for(let i=1;i<remaining.length;i++)if(distance(last,remaining[i])<distance(last,remaining[closest]))closest=i;
+    circuit.push(remaining.splice(closest,1)[0]);
+  }
+  world.patrolCircuit=circuit;return circuit;
+}
 function buildPostRoute(e){
-  const world=game.world,start=roomAt(world,e.anchor.x,e.anchor.y)?.id??e.homeRoom;
-  const visited=new Set(),order=[];
-  function tour(id){
-    visited.add(id);order.push(id);
-    const neighbors=[...world.rooms[id].neighbors].sort((a,b)=>e.orbit*(a-b));
-    for(const next of neighbors)if(!visited.has(next)){tour(next);order.push(id);}
+  const circuit=floorPatrolCircuit();let phase=0;
+  for(let i=1;i<circuit.length;i++)if(distance(e,circuit[i])<distance(e,circuit[phase]))phase=i;
+  const direction=e.orbit<0?-1:1,n=circuit.length;
+  return Array.from({length:n},(_,i)=>({...circuit[(phase+i*direction+n)%n]}));
+}
+function restoreFloorPatrols(){
+  for(const e of game.enemies){
+    if(e.routeVersion===2)continue;
+    e.route=e.duty==='post'?[{...e.anchor,room:e.homeRoom}]:buildPostRoute(e);
+    e.routeIndex=0;e.patrol=e.route[0];e.routeVersion=2;delete e.navigation;
   }
-  tour(start);
-  const route=[{...e.anchor,room:start}];
-  for(const id of order){
-    const room=world.rooms[id];
-    if(validPost(e,room.cx,room.cy))route.push({x:room.cx,y:room.cy,room:id});
-  }
-  return route;
 }
 function initializeBehavior(e){
   if(!e.anchor)e.anchor={x:e.x,y:e.y};
   if(!e.duty)e.duty='patrol';
   e.route=e.duty==='post'?[{...e.anchor,room:e.homeRoom}]:buildPostRoute(e);
-  e.routeIndex=0;e.patrol=e.route[0];e.searchNodes=[];e.searchIndex=0;
+  e.routeVersion=2;e.routeIndex=0;e.patrol=e.route[0];e.searchNodes=[];e.searchIndex=0;
   e.stareClock=e.type==='circle'?rand(1.2,2.8):rand(2.5,4);
   e.stareAngle=e.angle;e.lookIndex=0;e.lookClock=rand(.7,1.1);
   e.hadSight=false;e.isWalking=false;e.atPost=true;
 }
 function chooseCircleWander(e){
-  // Random destinations span the floor, rather than a circle around spawn.
-  const rooms=game.world.rooms,current=roomAt(game.world,e.x,e.y)?.id;
-  const others=rooms.filter(r=>r.id!==current);
-  const room=(others.length?others:rooms)[Math.floor(Math.random()*(others.length||rooms.length))];
-  const point=randomSpot(game.world,room,game.world.rng,e.r+3,65);
-  e.stareClock=0;e.patrol=validPost(e,point.x,point.y)?point:{x:room.cx,y:room.cy};
-  e.isWalking=true;
+  const points=floorPatrolCircuit().filter(p=>validPost(e,p.x,p.y));
+  const farthest=Math.max(...points.map(p=>distance(e,p)),0);
+  const distant=points.filter(p=>distance(e,p)>=Math.min(280,farthest*.6));
+  const choices=distant.length?distant:points;
+  e.stareClock=0;e.patrol={...choices[Math.floor(Math.random()*choices.length)]};e.isWalking=true;
 }
 function finishPost(e){
   if(e.type==='circle'){
@@ -951,8 +947,10 @@ function killEnemy(e){
   const reward=Math.round(TYPE[e.type].credits*(1+(game.floor-1)*.12));
   credit(reward);floating(`+${reward} CR`,e.x,e.y,C.gold);
   // Creatures award credits only; physical supplies come from furniture/chests.
-  if(!room.enemies.length)secureRoom(room);
+  // Architectural rooms do not become safe when their original spawns die.
+  // Every enemy remains free to move through the whole floor.
   if(!game.enemies.length&&!game.floorClearPaid){
+    for(const r of game.world.rooms)r.cleared=true;
     game.floorClearPaid=true;const bonus=floorClearAward(game.floor,game.world.rooms.length);
     credit(bonus);announce(`ALL HOSTILES CLEARED // +${bonus} CR BONUS`,2.5);
   }

@@ -14,7 +14,8 @@ for(let floor=1;floor<=40;floor++){
     assert.equal(world.links.length,world.rooms.reduce((n,r)=>n+r.neighbors.length,0)/2);
     assert.ok(world.rooms.every(r=>r.tileset===world.stratum.id),'tile set matches the stratum');
     assert.ok(world.rooms.every(r=>TILESETS[world.stratum.id].modules.includes(r.module)),'module from correct set');
-    assert.equal(world.rooms.reduce((n,r)=>n+r.quota,0),enemyBudget(floor),'one capped floor-wide enemy budget');
+    assert.equal(world.spawnBudget,enemyBudget(floor),'one global floor population');
+    assert.ok(world.rooms.every(r=>!('quota' in r)),'architecture never owns spawn quotas');
     if(floor<=3){
       assert.ok(world.rooms.length<=6,'first floors must be compact');
       assert.ok(world.rooms.every(r=>r.w<=511&&r.h<=381),'early chambers are tight');

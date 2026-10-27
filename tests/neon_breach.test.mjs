@@ -34,7 +34,7 @@ const sandbox={
 vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
-  initializeBehavior,buildPostRoute,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
+  initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
   updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
@@ -151,12 +151,12 @@ test('first human guard holds a rotating post; other tours span every room',()=>
   }
 });
 
-test('random walks choose a different room and patrollers really cross room boundaries',()=>{
+test('random walks use distant floor positions and patrollers cross the entire map',()=>{
   generatedScenario(6);
   const e=b.game.enemies.find(e=>e.type==='circle')||b.game.enemies[0];
   for(let i=0;i<20;i++){
-    const home=b.roomAt(b.game.world,e.x,e.y).id;b.chooseCircleWander(e);
-    assert.notEqual(b.roomAt(b.game.world,e.patrol.x,e.patrol.y).id,home);
+    b.chooseCircleWander(e);
+    assert.ok(Math.hypot(e.patrol.x-e.x,e.patrol.y-e.y)>=280,'global wander destination is not a local spawn circle');
     assert.equal(b.walkable(b.game.world,e.patrol.x,e.patrol.y,e.r+3),true);
   }
   e.type='square';e.duty='patrol';e.state='idle';b.initializeBehavior(e);
@@ -388,4 +388,26 @@ test('rare field equipment stays at risk until recovered, not teleported to HQ s
   b.enterHQ();b.resetRun();const count=b.game.profile.storage.armor1;
   b.game.player.map=true;b.collectPickup({kind:'equipment',x:0,y:0});
   assert.equal(b.game.profile.storage.armor1,count);assert.ok(b.game.player.spares.includes('armor1'));
+});
+
+
+test('mobile patrols start at different phases across the whole-floor circuit',()=>{
+  generatedScenario(31);const roaming=b.game.enemies.filter(e=>e.duty==='patrol');
+  const phases=new Set(roaming.map(e=>Math.round(e.patrol.x)+','+Math.round(e.patrol.y)));
+  assert.ok(phases.size>=roaming.length*.55,'patrollers do not all march to one first stop');
+  assert.ok(b.game.enemies.every(e=>e.routeVersion===2));
+  const guard=roaming.find(e=>e.type==='trapezoid')||roaming[0];b.game.enemies=[guard];
+  b.game.player.x=-1e6;b.game.player.y=-1e6;const seen=new Set([guard.room]);
+  for(let step=0;step<30000&&seen.size<b.game.world.rooms.length;step++){b.updateEnemies(.2);seen.add(guard.room);}
+  assert.equal(seen.size,b.game.world.rooms.length,'a guard physically reaches every region of upper archaeology');
+});
+
+test('legacy saves gain global patrols without moving actors or resetting their search',()=>{
+  generatedScenario(15);const e=b.game.enemies.find(e=>e.duty==='patrol');
+  const position=[e.x,e.y];e.routeVersion=1;e.route=[{x:e.x,y:e.y,room:e.room}];
+  e.state='search';e.searchTime=5;e.lastKnown={x:123,y:456};
+  b.restoreFloorPatrols();assert.equal(e.routeVersion,2);assert.deepEqual([e.x,e.y],position);
+  assert.equal(e.state,'search');assert.equal(e.searchTime,5);assert.equal(e.lastKnown.x,123);
+  assert.equal(new Set(e.route.map(p=>p.room)).size,b.game.world.rooms.length);
+  e.routeIndex=3;b.restoreFloorPatrols();assert.equal(e.routeIndex,3,'current save keeps its patrol phase');
 });

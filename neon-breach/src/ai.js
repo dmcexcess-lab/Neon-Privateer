@@ -65,5 +65,75 @@ export function navigationPoint(world,e,target){
   }
   const points=e.navigation.points;
   while(points.length&&Math.hypot(e.x-points[0].x,e.y-points[0].y)<20)points.shift();
-  return points[0]||target;
+  return avoidCover(world,e,points[0]||target);
+}
+
+function traversableSegment(world,a,b,radius){
+  const steps=Math.max(1,Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/20));
+  for(let i=1;i<=steps;i++)if(!walkable(world,a.x+(b.x-a.x)*i/steps,a.y+(b.y-a.y)*i/steps,radius))return false;
+  return true;
+}
+// Short local A* legs route around furniture. The floor graph still handles
+// long journeys through the architecture; neither layer confines an NPC to a
+// home room. Paths live in the already transient navigation cache.
+export function findLocalPath(world,start,goal,radius){
+  const cell=32,pad=144;
+  const bounds={left:Math.floor((Math.min(start.x,goal.x)-pad)/cell),right:Math.ceil((Math.max(start.x,goal.x)+pad)/cell),
+    top:Math.floor((Math.min(start.y,goal.y)-pad)/cell),bottom:Math.ceil((Math.max(start.y,goal.y)+pad)/cell)};
+  const nodes=new Map(),heap=[];
+  function node(x,y){
+    const key=x+','+y;if(nodes.has(key))return nodes.get(key);
+    const n={x:x*cell,y:y*cell,gx:x,gy:y,key,cost:Infinity,closed:false,parent:null};
+    n.open=x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom&&walkable(world,n.x,n.y,radius);
+    nodes.set(key,n);return n;
+  }
+  function push(n,score){
+    let i=heap.length;heap.push({n,score});
+    while(i){const parent=(i-1)>>1;if(heap[parent].score<=score)break;heap[i]=heap[parent];i=parent;}heap[i]={n,score};
+  }
+  function pop(){
+    const first=heap[0],last=heap.pop();if(!heap.length)return first.n;
+    let i=0;heap[0]=last;
+    while(i*2+1<heap.length){let j=i*2+1;if(j+1<heap.length&&heap[j+1].score<heap[j].score)j++;
+      if(heap[j].score>=last.score)break;heap[i]=heap[j];i=j;}heap[i]=last;return first.n;
+  }
+  const ends=new Set(),sx=Math.round(start.x/cell),sy=Math.round(start.y/cell),gx=Math.round(goal.x/cell),gy=Math.round(goal.y/cell);
+  for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++){
+    const first=node(sx+x,sy+y),last=node(gx+x,gy+y);
+    if(first.open&&traversableSegment(world,start,first,radius)){first.cost=Math.hypot(first.x-start.x,first.y-start.y);push(first,first.cost+Math.hypot(first.x-goal.x,first.y-goal.y));}
+    if(last.open&&traversableSegment(world,last,goal,radius))ends.add(last.key);
+  }
+  let found=null,expanded=0;
+  while(heap.length&&expanded++<6000){
+    const current=pop();if(current.closed)continue;current.closed=true;
+    if(ends.has(current.key)){found=current;break;}
+    for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++){
+      if(!x&&!y)continue;const next=node(current.gx+x,current.gy+y);
+      if(!next.open||next.closed)continue;
+      if(x&&y&&(!node(current.gx+x,current.gy).open||!node(current.gx,current.gy+y).open))continue;
+      if(!walkable(world,(current.x+next.x)/2,(current.y+next.y)/2,radius))continue;
+      const cost=current.cost+Math.hypot(x,y)*cell;
+      if(cost>=next.cost)continue;next.cost=cost;next.parent=current;push(next,cost+Math.hypot(next.x-goal.x,next.y-goal.y));
+    }
+  }
+  if(!found)return [];
+  const raw=[{...goal}];for(let n=found;n;n=n.parent)raw.push({x:n.x,y:n.y});raw.reverse();
+  const result=[];let from=start,index=0;
+  while(index<raw.length){
+    let next=raw.length-1;while(next>index&&!traversableSegment(world,from,raw[next],radius))next--;
+    result.push(raw[next]);from=raw[next];index=next+1;
+  }
+  return result;
+}
+function avoidCover(world,e,goal){
+  const cache=e.navigation,radius=e.r+2;
+  if(!cache)return goal;
+  if(cache.localGoal&&Math.hypot(goal.x-cache.localGoal.x,goal.y-cache.localGoal.y)<24&&cache.revision===(world.navigationRevision||0)){
+    const points=cache.localPoints;
+    while(points?.length&&Math.hypot(e.x-points[0].x,e.y-points[0].y)<14)points.shift();
+    return points?.[0]||goal;
+  }
+  cache.localGoal={...goal};cache.revision=world.navigationRevision||0;
+  cache.localPoints=traversableSegment(world,e,goal,radius)?[]:findLocalPath(world,e,goal,radius);
+  return cache.localPoints[0]||goal;
 }

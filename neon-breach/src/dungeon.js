@@ -192,7 +192,7 @@ export function generateFloor(floor,seed){
     cx:box.x+box.w/2,cy:box.y+box.h/2,rx:box.w/2,ry:box.h/2,
     module:rng.pick(kit.modules),tileset:stratum.id,approach:dir,
     gx:id,gy:0,neighbors:[],visited:id===0,cleared:id===0,opened:true,spawned:false,
-    depth:Infinity,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[],quota:0};}
+    depth:Infinity,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[]};}
   rooms.push(makeRoom({...makeSize(),x:0,y:0},0));
   let previousDir=0;
   const cardinal=(parent,size,dir,depth,offset)=>{
@@ -250,13 +250,9 @@ export function generateFloor(floor,seed){
     exfilRoom.exfil=true;world.exfil=exfilRoom.id;
   }
   buildIndex(world);prepareWalls(world);
-  // Assign a FLOOR budget across chambers, with deliberately empty rooms.
-  const nonStart=rooms.slice(1);
-  // Shuffle all non-insertion rooms evenly; the exit has no population bias.
-  const candidates=nonStart.map(r=>({r,score:rng.next()}));
-  candidates.sort((a,b)=>b.score-a.score);
-  const budget=enemyBudget(floor),occupied=Math.min(candidates.length,Math.max(1,Math.ceil(budget/1.5)));
-  for(let i=0;i<budget;i++)candidates[i%occupied].r.quota++;
+  // The entire connected floor has ONE population budget. Room shapes only
+  // describe architecture; they do not own spawns or spawn quotas.
+  world.spawnBudget=enemyBudget(floor);
   // World props use stratum-specific modules, collision and destructible HP.
   for(const r of rooms){
     // Low floors are sparsely populated by zombies but dense in STEALTH cover.
@@ -316,7 +312,7 @@ export function createHQWorld(){
   const rooms=blocks.map((b,id)=>({id,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.x+b.w/2,cy:b.y+b.h/2,
     rx:b.w/2,ry:b.h/2,module:b.name,tileset:'hq',approach:0,
     neighbors:[],visited:true,cleared:true,opened:true,spawned:true,depth:0,exit:false,exfil:false,
-    cover:[],caches:[],enemies:[],ornaments:[],quota:0}));
+    cover:[],caches:[],enemies:[],ornaments:[]}));
   const stations=[
     {id:'shop',x:560,y:15,label:'ARMORY · PURCHASE EQUIPMENT',color:'#f9cc70'},
     {id:'storage',x:-555,y:15,label:'STORAGE · EQUIP / SECURE',color:'#75ffb0'},
@@ -343,4 +339,61 @@ export function createHQWorld(){
   ];
   for(const obj of furniture)rooms[obj.room].cover.push({...obj,hp:999,maxHp:999});
   return world;
+}
+
+// Blue-noise-style placement over the UNION of all walkable floor pieces.
+// A global candidate lattice plus farthest-point sampling avoids random
+// bunches in one end of the map. No rooms are selected or given a quota.
+export function planFloorPoints(world,count,{radius=34,safeRadius=180}={}){
+  count=Math.max(0,Math.floor(count));if(!count)return [];
+  const origin=world.rooms[world.start||0];
+  const start=world.entry||{x:origin.cx,y:origin.cy};
+  const area=floorArea(world);
+  const seed=(world.seed||0)^Math.imul(world.floor||1,0x45d9f3b)^Math.imul(count,0x27d4eb2d);
+  let pool=[];
+  for(let attempt=0;attempt<3;attempt++){
+    const rng=new RNG(seed),step=Math.max(35,Math.sqrt(area/(count*32))/(2**attempt));
+    const offsetX=rng.range(0,step),offsetY=rng.range(0,step),seen=new Set();pool=[];
+    for(const shape of world.shapes){
+      for(let y=Math.ceil((shape.y-offsetY)/step)*step+offsetY;y<shape.y+shape.h;y+=step){
+        for(let x=Math.ceil((shape.x-offsetX)/step)*step+offsetX;x<shape.x+shape.w;x+=step){
+          const ix=Math.round((x-offsetX)/step),iy=Math.round((y-offsetY)/step),key=ix+','+iy;
+          if(seen.has(key))continue;seen.add(key);
+          const cellRng=new RNG(seed^Math.imul(ix,0x1f123bb5)^Math.imul(iy,0x5f356495));
+          const point={x:x+cellRng.range(-step*.22,step*.22),y:y+cellRng.range(-step*.22,step*.22)};
+          if(Math.hypot(point.x-start.x,point.y-start.y)<safeRadius||!walkable(world,point.x,point.y,radius))continue;
+          if(safeRadius>0&&[world.exit,world.exfil].some(id=>id!=null&&Math.hypot(point.x-world.rooms[id].cx,point.y-world.rooms[id].cy)<112))continue;
+          pool.push({...point,nearest:Infinity,used:false});
+        }
+      }
+    }
+    if(pool.length>=count)break;
+  }
+  pool.sort((a,b)=>a.x-b.x||a.y-b.y);
+  const selected=[];
+  // Guarantee an early-floor presence outside the arrival bubble, then fill
+  // the largest remaining gaps, whether they lie near the entry, middle or end.
+  let next=pool.reduce((best,p)=>!best||Math.hypot(p.x-start.x,p.y-start.y)<Math.hypot(best.x-start.x,best.y-start.y)?p:best,null);
+  while(next&&selected.length<count){
+    selected.push({x:next.x,y:next.y});next.used=true;const last=next;next=null;
+    for(const p of pool){
+      if(p.used)continue;
+      p.nearest=Math.min(p.nearest,(p.x-last.x)**2+(p.y-last.y)**2);
+      if(!next||p.nearest>next.nearest)next=p;
+    }
+  }
+  return selected;
+}
+
+// Exact union area keeps placement independent of how the same floor is split
+// into overlapping architectural pieces (including duplicated room shapes).
+export function floorArea(world){
+  const xs=[...new Set(world.shapes.flatMap(r=>[r.x,r.x+r.w]))].sort((a,b)=>a-b);let area=0;
+  for(let i=1;i<xs.length;i++){
+    const left=xs[i-1],right=xs[i],intervals=world.shapes.filter(r=>r.x<right&&r.x+r.w>left).map(r=>[r.y,r.y+r.h]).sort((a,b)=>a[0]-b[0]);
+    let low=null,high=0,length=0;
+    for(const [a,b] of intervals){if(low===null){low=a;high=b;}else if(a<=high)high=Math.max(high,b);else{length+=high-low;low=a;high=b;}}
+    if(low!==null)length+=high-low;area+=(right-left)*length;
+  }
+  return area;
 }

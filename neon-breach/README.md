@@ -1,4 +1,4 @@
-# Neon Breach v1.1 — recovered features and mobile play
+# Neon Breach v1.2 — recovered features and mobile play
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/breach/
 
@@ -41,7 +41,7 @@ it and rejects a stale generated file before deployment.
   one hit point, including vest capacity; five-kit carry limit. Creatures
   award credits only. Destroyed furniture has a 0.5% supply/cache chance.
 - Lower completion cash, a smaller one-time all-hostiles-clear reward, and
-  a larger unseen-completion bonus. Enemy placement has no exit/depth bias.
+  a larger unseen-completion bonus. Enemy placement uses one global floor pass with wide spacing, rather than room quotas.
 
 ## Fullscreen and iPhone
 
@@ -73,3 +73,34 @@ AI timings do not establish physical iPhone frame rates. The Pages workflow
 also runs the existing Privateer/Classic Godot smoke, soundtrack and Classic
 balance tests, then exports all three Web pages. Privateer and Classic
 Godot gameplay/audio and Android advertising are unchanged.
+
+## Whole-floor population and patrol correction (v1.2)
+
+Earlier randomization still assigned spawn quotas to rooms. That system has
+been removed. A single population is placed over the union of walkable floor
+space, repeatedly filling the largest uncovered gaps. Only a 180-unit arrival
+bubble and small exit/exfil marker pads are protected; the whole starting
+architectural room is no longer excluded. Splitting the same terrain into one
+room or many produces the same placements. Spawn count and credits are unchanged.
+
+Patrollers use a predictable circuit covering the floor, with initial phases
+chosen near their dispersed positions and opposite travel directions. Random
+wander destinations are distant floor-wide points. The posted guard remains
+stationary. Transient local paths steer around cover; no distance sleeping or
+room-entry spawning is used. A room is not announced safe merely because its
+original spawns have been killed elsewhere.
+
+Older active saves retain enemy positions, health, loot and combat state, while
+old patrols are migrated to the global circuit. New placement applies on newly
+generated floors: reload the page and enter a new floor/sortie to see it.
+
+Additional checks:
+
+```sh
+node --test tests/breach_spawns.test.mjs
+```
+
+These compare room decomposition invariance and check 144 seeded floors for
+full population, clear body placement, spacing, near-entry presence, uncovered
+areas and exit concentration. Runtime regressions include actual traversal of
+all lower-floor and upper-archaeology regions, not just route membership.
