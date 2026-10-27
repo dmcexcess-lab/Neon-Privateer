@@ -1,14 +1,16 @@
 // Self-contained synthesized sound design + continuous, looping Nineteen Steps.
 // Audio is unlocked only after a real input gesture (mobile/desktop browser policy).
 const TRACK_URL='assets/music/Nineteen_Steps_loop.mp3';
-let context=null,noiseBuffer=null,music=null,musicMuted=false,sfxBus=null;
+let context=null,noiseBuffer=null,music=null,musicMuted=false,sfxBus=null,musicBus=null,musicSource=null;
 const SETTINGS_KEY='neon-breach.audio.v1';
 const defaults={musicOn:true,sfxOn:true,musicVolume:65,sfxVolume:80};
 let settings={...defaults};
 try{settings={...defaults,...JSON.parse(localStorage.getItem(SETTINGS_KEY)||'null')};}catch{}
 const level=n=>Math.max(0,Math.min(100,Number(n)||0))/100;
 function applySettings(){
-  if(music){music.volume=settings.musicOn?level(settings.musicVolume)*.36:0;
+  if(music){
+    const volume=settings.musicOn?level(settings.musicVolume)*.36:0;
+    if(musicBus){musicBus.gain.value=volume;music.volume=1;}else music.volume=volume;
     if(!settings.musicOn)music.pause();else if(music.paused)music.play().catch(()=>{});
   }
   if(sfxBus)sfxBus.gain.value=settings.sfxOn?level(settings.sfxVolume):0;
@@ -62,6 +64,12 @@ export function unlockAudio(){
     const ac=engine();if(ac&&ac.state==='suspended')ac.resume().catch(()=>{});
     if(!music&&typeof Audio!=='undefined'){
       music=new Audio(TRACK_URL);music.loop=true;music.volume=level(settings.musicVolume)*.36;music.preload='auto';
+    }
+    // Web Audio gain makes the music slider work on iPhone versions that
+    // reserve HTMLMediaElement.volume for the physical device volume control.
+    if(music&&ac&&!musicSource&&ac.createMediaElementSource){
+      musicSource=ac.createMediaElementSource(music);musicBus=ac.createGain();
+      musicSource.connect(musicBus).connect(ac.destination);applySettings();
     }
     if(music&&!musicMuted&&settings.musicOn&&music.paused)music.play().catch(()=>{});
   }catch{}

@@ -63,7 +63,7 @@ jobs:
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path . --quit
           node neon-breach/src/build-standalone.mjs
           git diff --exit-code -- neon-breach/index.html
-          node --test tests/fullscreen.test.mjs
+          node --test tests/fullscreen.test.mjs tests/breach_audio.test.mjs
           node --test tests/beta_feedback.test.mjs
           node --test tests/neon_breach.test.mjs tests/breach_dungeon.test.mjs
           python3 -m unittest discover -s tests -p 'test_beta_wrapper.py'
