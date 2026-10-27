@@ -3,7 +3,7 @@ extends Node2D
 const W := 390.0
 const H := 844.0
 const PoliticalWorld = preload("res://scripts/PoliticalWorld.gd")
-const FirewallGame = preload("res://neon-firewall/scripts/FirewallGame.gd")
+const FirewallGame = preload("res://hacking/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
 const ECONOMY_SCHEMA_VERSION := 4
 const CRIME_SCHEMA_VERSION := 1

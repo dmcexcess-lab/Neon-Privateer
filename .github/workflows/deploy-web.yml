@@ -61,6 +61,8 @@ jobs:
         run: |
           set -euo pipefail
           "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --editor --path . --quit
+          python3 tools/SyncFirewallSource.py
+          git diff --exit-code -- neon-firewall/scripts
           node neon-breach/src/build-standalone.mjs
           git diff --exit-code -- neon-breach/index.html
           node --test tests/fullscreen.test.mjs tests/breach_audio.test.mjs
@@ -162,6 +164,12 @@ jobs:
           mv "build/web/${BASENAME}.html" build/web/index.html
           test -f "build/web/${BASENAME}.pck"
 
+          PRIVATEER_PACK="$(realpath "build/web/${BASENAME}.pck")"
+          mkdir -p /tmp/privateer-pack-empty
+          (cd /tmp/privateer-pack-empty && XDG_DATA_HOME="$RUNNER_TEMP/privateer-pack-firewall" timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --main-pack "$PRIVATEER_PACK" --script res://tests/FirewallIntegrationTest.gd) 2>&1 | tee /tmp/privateer-pack-firewall.log
+          if grep -E 'SCRIPT ERROR|Parse Error|FIREWALL INTEGRATION FAIL' /tmp/privateer-pack-firewall.log; then exit 1; fi
+          grep -q 'NEON FIREWALL INTEGRATION OK' /tmp/privateer-pack-firewall.log
+
           # Assert the reconstructed/generated atlas is inside the Web PCK.
           grep -a -q "privateer_ui_atlas.res" "build/web/${BASENAME}.pck"
 
@@ -197,7 +205,9 @@ jobs:
           if grep -E 'SCRIPT ERROR|Parse Error|Failed to load script' /tmp/firewall-export.log; then exit 1; fi
           mv "build/web/firewall/${FIREWALL_BASENAME}.html" build/web/firewall/index.html
           test -s "build/web/firewall/${FIREWALL_BASENAME}.pck"
-          timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --main-pack "$(realpath "build/web/firewall/${FIREWALL_BASENAME}.pck")" --script res://tests/SmokeTest.gd 2>&1 | tee /tmp/firewall-pack-test.log
+          FIREWALL_PACK="$(realpath "build/web/firewall/${FIREWALL_BASENAME}.pck")"
+          mkdir -p /tmp/firewall-pack-empty
+          (cd /tmp/firewall-pack-empty && XDG_DATA_HOME="$RUNNER_TEMP/firewall-pack" timeout 60s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --main-pack "$FIREWALL_PACK" --script res://tests/SmokeTest.gd) 2>&1 | tee /tmp/firewall-pack-test.log
           if grep -E 'SCRIPT ERROR|Parse Error|FIREWALL FAIL' /tmp/firewall-pack-test.log; then exit 1; fi
           grep -q 'NEON FIREWALL OK' /tmp/firewall-pack-test.log
 

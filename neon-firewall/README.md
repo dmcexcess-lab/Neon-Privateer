@@ -60,3 +60,13 @@ godot --headless --path . --script res://tests/FirewallIntegrationTest.gd
 Run tests with an isolated user-data directory (e.g. a task-specific XDG_DATA_HOME using a non-self-contained Godot installation). The standalone suite exercises 400 generated boards, ball collisions, damage, relays, explosive chains, caches, bonus/hazard effects, lasers, shields, multiball losses, magnets, deterministic continuation, death/research/run-store rules, profiles and pause. Integration checks real cash/bank accounting, career isolation, native transitions, saved-run continuity, payout idempotence and interruption handling. Existing Privateer, Breach and Classic regression suites remain required. CI exports the standalone game and runs the tests against its exported PCK.
 
 Physical iPhone/Android testing and longer economy/difficulty tuning remain playtest work; automated tests do not establish physical-device performance.
+
+## Shared source and export boundary
+
+`hacking/FirewallSimulation.gd` and `hacking/FirewallGame.gd` are authoritative.
+Godot excludes nested projects from the parent export scan, so Privateer loads
+these root-project resources. `python3 tools/SyncFirewallSource.py` reproduces
+the identical standalone copies in `neon-firewall/scripts/`; CI rejects stale
+copies. Edit the authoritative files, synchronize, and test both projects.
+Both exported-pack suites run from empty directories to prohibit accidental
+fallback to checked-out source files.
