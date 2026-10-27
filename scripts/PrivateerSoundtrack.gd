@@ -30,7 +30,7 @@ func _ready() -> void:
             continue
         var song := load(path) as AudioStreamOggVorbis
         if song == null:
-            push_error("Invalid Neon Quartet recording: " + path)
+            push_warning("Neon Quartet recording not yet imported: " + path)
             continue
         song.loop = id == "j_space"
         song.loop_offset = 0.0
