@@ -282,11 +282,17 @@ function spawnFloorEnemies(){
     game.enemies.push(e);room.enemies.push(e);
   }
 }
+function recordAlert(e){
+  // A question mark is recoverable. Any full alert forfeits this floor's
+  // bonus immediately, even if sight breaks or the enemy dies this frame.
+  if(e.state==='alert')game.detectedThisFloor=true;
+}
 function alertEnemy(e,x,y,duration=6,state='alert'){
   e.lastKnown={x,y};
   e.alertTime=Math.max(e.alertTime,duration);
   e.searchTime=0;
   if(e.state!=='alert'||state==='alert')e.state=state;
+  recordAlert(e);
   e.perceptionClock=Math.min(e.perceptionClock,.03);
 }
 function emitNoise(x,y,volume=1){
@@ -330,9 +336,10 @@ function exfil(){
   recoverGear();playSound('start');enterHQ(`EXFIL SUCCESS // GEAR RECOVERED // ${game.profile.credits} CREDITS SAFE`);saveGame(true);
 }
 function nextFloor(){
+  for(const e of game.enemies)recordAlert(e);
   const clear=floorAdvanceAward(game.floor,game.world.rooms.length),stealth=game.detectedThisFloor?0:stealthAward(game.floor);
   credit(clear+stealth);game.floor++;beginFloor();game.mode='PLAY';
-  announce(`SECTOR COMPLETE +${clear} CR${stealth?' // UNSEEN +'+stealth+' CR':''} // LEVEL ${game.floor}`,3);playSound('door');saveGame();
+  announce(`SECTOR COMPLETE +${clear} CR${stealth?' // NO ALERTS +'+stealth+' CR BONUS':''} // LEVEL ${game.floor}`,3);playSound('door');saveGame();
 }
 function useMedkit(){
   const p=game.player;if(game.mode!=='PLAY'||!p||p.medkits<=0||p.hp>=p.maxHp)return false;
@@ -395,6 +402,7 @@ function loadGame(){
       game.enemies=r.enemies||[];game.pickups=r.pickups||[];
       game.bullets=(r.bullets||[]).map(b=>({...b,hitIds:new Set(b.hitIds||[])}));game.particles=[];
       game.extraction=r.extraction?{...r.extraction}:null;game.floorClearPaid=!!r.floorClearPaid;game.detectedThisFloor=!!r.detectedThisFloor;
+      for(const e of game.enemies)recordAlert(e);
       for(const room of game.world.rooms)room.enemies=game.enemies.filter(e=>e.homeRoom===room.id);
       restoreFloorPatrols();
       game.player={...r.player,magazines:{...initialMagazines(),...r.player.magazines},reloadClock:r.player.reloadClock||0,pumpClock:r.player.pumpClock||0,
@@ -782,6 +790,7 @@ function updateEnemies(dt){
   }
   for(const e of game.enemies){
     const dist=Math.max(1,Math.hypot(p.x-e.x,p.y-e.y));
+    recordAlert(e);
     e.flash=Math.max(0,e.flash-dt);e.contact=Math.max(0,e.contact-dt);
     e.cool-=dt;e.charge-=dt;e.dashTime=Math.max(0,e.dashTime-dt);
     e.step+=dt*(e.type==='diamond'?8:2.4);
@@ -939,6 +948,7 @@ function updateBullets(dt){
 }
 function killEnemy(e){
   const i=game.enemies.indexOf(e);if(i<0)return;
+  recordAlert(e);
   game.enemies.splice(i,1);
   const room=game.world.rooms[e.homeRoom];
   room.enemies=room.enemies.filter(o=>o!==e);

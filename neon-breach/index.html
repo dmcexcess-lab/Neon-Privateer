@@ -76,7 +76,7 @@ body.hq-mode #location{top:19px;font-size:10px;max-width:calc(100vw - 185px)}
 }
 
 </style>
-  <title>NEON BREACH — The Ascent v1.2.0</title>
+  <title>NEON BREACH — The Ascent v1.2.1</title>
 </head>
 <body>
   <canvas id="game" aria-label="Neon Breach twin-stick shooter"></canvas>
@@ -102,6 +102,7 @@ body.hq-mode #location{top:19px;font-size:10px;max-width:calc(100vw - 185px)}
       <p class="subhead">PROCEDURAL TWIN-STICK SURVIVAL</p>
       <div class="hairline"></div>
       <p class="intro">Deploy from Resistance HQ through ten sewer sectors, maintenance levels, and two tiers of guarded archaeology. Stash valuable gear, buy supplies, and plan stealth routes. Exfil preserves field equipment; death destroys carried gear, <b>never your credits</b>.</p>
+      <p class="intro">Clear all hostiles for a small cash bonus. Reach the next sector without any <b>!</b> for a much larger bonus; <b>?</b> is allowed. Both bonuses increase with sector depth.</p>
       <button id="startButton" class="primary">CONTINUE / LOAD GAME <span>→</span></button>
       <div class="menu-actions"><button id="newButton" class="secondary">NEW GAME</button><button id="loadButton" class="secondary">LOAD SAVE</button><button id="menuSettingsButton" class="secondary">SOUND SETTINGS</button></div>
       <p class="best" id="bestReadout">PERSONAL BEST // SECTOR 00</p>
@@ -575,7 +576,7 @@ function floorArea(world){
 
 // Awareness and graph navigation operate on physical organic geometry, not doors.
 const VISION=Object.freeze({
-  circle:{range:760,halfAngle:Math.PI*.48,hearing:600,turn:1.9},
+  circle:{range:420,halfAngle:Math.PI*.36,hearing:600,turn:1.9},
   square:{range:820,halfAngle:Math.PI*.48,hearing:680,turn:2.05},
   diamond:{range:610,halfAngle:Math.PI*.42,hearing:640,turn:3.15},
   trapezoid:{range:700,halfAngle:Math.PI*.37,hearing:790,turn:2.55},
@@ -1165,11 +1166,17 @@ function spawnFloorEnemies(){
     game.enemies.push(e);room.enemies.push(e);
   }
 }
+function recordAlert(e){
+  // A question mark is recoverable. Any full alert forfeits this floor's
+  // bonus immediately, even if sight breaks or the enemy dies this frame.
+  if(e.state==='alert')game.detectedThisFloor=true;
+}
 function alertEnemy(e,x,y,duration=6,state='alert'){
   e.lastKnown={x,y};
   e.alertTime=Math.max(e.alertTime,duration);
   e.searchTime=0;
   if(e.state!=='alert'||state==='alert')e.state=state;
+  recordAlert(e);
   e.perceptionClock=Math.min(e.perceptionClock,.03);
 }
 function emitNoise(x,y,volume=1){
@@ -1213,9 +1220,10 @@ function exfil(){
   recoverGear();playSound('start');enterHQ(`EXFIL SUCCESS // GEAR RECOVERED // ${game.profile.credits} CREDITS SAFE`);saveGame(true);
 }
 function nextFloor(){
+  for(const e of game.enemies)recordAlert(e);
   const clear=floorAdvanceAward(game.floor,game.world.rooms.length),stealth=game.detectedThisFloor?0:stealthAward(game.floor);
   credit(clear+stealth);game.floor++;beginFloor();game.mode='PLAY';
-  announce(`SECTOR COMPLETE +${clear} CR${stealth?' // UNSEEN +'+stealth+' CR':''} // LEVEL ${game.floor}`,3);playSound('door');saveGame();
+  announce(`SECTOR COMPLETE +${clear} CR${stealth?' // NO ALERTS +'+stealth+' CR BONUS':''} // LEVEL ${game.floor}`,3);playSound('door');saveGame();
 }
 function useMedkit(){
   const p=game.player;if(game.mode!=='PLAY'||!p||p.medkits<=0||p.hp>=p.maxHp)return false;
@@ -1278,6 +1286,7 @@ function loadGame(){
       game.enemies=r.enemies||[];game.pickups=r.pickups||[];
       game.bullets=(r.bullets||[]).map(b=>({...b,hitIds:new Set(b.hitIds||[])}));game.particles=[];
       game.extraction=r.extraction?{...r.extraction}:null;game.floorClearPaid=!!r.floorClearPaid;game.detectedThisFloor=!!r.detectedThisFloor;
+      for(const e of game.enemies)recordAlert(e);
       for(const room of game.world.rooms)room.enemies=game.enemies.filter(e=>e.homeRoom===room.id);
       restoreFloorPatrols();
       game.player={...r.player,magazines:{...initialMagazines(),...r.player.magazines},reloadClock:r.player.reloadClock||0,pumpClock:r.player.pumpClock||0,
@@ -1665,6 +1674,7 @@ function updateEnemies(dt){
   }
   for(const e of game.enemies){
     const dist=Math.max(1,Math.hypot(p.x-e.x,p.y-e.y));
+    recordAlert(e);
     e.flash=Math.max(0,e.flash-dt);e.contact=Math.max(0,e.contact-dt);
     e.cool-=dt;e.charge-=dt;e.dashTime=Math.max(0,e.dashTime-dt);
     e.step+=dt*(e.type==='diamond'?8:2.4);
@@ -1822,6 +1832,7 @@ function updateBullets(dt){
 }
 function killEnemy(e){
   const i=game.enemies.indexOf(e);if(i<0)return;
+  recordAlert(e);
   game.enemies.splice(i,1);
   const room=game.world.rooms[e.homeRoom];
   room.enemies=room.enemies.filter(o=>o!==e);

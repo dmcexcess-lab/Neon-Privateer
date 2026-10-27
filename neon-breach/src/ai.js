@@ -1,7 +1,7 @@
 // Awareness and graph navigation operate on physical organic geometry, not doors.
 import {roomAt,walkable} from './dungeon.js';
 export const VISION=Object.freeze({
-  circle:{range:760,halfAngle:Math.PI*.48,hearing:600,turn:1.9},
+  circle:{range:420,halfAngle:Math.PI*.36,hearing:600,turn:1.9},
   square:{range:820,halfAngle:Math.PI*.48,hearing:680,turn:2.05},
   diamond:{range:610,halfAngle:Math.PI*.42,hearing:640,turn:3.15},
   trapezoid:{range:700,halfAngle:Math.PI*.37,hearing:790,turn:2.55},

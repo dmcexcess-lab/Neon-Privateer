@@ -1,4 +1,4 @@
-# Neon Breach v1.2 — recovered features and mobile play
+# Neon Breach v1.2.1 — recovered features and mobile play
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/breach/
 
@@ -41,7 +41,24 @@ it and rejects a stale generated file before deployment.
   one hit point, including vest capacity; five-kit carry limit. Creatures
   award credits only. Destroyed furniture has a 0.5% supply/cache chance.
 - Lower completion cash, a smaller one-time all-hostiles-clear reward, and
-  a larger unseen-completion bonus. Enemy placement uses one global floor pass with wide spacing, rather than room quotas.
+  a larger no-alerts completion bonus. Enemy placement uses one global floor pass with wide spacing, rather than room quotas.
+
+## Awareness and cash bonuses (v1.2.1)
+
+- Red zombies recognize stationary targets up to 420 units ahead (previously
+  760), or moving targets up to about 496 (previously 897). Their forward cone
+  is 129.6 degrees, down from 172.8. Hearing, chase speed and other enemies'
+  awareness are unchanged; sneaking still shortens recognition range.
+- A `?` (suspicion/investigation) does **not** forfeit the large bonus. Any `!`
+  does, including an alert that immediately ends or an alerted enemy killed
+  before the next AI update. This history persists across save/load and resets
+  only on entering a new floor. Extraction's intentional alarm also counts.
+- Kill-all cash is paid immediately once per floor: 35% of the normal sector
+  completion award, rounded, with a minimum of 3 credits. No-alerts cash is
+  paid on taking the stairs: three times the completion award (`8 + 3 × floor`).
+  At sectors 1 / 10 / 30, kill-all pays 4 / 13 / 34 credits and no-alerts pays
+  33 / 114 / 294 credits, in addition to normal completion cash. Both bonuses
+  can be earned together if kills never trigger a full alert.
 
 ## Fullscreen and iPhone
 

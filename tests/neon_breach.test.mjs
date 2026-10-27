@@ -32,7 +32,7 @@ const sandbox={
   Audio:class{constructor(){musicInstances++;this.paused=true;this.currentTime=0;}addEventListener(){} play(){this.paused=false;return Promise.resolve()} pause(){this.paused=true;}},
 };
 vm.runInNewContext(source+`
-;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,
+;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,alertEnemy,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
   initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
   updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
@@ -101,19 +101,27 @@ test('red wanderers forget instantly when line of sight breaks, regardless of ti
   b.game.player={x:165,y:0,r:16,sneaking:false,moving:true,stealth:1,hp:10,maxHp:10,invuln:99};
   b.updateEnemies(.08);
   assert.equal(e.sees,true);
+  assert.equal(b.game.detectedThisFloor,true);
   b.game.player.x=-165;e.perceptionClock=999;
   b.updateEnemies(.016);
   assert.equal(e.state,'idle');assert.equal(e.lastKnown,null);
   assert.equal(e.suspicion,0);assert.equal(e.sees,false);
+  assert.equal(b.game.detectedThisFloor,true,'losing sight cannot restore the cash bonus');
   b.emitNoise(-165,0,1.5);
   assert.equal(e.state,'investigate','new audible movement is a fresh clue');
 });
 
-test('zombies detect non-stealth movement far ahead but not through cover',()=>{
+test('red sight is reduced while yellow sight, hearing and cover rules remain intact',()=>{
   const world=openWorld(),e=zombie(0),p={x:850,y:0,r:16,sneaking:false,moving:true,stealth:1};
-  assert.equal(b.canSpot(world,e,p),true);
+  assert.equal(b.canSpot(world,e,p),false,'red no longer sees a runner at the old extreme range');
+  assert.equal(b.canSpot(world,zombie(0,'square'),p),true,'yellow retains its longer forward range');
+  p.x=490;assert.equal(b.canSpot(world,e,p),true,'red can still recognize a nearby runner');
+  p.x=510;assert.equal(b.canSpot(world,e,p),false,'running does not restore the old huge range');
+  p.x=350;
   p.sneaking=true;assert.equal(b.canSpot(world,e,p),false);
-  p.sneaking=false;world.rooms[0].cover=[{x:400,y:0,w:50,h:100,hp:4}];
+  p.sneaking=false;p.x=100;p.y=250;
+  assert.equal(b.canSpot(world,e,p),false,'red no longer has almost a full forward hemisphere');
+  p.x=350;p.y=0;world.rooms[0].cover=[{x:175,y:0,w:50,h:100,hp:4}];
   assert.equal(b.canSpot(world,e,p),false,'stronger awareness still respects occlusion');
   world.rooms[0].cover=[];e.state='idle';b.game.enemies=[e];b.game.extraction=null;
   b.emitNoise(600,0,1.12);assert.equal(e.state,'investigate');
@@ -189,15 +197,62 @@ test('exfil alarms the entire floor, cancels outside the ring, and requires eigh
 });
 
 test('last hostile pays a smaller clear bonus once, independent of stairs',()=>{
-  generatedScenario(6);
-  const enemies=[...b.game.enemies],start=b.game.profile.credits;
-  const kills=enemies.reduce((sum,e)=>sum+Math.round(b.TYPE[e.type].credits*(1+(b.game.floor-1)*.12)),0);
-  const bonus=b.floorClearAward(b.game.floor,b.game.world.rooms.length);
-  assert.ok(bonus>0&&bonus<b.floorAdvanceAward(b.game.floor,b.game.world.rooms.length));
-  for(const enemy of enemies)b.killEnemy(enemy);
-  assert.equal(b.game.profile.credits-start,kills+bonus);
-  b.killEnemy(enemies.at(-1));assert.equal(b.game.profile.credits-start,kills+bonus);
-  assert.equal(b.game.floorClearPaid,true);
+  let previous=0;
+  for(const floor of [1,6,30]){
+    generatedScenario(floor);
+    const enemies=[...b.game.enemies],start=b.game.profile.credits;
+    const kills=enemies.reduce((sum,e)=>sum+Math.round(b.TYPE[e.type].credits*(1+(b.game.floor-1)*.12)),0);
+    const bonus=b.floorClearAward(b.game.floor,b.game.world.rooms.length);
+    assert.ok(bonus>0&&bonus<b.floorAdvanceAward(b.game.floor,b.game.world.rooms.length));
+    assert.ok(bonus>previous,'clear bonus grows with sector depth');previous=bonus;
+    for(const enemy of enemies)b.killEnemy(enemy);
+    assert.equal(b.game.profile.credits-start,kills+bonus);
+    b.killEnemy(enemies.at(-1));assert.equal(b.game.profile.credits-start,kills+bonus);
+    assert.equal(b.game.floorClearPaid,true);
+  }
+});
+
+test('visible suspicion and noise investigations keep the large completion bonus eligible',()=>{
+  generatedScenario(5);b.game.world={...openWorld(),stratum:b.game.world.stratum};b.game.extraction=null;
+  const e=zombie(0);Object.assign(e,{state:'idle',sees:false,hadSight:false,suspicion:0});
+  b.game.enemies=[e];Object.assign(b.game.player,{x:200,y:0});
+  b.updateEnemies(.08);
+  assert.equal(e.state,'suspicious','partial recognition shows a question mark');
+  assert.equal(b.game.detectedThisFloor,false);
+  b.emitNoise(e.x,e.y,1);assert.equal(e.state,'investigate','footsteps also show a question mark');
+  assert.equal(b.game.detectedThisFloor,false);
+  const credits=b.game.profile.credits,award=b.floorAdvanceAward(5,1)+b.stealthAward(5);
+  b.nextFloor();assert.equal(b.game.profile.credits-credits,award);
+  assert.equal(b.game.detectedThisFloor,false,'new floor starts eligible');
+});
+
+test('question-mark eligibility survives saving and loading an active investigation',()=>{
+  generatedScenario(9);b.emitNoise(b.game.enemies[0].x,b.game.enemies[0].y,1);
+  assert.ok(b.game.enemies.some(e=>e.state==='investigate'));
+  assert.equal(b.game.detectedThisFloor,false);assert.equal(b.saveGame(),true);
+  b.enterHQ();b.game.detectedThisFloor=true;assert.equal(b.loadGame(),true);
+  assert.equal(b.game.detectedThisFloor,false);
+  const credits=b.game.profile.credits,award=b.floorAdvanceAward(9,1)+b.stealthAward(9);
+  b.nextFloor();assert.equal(b.game.profile.credits-credits,award);
+});
+
+test('instant full alert forfeits bonus even if the enemy dies before its next AI update',()=>{
+  generatedScenario(9);const e=b.game.enemies[0];
+  b.alertEnemy(e,b.game.player.x,b.game.player.y);
+  assert.equal(b.game.detectedThisFloor,true,'record full alert at the transition');
+  b.killEnemy(e);assert.equal(b.game.detectedThisFloor,true);
+  assert.equal(b.saveGame(),true);b.enterHQ();b.game.detectedThisFloor=false;
+  assert.equal(b.loadGame(),true);assert.equal(b.game.detectedThisFloor,true);
+  const credits=b.game.profile.credits;
+  b.nextFloor();assert.equal(b.game.profile.credits-credits,b.floorAdvanceAward(9,1));
+  assert.equal(b.game.detectedThisFloor,false,'a later floor can earn its own bonus');
+});
+
+test('an existing saved full alert counts even when an older save missed its history flag',()=>{
+  generatedScenario(9);b.game.enemies[0].state='alert';assert.equal(b.saveGame(),true);
+  const slot=JSON.parse(storage.get('neon-breach.save.v1'));slot.run.detectedThisFloor=false;
+  storage.set('neon-breach.save.v1',JSON.stringify(slot));b.enterHQ();
+  assert.equal(b.loadGame(),true);assert.equal(b.game.detectedThisFloor,true);
 });
 
 test('short yellow checks versus extended guard investigations',()=>{
@@ -349,10 +404,13 @@ test('music/SFX settings persist independently without duplicate music players',
   assert.equal(musicInstances,1);assert.equal(b.getAudioSettings().sfxOn,false);
 });
 
-test('completion awards encourage unseen exits more than combat clears',()=>{
+test('level-scaled no-alerts awards substantially exceed the smaller combat clear bonus',()=>{
+  let previousClear=0,previousStealth=0;
   for(const floor of [1,10,31,60]){
     const advance=b.floorAdvanceAward(floor,30),clear=b.floorClearAward(floor,30);
     assert.ok(clear<advance);assert.ok(b.stealthAward(floor)>advance+clear);
+    assert.ok(clear>previousClear);assert.ok(b.stealthAward(floor)>previousStealth);
+    previousClear=clear;previousStealth=b.stealthAward(floor);
     assert.ok(advance<35+floor*18+30*5,'completion credits reduced versus old build');
   }
 });

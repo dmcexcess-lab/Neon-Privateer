@@ -41,7 +41,7 @@ PROFILES = {
   'LEDE': 'The credits are safe.<br>The gear you took underground is not.',
   'OVERVIEW': 'Deploy from Resistance HQ into sewer tunnels and a guarded archaeological dig. Sneak, fight, find credits and decide when to extract.',
   'LAUNCH_EYEBROW': 'THE ASCENT / TACTICAL SURVIVAL',
-  'READY_TEXT': 'Breach v1.2 online. Save/load and Sound Settings are in the game menu.',
+  'READY_TEXT': 'Breach v1.2.1 online. Save/load and Sound Settings are in the game menu.',
   'CLOSED_TEXT': 'Game closed. Saved credits, HQ storage and best floor stay in this browser. Use Save Game in the in-game menu to keep an active sortie.',
   'GUIDE_HEADING': 'Bring gear.<br>Bring it back.',
   'GUIDE': '<li><b>Enter HQ.</b> Move with WASD or arrows and press E at a station. On touch, use the movement stick and INTERACT.</li><li><b>Choose a route through the floor.</b> Move with WASD, aim with the mouse and click to attack. On touch, use the two sticks. Shift or C sneaks; F uses a carried repair kit. The menu has Save, Load and Sound Settings.</li><li><b>Read the radar.</b> M enlarges the map when radar is equipped. Sight lines and cover matter; enemies keep moving outside your view.</li><li><b>Extract or keep climbing.</b> Enter the EXFIL marker, then hold its larger ring for 8 seconds. Every hostile converges; leaving cancels the timer. Stairs continue the sortie. Death loses deployed equipment but keeps credits and HQ storage. Escape pauses.</li>',
