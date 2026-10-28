@@ -39,6 +39,10 @@ func _run() -> void:
         and player.playback_type == AudioServer.PLAYBACK_TYPE_STREAM,
         "imported song, looping, volume or streaming configuration invalid"):
         return
+    var chosen: String = soundtrack.NEON_CATHEDRAL_PATH if ResourceLoader.exists(soundtrack.NEON_CATHEDRAL_PATH) else soundtrack.TRACK_PATH
+    if not _check(soundtrack.selected_track_path == chosen,
+        "Classic did not prefer Neon Cathedral when the recording is installed"):
+        return
     var imported: AudioStreamOggVorbis = load("res://assets/audio/nineteen_steps.ogg")
     if not _check(imported.loop, "audio import lost its loop flag"):
         return
