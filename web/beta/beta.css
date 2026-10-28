@@ -30,3 +30,7 @@ body.playing-expanded{overflow:hidden;overscroll-behavior:none}
 .expanded-play .game-frame{height:calc(100% - 42px)!important;margin-top:42px}
 @media(orientation:portrait) and (max-width:700px){body[data-game-slug="neon-breach"] .expanded-play .landscape-hint{display:block}}
 @media(display-mode:standalone){.masthead{padding-top:max(12px,env(safe-area-inset-top))}}
+/* Privateer has a wide play area; keep the report underneath so the game
+   does not get squeezed into a narrow side column. */
+body[data-game-slug="neon-privateer"] .beta-layout{display:block}
+body[data-game-slug="neon-privateer"] .feedback{margin-top:24px}

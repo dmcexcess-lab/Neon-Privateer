@@ -195,9 +195,9 @@ Import resources on a fresh checkout first:
 
 ## Continuous soundtrack
 
-Neon Cathedral is now the designated theme for standalone Driftline. Its recording still needs to be supplied as `assets/audio/neon_cathedral.ogg`; the existing real Nineteen Steps Ogg is the interim fallback, and the controller automatically prefers Neon Cathedral once installed. This temporary fallback does not change the specified Neon Quartet assignment.
+Neon Cathedral 1986 is the designated theme for standalone Driftline and is installed as `assets/audio/neon_cathedral.ogg`. The controller uses it for the complete run and loops it through the title, research, shop, gameplay and death screens.
 
-**Nineteen Steps** plays from the Classic-only `Soundtrack` autoload at -11 dB.
+**Neon Cathedral 1986** plays from the Classic-only `Soundtrack` autoload at -11 dB.
 Its one dedicated streaming AudioStreamPlayer survives title/research/weapon
 research/shop/gameplay/pause/death screens, new runs, level changes and scene
 replacement. In-game pause leaves the music playing. The imported Ogg itself

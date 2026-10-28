@@ -359,7 +359,11 @@ game is embedded beneath the existing consent-based Adsterra strip; declining
 third-party ads leaves DMC Oddworks house promotions visible. The game frame
 cannot enter fullscreen. Classic remains at `/classic/` with its own controller.
 
-`Do Androids Dream` loops in the port/menus; `Nineteen Steps` loops in flight.
+Privateer cycles `Do Androids Dream`, `Nineteen Steps` and `Neon Cathedral 1986`
+through normal play. Prison switches the persistent player to `J-Space` until
+the sentence scene ends. The standalone games use `Do Androids Dream` for
+Firewall, `Neon Cathedral 1986` for Driftline Classic and `Nineteen Steps` for
+Breach.
 One persistent player remembers each song's position across context switches,
 keeps SFX independent and retries inactive playback on real user input.
 
