@@ -87,6 +87,9 @@ func _run() -> void:
     check(game.sim.snapshot()==snap,"pause freezes simulation")
     # Isolated user data directory supplied by the test runner.
     var stored=Game.new();stored.embedded=false;root.add_child(stored);stored.load_slot(3)
+    check(stored.music_player != null and stored.music_player.stream is AudioStreamOggVorbis and stored.music_player.stream.get_length() > 170.0,
+        "standalone Firewall must play the real Do Androids Dream recording")
+
     stored.configure(Game.default_profile(),777);stored.phase="RESEARCH";stored.buy_research("width");stored.start_new_run(123);stored.persist()
     var expected:int=stored.balance;var expected_run:Dictionary=stored.sim.snapshot()
     stored.load_slot(2);check(stored.balance==0,"empty profile is isolated")
