@@ -51,9 +51,24 @@ vm.runInNewContext(source+`
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
-  startPrivateerMission,finishPrivateerMission,setPrivateerContext(value){privateerContext=value}};
+  startPrivateerMission,finishPrivateerMission,enterPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
+  setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
+
+test('full spaceports support armed play and guards react to gunfire',()=>{
+  const context={mode:'spaceport',requestId:'port-test',seed:731,planetId:'p-port',planetName:'Test Port',archetype:'INDUSTRIAL',faction:'Test Security',loadout:{weapon:'auto_pistol'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  assert.equal(b.game.mode,'PORT');assert.equal(b.game.player.weapon,'auto_pistol');
+  const civilian=b.game.world.actors.find(actor=>actor.kind==='civilian');
+  civilian.x=b.game.player.x+50;civilian.y=b.game.player.y;civilian.hp=2;
+  b.makeBullet(b.game.player.x,b.game.player.y,0,'player',.75,440,'#fff',4);
+  b.updateBullets(.05);
+  assert.ok(civilian.hp<2,'player bullet damages a civilian inside the persistent port');
+  assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'a witnessed shooting alerts every living patrol');
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='assault_civilian'),'the full game receives the port crime');
+  b.setPrivateerContext(null);
+});
 
 test('Privateer mission approaches have distinct rules and contract rewards',()=>{
   b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});

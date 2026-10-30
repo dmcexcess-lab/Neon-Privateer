@@ -486,7 +486,7 @@ func _open_breach_spaceport() -> bool:
             "planetName": _planet_display_name(current_planet),
             "archetype": _planet_type(current_planet),
             "faction": _contract_issuer_name(faction_id),
-            "loadout": {"weapon": "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
+            "loadout": {"weapon": "auto_pistol" if bool(covert_profile.get("gear", {}).get("pistol", false)) else "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
         }
     }
     JavaScriptBridge.eval("window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(payload), false)
@@ -555,11 +555,16 @@ func _on_breach_web_message(args: Array) -> void:
             _save_all_state()
         "dmc-privateer-port-result":
             _close_breach_spaceport_request()
-            if String(detail.get("outcome", "")) == "arrested":
+            var port_outcome := String(detail.get("outcome", ""))
+            if port_outcome == "arrested":
                 var arrest_faction_id := _planet_primary_faction(current_planet)
                 if not arrest_faction_id.is_empty():
                     Justice.record(covert_profile.justice, arrest_faction_id, "spaceport_arrest", 3)
                     covert_profile.justice.forced_faction = arrest_faction_id
+                last_trip_summary = "Arrested by spaceport security"
+                _save_all_state()
+            elif port_outcome == "hospitalized":
+                last_trip_summary = "Dropped by spaceport security and evacuated to the ship"
                 _save_all_state()
     queue_redraw()
 

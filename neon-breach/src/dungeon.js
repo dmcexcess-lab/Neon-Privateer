@@ -351,27 +351,32 @@ export function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPO
     FROZEN:{id:'maintenance',color:'#142e3f',edge:'#79dcff'},
     INDUSTRIAL:{id:'hq',color:'#202c37',edge:'#f9cc70'}
   }[String(archetype).toUpperCase()]||{id:'hq',color:'#202c37',edge:'#5af0ff'};
-  const jitter=()=>rng.range(-38,38);
+  // Keep the port recognizable per planet without allowing randomized district
+  // edges to pull apart far enough to sever a pedestrian connection.
+  const jitter=(amount=12)=>rng.range(-amount,amount);
   const blocks=[
-    {name:'landing concourse',x:-310+jitter(),y:-250+jitter(),w:620,h:500},
-    {name:'market arcade',x:225+jitter(),y:-205+jitter(),w:555,h:420},
-    {name:'administration',x:-770+jitter(),y:-195+jitter(),w:545,h:390},
-    {name:'transit spine',x:-270+jitter(),y:-700+jitter(),w:550,h:520},
-    {name:'service quarter',x:-250+jitter(),y:190+jitter(),w:520,h:430},
-    {name:'back alleys',x:205+jitter(),y:190+jitter(),w:540,h:410}
+    {name:'landing concourse',x:-450+jitter(),y:-350+jitter(),w:900,h:700},
+    {name:'market arcade',x:350+jitter(),y:-400+jitter(),w:1000,h:800},
+    {name:'administration ward',x:-1350+jitter(),y:-400+jitter(),w:1000,h:800},
+    {name:'transit & landing ring',x:-500+jitter(),y:-1200+jitter(),w:1000,h:950},
+    {name:'service boulevard',x:-500+jitter(),y:250+jitter(),w:1000,h:1000},
+    {name:'back alleys',x:-1350+jitter(),y:250+jitter(),w:950,h:950},
+    {name:'nightlife quarter',x:400+jitter(),y:250+jitter(),w:950,h:1000},
+    {name:'freight & customs',x:1250+jitter(),y:-250+jitter(),w:800,h:900},
+    {name:'lower promenade',x:-350+jitter(),y:1150+jitter(),w:1100,h:750}
   ];
   const rooms=blocks.map((b,id)=>({id,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.x+b.w/2,cy:b.y+b.h/2,
     rx:b.w/2,ry:b.h/2,module:b.name,tileset:profile.id,approach:0,neighbors:[],visited:true,
     cleared:true,opened:true,spawned:true,depth:0,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[]}));
   const stations=[
-    {id:'return',service:'return',x:0,y:-540,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
-    {id:'trade',service:'trade',x:520,y:-35,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
-    {id:'bank',service:'bank',x:-560,y:-25,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
-    {id:'contracts',service:'contracts',x:-80,y:430,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
-    {id:'upgrades',service:'upgrades',x:120,y:430,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
-    {id:'careers',service:'careers',x:-535,y:-155,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
-    {id:'terminal',service:'terminal',x:340,y:330,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
-    {id:'alley',service:'alley',x:620,y:430,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
+    {id:'return',service:'return',x:0,y:-930,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
+    {id:'trade',service:'trade',x:1120,y:40,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
+    {id:'bank',service:'bank',x:-1050,y:50,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
+    {id:'contracts',service:'contracts',x:-230,y:900,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
+    {id:'upgrades',service:'upgrades',x:230,y:900,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
+    {id:'careers',service:'careers',x:-1080,y:-120,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
+    {id:'terminal',service:'terminal',x:1100,y:900,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
+    {id:'alley',service:'alley',x:-1080,y:850,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];
   const names=['Mara','Kest','Ivo','Sable','Rin','Juno','Vale','Tarn','Orr','Nyx'];
   const rumors=[
@@ -382,36 +387,61 @@ export function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPO
     'A local captain wants armed help and does not care who notices.',
     'Someone is buying restricted tech through the service quarter.'
   ];
+  const structures=[
+    {id:'cafe',name:'SUNRISE CAFE',kind:'cafe',room:2,x:-1270,y:-340,w:430,h:300,door:'south',color:'#ffd66b'},
+    {id:'market',name:'NIGHT MARKET',kind:'market',room:1,x:590,y:-330,w:430,h:310,door:'south',color:'#75ffb0'},
+    {id:'bar',name:'DOCKSIDE BAR',kind:'bar',room:6,x:500,y:350,w:380,h:320,door:'north',color:'#ff9f55'},
+    {id:'club',name:'PULSE CLUB',kind:'club',room:6,x:900,y:720,w:370,h:390,door:'west',color:'#ff60bd'},
+    {id:'lodge',name:'CREW LODGE',kind:'lodge',room:8,x:-220,y:1330,w:450,h:370,door:'north',color:'#b6c8ff'}
+  ];
+  for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
+    label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
   const actors=[];
-  for(let i=0;i<7;i++){
-    const room=rooms[rng.int(0,rooms.length-1)];
-    actors.push({id:`npc-${i}`,kind:'civilian',name:names[rng.int(0,names.length-1)],x:room.cx+jitter(),y:room.cy+jitter(),
-      home:{x:room.cx,y:room.cy},target:{x:room.cx+jitter(),y:room.cy+jitter()},speed:rng.range(23,38),
-      rumor:rumors[rng.int(0,rumors.length-1)],mission:i<3?{
-        style:['stealth','hot','choice'][i],kind:['evidence theft','raid','recovery'][i],difficulty:rng.int(1,4)
-      }:null});
-  }
-  for(let i=0;i<3;i++){
-    const room=rooms[(i*2+1)%rooms.length];
-    actors.push({id:`guard-${i}`,kind:'guard',name:`${faction} PATROL ${i+1}`,x:room.cx,y:room.cy,
-      home:{x:room.cx,y:room.cy},target:{x:rooms[(i*2+3)%rooms.length].cx,y:rooms[(i*2+3)%rooms.length].cy},speed:48,alert:false});
-  }
   const world={floor:0,seed:Number(seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
-    shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,isHQ:true,isSpaceport:true,crime:{heat:0,witnessed:false}};
+    shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,crime:{heat:0,witnessed:false}};
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
     const o=overlap(rooms[i],rooms[j]);if(o.w<60||o.h<60)continue;
     world.links.push({a:i,b:j,via:{x:(o.minX+o.maxX)/2,y:(o.minY+o.maxY)/2},width:Math.min(o.w,o.h)*.5});
     rooms[i].neighbors.push(j);rooms[j].neighbors.push(i);
   }
   buildIndex(world);prepareWalls(world);
+  const wall=(room,x,y,w,h)=>room.cover.push({x,y,w,h,kind:'interior wall',hp:99999,maxHp:99999,structural:true});
+  for(const venue of structures){
+    const room=rooms[venue.room],t=22,gap=104,cx=venue.x+venue.w/2,cy=venue.y+venue.h/2;
+    if(venue.door==='north'){
+      wall(room,venue.x+venue.w*.25-gap*.25,venue.y+t/2,venue.w/2-gap/2,t);wall(room,venue.x+venue.w*.75+gap*.25,venue.y+t/2,venue.w/2-gap/2,t);
+    }else wall(room,cx,venue.y+t/2,venue.w,t);
+    if(venue.door==='south'){
+      wall(room,venue.x+venue.w*.25-gap*.25,venue.y+venue.h-t/2,venue.w/2-gap/2,t);wall(room,venue.x+venue.w*.75+gap*.25,venue.y+venue.h-t/2,venue.w/2-gap/2,t);
+    }else wall(room,cx,venue.y+venue.h-t/2,venue.w,t);
+    if(venue.door==='west'){
+      wall(room,venue.x+t/2,venue.y+venue.h*.25-gap*.25,t,venue.h/2-gap/2);wall(room,venue.x+t/2,venue.y+venue.h*.75+gap*.25,t,venue.h/2-gap/2);
+    }else wall(room,venue.x+t/2,cy,t,venue.h);
+    if(venue.door==='east'){
+      wall(room,venue.x+venue.w-t/2,venue.y+venue.h*.25-gap*.25,t,venue.h/2-gap/2);wall(room,venue.x+venue.w-t/2,venue.y+venue.h*.75+gap*.25,t,venue.h/2-gap/2);
+    }else wall(room,venue.x+venue.w-t/2,cy,t,venue.h);
+  }
   const furniture=[
-    {room:1,x:690,y:-120,w:60,h:44,kind:'market kiosk'},
-    {room:2,x:-690,y:105,w:54,h:46,kind:'customs desk'},
-    {room:4,x:155,y:515,w:48,h:42,kind:'console'},
-    {room:5,x:690,y:265,w:62,h:52,kind:'supply crate'}
+    {room:2,x:-1160,y:-230,w:74,h:36,kind:'cafe counter'},{room:2,x:-980,y:-220,w:42,h:42,kind:'cafe table'},
+    {room:1,x:700,y:-210,w:62,h:42,kind:'market kiosk'},{room:1,x:900,y:-210,w:62,h:42,kind:'market kiosk'},
+    {room:6,x:620,y:500,w:94,h:34,kind:'bar counter'},{room:6,x:790,y:500,w:40,h:40,kind:'bar table'},
+    {room:6,x:1180,y:980,w:72,h:54,kind:'club booth'},{room:8,x:120,y:1500,w:58,h:46,kind:'lodge desk'},
+    {room:7,x:1700,y:120,w:74,h:58,kind:'supply crate'},{room:5,x:-850,y:650,w:62,h:52,kind:'supply crate'}
   ];
   for(const obj of furniture)rooms[obj.room].cover.push({...obj,hp:999,maxHp:999});
+  for(let i=0;i<18;i++){
+    const room=rooms[rng.int(0,rooms.length-1)],pos=randomSpot(world,room,rng,18),target=randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
+    actors.push({id:`npc-${i}`,kind:'civilian',name:names[rng.int(0,names.length-1)],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
+      home:{x:pos.x,y:pos.y},target,speed:rng.range(23,39),rumor:rumors[rng.int(0,rumors.length-1)],mission:i<6?{
+        style:['stealth','hot','choice'][i%3],kind:['evidence theft','raid','recovery'][i%3],difficulty:rng.int(1,4)
+      }:null});
+  }
+  for(let i=0;i<6;i++){
+    const room=rooms[(i*2+1)%rooms.length],pos=randomSpot(world,room,rng,18),target=randomSpot(world,rooms[(i*2+3)%rooms.length],rng,18);
+    actors.push({id:`guard-${i}`,kind:'guard',name:`${faction} PATROL ${i+1}`,x:pos.x,y:pos.y,r:16,hp:5,maxHp:5,
+      home:{x:pos.x,y:pos.y},target,speed:52,alert:false,cool:rng.range(0,.8)});
+  }
   return world;
 }
 

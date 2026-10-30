@@ -122,13 +122,28 @@ for(const station of hq.stations)assert.ok(walkable(hq,station.x,station.y,16),`
 for(const connection of hq.links)assert.ok(walkable(hq,connection.via.x,connection.via.y,18),'HQ corridors must stay open');
 const port=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
 const samePort=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
-assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,6);assert.equal(port.stations.length,8);
-assert.equal(port.actors.filter(a=>a.kind==='civilian').length,7);assert.equal(port.actors.filter(a=>a.kind==='guard').length,3);
+assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.equal(port.stations.length,13);
+assert.equal(port.actors.filter(a=>a.kind==='civilian').length,18);assert.equal(port.actors.filter(a=>a.kind==='guard').length,6);
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
 assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
-assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice'],'spontaneous missions expose every approach');
+assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
+assert.deepEqual(port.structures.map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains several public buildings');
+assert.equal(port.stations.filter(s=>s.service==='venue').length,port.structures.length,'each public building has a physical venue interaction');
+const bounds={minX:Math.min(...port.rooms.map(r=>r.x)),maxX:Math.max(...port.rooms.map(r=>r.x+r.w)),minY:Math.min(...port.rooms.map(r=>r.y)),maxY:Math.max(...port.rooms.map(r=>r.y+r.h))};
+assert.ok(bounds.maxX-bounds.minX>3200&&bounds.maxY-bounds.minY>2900,'spaceport is a full urban map, not a small menu room');
+const reached=new Set([0]),frontier=[0];
+while(frontier.length)for(const neighbor of port.rooms[frontier.shift()].neighbors)if(!reached.has(neighbor)){reached.add(neighbor);frontier.push(neighbor);}
+assert.equal(reached.size,port.rooms.length,'every district connects to the rest of the port');
+for(const structure of port.structures){
+  const walls=port.rooms[structure.room].cover.filter(o=>o.structural);
+  assert.ok(walls.length>=5,`${structure.name} has its own interior walls`);
+  assert.ok(!walkable(port,walls[0].x,walls[0].y,5),`${structure.name} walls block movement and shots`);
+  const cx=structure.x+structure.w/2,cy=structure.y+structure.h/2;
+  const doorway=structure.door==='north'?[cx,structure.y+8]:structure.door==='south'?[cx,structure.y+structure.h-8]:structure.door==='west'?[structure.x+8,cy]:[structure.x+structure.w-8,cy];
+  assert.ok(walkable(port,doorway[0],doorway[1],5),`${structure.name} doorway remains open`);
+}
 for(const station of port.stations)assert.ok(walkable(port,station.x,station.y,16),`${station.id} spaceport service must be reachable`);
 for(const connection of port.links)assert.ok(walkable(port,connection.via.x,connection.via.y,18),'spaceport corridors must stay open');
 assert.ok(lateGuards>=3700 && lateZ>=3000 && lateZ<=4400,`lower maintenance should mix zombies and guards: ${lateGuards}, ${lateZ}`);

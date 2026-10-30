@@ -105,7 +105,9 @@ function updateUI(){
    meter.style.width=(working?(game.player.reloadClock>0?1-game.player.reloadClock/Math.max(.1,game.player.reloadTotal):1-game.player.pumpClock/Math.max(.1,game.player.pumpTotal))*100:0)+'%';
    meter.style.background=game.player.reloadClock>0?'#f9cc70':'#ffa969';
  }
- $('location').textContent=`${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`;
+ $('location').textContent=game.world.isSpaceport?
+   `${game.world.planetName} SPACEPORT · ${game.world.actors.filter(a=>!a.down).length} LOCALS · HEAT ${game.world.crime.heat}`:
+   `${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`;
 }
 function enterHQ(message='FIELD LOADOUT READY'){
   if(game.profile.unlockedFloor>1)saveProfile();
@@ -139,9 +141,12 @@ function makeFieldPlayer(loadout={}){
 function enterPrivateerPort(context){
   hiddenScreens();game.world=createSpaceportWorld(context);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
   game.player=makeFieldPlayer(context.loadout||{});game.hqStation=null;game.portClock=0;
-  camera.x=0;camera.y=0;show('hud',false);show('location',true);show('touchUI',true);show('aimTip',false);show('hqPrompt',false);show('hqMenuButton',false);
-  document.body?.classList.toggle('hq-mode',true);
+  camera.x=0;camera.y=0;show('hud',true);show('location',true);show('touchUI',true);show('aimTip',true);show('hqPrompt',false);show('hqMenuButton',false);
+  // A port uses the field-combat HUD and phone aim/draw controls. HQ mode
+  // deliberately hides those controls, so it must not leak into this scene.
+  document.body?.classList.toggle('hq-mode',false);
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
+  updateUI();
   announce('SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
@@ -168,7 +173,20 @@ function finishPrivateerMission(outcome){
 }
 function nearbyPortActor(){
   if(!game.world?.isSpaceport)return null;
-  return game.world.actors.find(a=>!a.robbed&&Math.hypot(game.player.x-a.x,game.player.y-a.y)<76)||null;
+  return game.world.actors.find(a=>!a.robbed&&!a.down&&Math.hypot(game.player.x-a.x,game.player.y-a.y)<76)||null;
+}
+function reportPortCrime(offense,severity,cash=0,witnessed=true){
+  game.world.crime.heat+=severity*4;game.world.crime.witnessed ||= witnessed;
+  for(const guard of game.world.actors.filter(a=>a.kind==='guard'&&!a.down))guard.alert=true;
+  privateerMessage('dmc-privateer-crime',{offense,severity,cash,witnessed});updateUI();
+}
+function damagePortActor(actor,damage){
+  if(!actor||actor.down)return false;
+  actor.hp=Math.max(0,actor.hp-damage);actor.flash=.18;
+  burst(actor.x,actor.y,actor.kind==='guard'?C.cyan:C.red,7,.35);
+  if(!actor.assaultReported){actor.assaultReported=true;reportPortCrime(actor.kind==='guard'?'assault_security':'assault_civilian',actor.kind==='guard'?5:4,0,true);}
+  if(actor.hp<=0){actor.down=true;announce(`${actor.name} DOWN · SECURITY RESPONSE ESCALATED`,2.5);}
+  return true;
 }
 function interactPort(){
   if(game.mode!=='PORT')return false;
@@ -176,6 +194,7 @@ function interactPort(){
   if(station){
     if(station.service==='terminal')privateerMessage('dmc-privateer-terminal',{terminal:'spaceport',seed:game.world.seed});
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
+    else if(station.service==='venue')announce(`${station.venue} · LOCALS, RUMORS AND MISSION CONTACTS INSIDE`,3);
     else privateerMessage('dmc-privateer-service',{service:station.service});
     return true;
   }
@@ -200,19 +219,39 @@ function interactPort(){
 }
 function updatePort(dt){
   const p=game.player,control=captureInputs();
+  game.portClock=(game.portClock||0)+dt;
+  p.invuln=Math.max(0,p.invuln-dt);p.cool=Math.max(0,p.cool-dt);p.punchTimer=Math.max(0,p.punchTimer-dt);updateWeaponTimers(dt);
   moveWithCollisions(p,control.mx*p.speed*(p.sneaking?.62:1)*dt,control.my*p.speed*(p.sneaking?.62:1)*dt,p.r);
-  if(Math.hypot(control.mx,control.my)>.25)p.facing=Math.atan2(control.my,control.mx);
+  if(Math.hypot(control.ax,control.ay)>.01)p.facing=Math.atan2(control.ay,control.ax);
+  else if(Math.hypot(control.mx,control.my)>.25)p.facing=Math.atan2(control.my,control.mx);
+  const queuedPress=inputs.shotgunPendingPresses>0&&p.weaponDrawn!==false;if(queuedPress)inputs.shotgunPendingPresses--;
+  const triggerPress=queuedPress||(control.shoot&&!inputs.shotgunTriggerHeld);inputs.shotgunTriggerHeld=control.shoot;
+  let fired=false;
+  if(p.weapon==='shotgun')fired=triggerPress&&(p.cool<=0||p.pumpNeeded)?shootPlayer(p.facing):false;
+  else if(control.shoot&&p.cool<=0)fired=shootPlayer(p.facing);
+  if(fired==='fire'&&game.portClock-(game.world.crime.lastDischarge||-99)>1.5){game.world.crime.lastDischarge=game.portClock;reportPortCrime('weapons_discharge',2,0,true);}
   for(const actor of game.world.actors){
-    if(actor.robbed&&actor.kind==='civilian')continue;
+    if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
     if(actor.kind==='guard'&&actor.alert)actor.target={x:p.x,y:p.y};
     const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
     if(d<18){
       const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};
-    }else moveWithCollisions(actor,dx/d*actor.speed*dt,dy/d*actor.speed*dt,13);
+    }else{
+      const beforeX=actor.x,beforeY=actor.y;moveWithCollisions(actor,dx/d*actor.speed*dt,dy/d*actor.speed*dt,13);
+      actor.stall=Math.hypot(actor.x-beforeX,actor.y-beforeY)<.05?(actor.stall||0)+dt:0;
+      if(actor.stall>1.4){const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)],spot=randomSpot(game.world,room,game.world.rng,18);actor.target=spot;actor.stall=0;}
+    }
+    if(actor.kind==='guard'&&actor.alert){
+      actor.cool=Math.max(0,(actor.cool||0)-dt);actor.facing=Math.atan2(p.y-actor.y,p.x-actor.x);
+      if(d<510&&d>70&&actor.cool<=0&&clearSight(game.world,actor.x,actor.y,p.x,p.y)){
+        makeBullet(actor.x,actor.y,actor.facing,'enemy',.75,440,C.cyan,4);actor.cool=1.1;weaponShot('revolver');
+      }
+    }
     if(actor.kind==='guard'&&actor.alert&&Math.hypot(actor.x-p.x,actor.y-p.y)<42){
       privateerMessage('dmc-privateer-port-result',{outcome:'arrested',heat:game.world.crime.heat});actor.alert=false;announce('SECURITY DETAINED YOU · RETURNING TO LEGAL REVIEW',3);
     }
   }
+  updateBullets(dt);updateParticles(dt);
   camera.x+=(p.x-camera.x)*Math.min(1,dt*8);camera.y+=(p.y-camera.y)*Math.min(1,dt*8);updateHQPrompt();
 }
 function nearbyStation(){
@@ -409,15 +448,19 @@ function emitNoise(x,y,volume=1){
   }
 }
 function playerDamage(amount){
-  const p=game.player;if(game.mode!=='PLAY'||p.invuln>0)return;
+  const p=game.player;if(!['PLAY','PORT'].includes(game.mode)||p.invuln>0)return;
   p.invuln=.86;
   if(Math.random()<p.armor){announce('ARMOR DEFLECTED',.8);playSound('hit');return;}
-  game.detectedThisFloor=true;p.hp=Math.max(0,p.hp-amount);game.shake=12;game.flashed=.27;
+  if(game.mode==='PLAY')game.detectedThisFloor=true;p.hp=Math.max(0,p.hp-amount);game.shake=12;game.flashed=.27;
   playSound('hurt');burst(p.x,p.y,C.red,12);updateUI();
   if(p.hp<=0)die();
 }
 function die(){
   game.extraction=null;game.exitClock=0;
+  if(game.mode==='PORT'){
+    privateerMessage('dmc-privateer-port-result',{outcome:'hospitalized',heat:game.world.crime.heat});
+    game.player.hp=game.player.maxHp;game.player.invuln=2;game.bullets=[];announce('PORT SECURITY DROPPED YOU · EMERGENCY EXTRACTION',3);return;
+  }
   finishPrivateerMission('captured');
   game.mode='DEAD';show('death',true);show('touchUI',false);show('aimTip',false);
   game.loadout=emptyLoadout();saveProfile();
@@ -644,7 +687,7 @@ function punchFurniture(p,angle,reach,arc,damage){
 // No manual reload action exists: this function accepts EMPTY magazines only.
 // Reserve ammunition is unlimited, and weapons reload immediately after the final shot.
 function startReload(){
-  const p=game.player;if(game.mode!=='PLAY'||!p)return false;
+  const p=game.player;if(!['PLAY','PORT'].includes(game.mode)||!p)return false;
   const w=WEAPONS[p.weapon];
   if(!w.magazine||p.reloadClock>0||p.magazines?.[p.weapon]!==0)return false;
   p.reloadWeapon=p.weapon;p.pumpClock=0;p.pumpNeeded=false;
@@ -690,7 +733,7 @@ function updateWeaponTimers(dt){
   }
 }
 function toggleWeaponDraw(){
-  if(game.mode!=='PLAY'||!game.player)return false;
+  if(!['PLAY','PORT'].includes(game.mode)||!game.player)return false;
   game.player.weaponDrawn=game.player.weaponDrawn===false;
   inputs.mouse.down=false;inputs.aim={x:0,y:0};inputs.keys.delete('Space');
   inputs.shotgunPendingPresses=0;inputs.shotgunTriggerHeld=false;
@@ -720,6 +763,11 @@ function shootPlayer(angle){
     else p.swingHand=1; // Knife stays in the right hand, one-handed like the original punch.
     p.punchTimer=w.cooldown*.75;
     const reach=p.weapon==='knife'?70:45,arc=p.weapon==='knife'?1.05:.92;
+    const portTargets=game.mode==='PORT'?game.world.actors.filter(actor=>!actor.down&&Math.hypot(actor.x-p.x,actor.y-p.y)<actor.r+p.r+reach&&
+      Math.abs(angleDifference(Math.atan2(actor.y-p.y,actor.x-p.x),angle))<arc&&clearSight(game.world,p.x,p.y,actor.x,actor.y)):[];
+    if(portTargets.length){
+      portTargets.sort((a,b)=>distance(p,a)-distance(p,b));damagePortActor(portTargets[0],w.damage*p.damage);melee(p.weapon,p.swingHand===0);return 'melee';
+    }
     const hits=game.enemies.filter(e=>{
       const d=Math.hypot(e.x-p.x,e.y-p.y);
       return d<e.r+p.r+reach && Math.abs(angleDifference(Math.atan2(e.y-p.y,e.x-p.x),angle))<arc
@@ -1045,6 +1093,15 @@ function updateBullets(dt){
         const p=game.player;
         if(Math.hypot(b.x-p.x,b.y-p.y)<p.r+b.r){playerDamage(b.damage);burst(b.x,b.y,b.color,4);destroyed=true;}
       }else{
+        if(game.mode==='PORT')for(const actor of game.world.actors){
+          if(actor.down||b.hitIds.has(actor.id))continue;
+          if(Math.hypot(b.x-actor.x,b.y-actor.y)<actor.r+b.r){
+            b.hitIds.add(actor.id);damagePortActor(actor,b.damage);
+            if(b.pierce>0)b.pierce--;else destroyed=true;
+            break;
+          }
+        }
+        if(destroyed)break;
         for(const e of game.enemies){
           if(b.hitIds.has(e.id))continue;
           if(Math.hypot(b.x-e.x,b.y-e.y)<e.r+b.r){
@@ -1278,7 +1335,12 @@ function drawRoom(room){
     ctx.shadowColor=ink;ctx.shadowBlur=5;
     ctx.fillRect(px,py,o.w,o.h);ctx.strokeRect(px,py,o.w,o.h);ctx.shadowBlur=0;
     const f=o.kind;
-    if(f==='rusted drum'||f==='valve'||f==='artifact plinth'){
+    if(f==='interior wall'){
+      ctx.fillStyle='#101d29';ctx.fillRect(px,py,o.w,o.h);
+      ctx.strokeStyle=ink;ctx.lineWidth=2;ctx.strokeRect(px,py,o.w,o.h);
+      if(o.w>o.h)line(px+8,o.y,px+o.w-8,o.y,ink,1);
+      else line(o.x,py+8,o.x,py+o.h-8,ink,1);
+    }else if(f==='rusted drum'||f==='valve'||f==='artifact plinth'){
       ctx.beginPath();ctx.ellipse(o.x,o.y,o.w*.30,o.h*.29,0,0,TAU);ctx.stroke();
       line(o.x-7,o.y,o.x+7,o.y,ink,1);
     }else if(f==='console'||f==='display case'){
@@ -1317,6 +1379,15 @@ function drawRoom(room){
     ctx.font='700 12px ui-monospace,monospace';ctx.fillText(active?'HOLD THE RING // ALL HOSTILES ALERT':'ENTER MARKER // HOLD 8s TO EXFIL',x,y+132);
   }
 }
+function drawPortStructureFloors(){
+  if(!game.world?.isSpaceport)return;
+  for(const venue of game.world.structures||[]){
+    ctx.save();ctx.fillStyle='#07141dcc';ctx.fillRect(venue.x+12,venue.y+12,venue.w-24,venue.h-24);
+    ctx.strokeStyle=venue.color;ctx.lineWidth=1.5;ctx.setLineDash([8,7]);ctx.globalAlpha=.5;ctx.strokeRect(venue.x+14,venue.y+14,venue.w-28,venue.h-28);ctx.setLineDash([]);
+    ctx.globalAlpha=1;ctx.fillStyle=venue.color;ctx.textAlign='center';ctx.font='900 14px ui-monospace,monospace';ctx.fillText(venue.name,venue.x+venue.w/2,venue.y+38);
+    ctx.font='700 10px ui-monospace,monospace';ctx.fillText(`${venue.kind.toUpperCase()} · PUBLIC INTERIOR`,venue.x+venue.w/2,venue.y+56);ctx.restore();
+  }
+}
 function drawHQStations(){
   const p=game.player;
   for(const station of game.world.stations){
@@ -1342,21 +1413,25 @@ function drawHQStations(){
 function drawPortActors(){
   if(!game.world?.isSpaceport)return;
   for(const actor of game.world.actors){
-    if(actor.robbed&&actor.kind==='civilian')continue;
-    const guard=actor.kind==='guard',color=guard?(actor.alert?C.red:C.cyan):C.green;
+    if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
+    const guard=actor.kind==='guard',color=actor.flash>0?'#ffffff':guard?(actor.alert?C.red:C.cyan):C.green;actor.flash=Math.max(0,(actor.flash||0)-.025);
     ctx.save();ctx.translate(actor.x,actor.y);ctx.fillStyle=guard?'#17384c':'#163c34';ctx.strokeStyle=color;ctx.lineWidth=2.5;
     ctx.beginPath();ctx.arc(0,0,guard?16:13,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=color;ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(guard?'SEC':'NPC',0,4);
-    if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.fillText('!',0,-24);}ctx.restore();
+    if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.fillText('!',0,-24);}
+    if(actor.hp<actor.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(-18,-25,36,3);ctx.fillStyle=color;ctx.fillRect(-18,-25,36*clamp(actor.hp/actor.maxHp,0,1),3);}ctx.restore();
   }
 }
 function drawHQDirectory(){
   const size=Math.min(144,SW*.38),x=SW-size-12,y=SW<600?20:22;
-  const minX=-750,minY=-680,worldW=1490,worldH=1280,scale=(size-18)/worldW;
+  const minX=Math.min(...game.world.rooms.map(r=>r.x))-70,minY=Math.min(...game.world.rooms.map(r=>r.y))-70;
+  const maxX=Math.max(...game.world.rooms.map(r=>r.x+r.w))+70,maxY=Math.max(...game.world.rooms.map(r=>r.y+r.h))+70;
+  const worldW=maxX-minX,worldH=maxY-minY,scale=(size-18)/Math.max(worldW,worldH);
   ctx.save();ctx.fillStyle='rgba(5,18,31,.91)';ctx.fillRect(x-5,y-5,size+10,size*worldH/worldW+36);
   ctx.strokeStyle='#397b88';ctx.lineWidth=1;ctx.strokeRect(x-5,y-5,size+10,size*worldH/worldW+36);
   ctx.textAlign='left';ctx.fillStyle='#75c9d7';ctx.font='800 10px ui-monospace,monospace';ctx.fillText(game.world.isSpaceport?'SPACEPORT DIRECTORY':'HQ DIRECTORY',x+2,y+9);
   const X=(wx)=>x+9+(wx-minX)*scale,Y=(wy)=>y+18+(wy-minY)*scale;
   for(const r of game.world.rooms){ctx.fillStyle='#163b4a';ctx.fillRect(X(r.x),Y(r.y),r.w*scale,r.h*scale);}
+  for(const venue of game.world.structures||[]){ctx.strokeStyle=venue.color;ctx.lineWidth=1;ctx.strokeRect(X(venue.x),Y(venue.y),venue.w*scale,venue.h*scale);}
   for(const s of game.world.stations){ctx.fillStyle=s.color;ctx.fillRect(X(s.x)-3,Y(s.y)-3,6,6);}
   ctx.fillStyle=C.cyan;ctx.beginPath();ctx.arc(X(game.player.x),Y(game.player.y),4.5,0,TAU);ctx.fill();ctx.restore();
 }
@@ -1535,6 +1610,7 @@ function render(){
   const shakeX=game.shake?rand(-game.shake,game.shake):0,shakeY=game.shake?rand(-game.shake,game.shake):0;
   ctx.translate(SW/2+shakeX,SH/2+shakeY);ctx.scale(zoom,zoom);ctx.translate(-camera.x,-camera.y);
   drawCorridors();
+  drawPortStructureFloors();
   for(const room of game.world.rooms){
     const sx=(room.x-camera.x)*zoom+SW/2,sy=(room.y-camera.y)*zoom+SH/2;
     if(sx>SW+300||sy>SH+300||sx+room.w*zoom< -300||sy+room.h*zoom < -300)continue;
@@ -1579,7 +1655,7 @@ canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'){inputs.mou
 // Mouse events report each button separately, including left/right chords;
 // pointerup only fires when the final mouse button is released.
 canvas.addEventListener('mousedown',e=>{
-  if(game.mode!=='PLAY'||(e.button!==0&&e.button!==2))return;
+  if(!['PLAY','PORT'].includes(game.mode)||(e.button!==0&&e.button!==2))return;
   if(e.button===2){e.preventDefault();inputs.mouse.stealthHeld=true;}
   else{inputs.shotgunPendingPresses++;inputs.mouse.down=true;}
   inputs.mouse.x=e.clientX;inputs.mouse.y=e.clientY;inputs.mouse.valid=true;
@@ -1600,12 +1676,12 @@ addEventListener('keydown',e=>{
   if(!e.repeat&&game.mode==='TRAVEL'&&e.code==='Escape'){closeTravel();return;}
   if(!e.repeat&&game.mode==='SETTINGS'&&e.code==='Escape'){closeSettings();return;}
   if(!e.repeat&&game.mode==='HQ'&&e.code==='Escape'){togglePause();return;}
-  if(!e.repeat&&game.mode==='PORT'&&e.code==='KeyH'){game.player.weaponDrawn=!game.player.weaponDrawn;game.hqStation=null;updateHQPrompt();announce(game.player.weaponDrawn?'WEAPON DRAWN · SECURITY MAY REACT':'WEAPON HOLSTERED',1.6);return;}
+  if(!e.repeat&&game.mode==='PORT'&&e.code==='KeyH'){toggleWeaponDraw();game.hqStation=null;updateHQPrompt();announce(game.player.weaponDrawn?'WEAPON DRAWN · SECURITY MAY REACT':'WEAPON HOLSTERED',1.6);return;}
   if(!e.repeat&&(e.code==='Escape'||e.code==='KeyP')){if(game.mode==='PLAY'||game.mode==='PAUSE')togglePause();return;}
   if(!e.repeat&&e.code==='KeyM'&&game.mode==='PLAY'&&game.player?.map){inputs.map=!inputs.map;return;}
   if(!e.repeat&&e.code==='KeyH'&&game.mode==='PLAY'){toggleWeaponDraw();return;}
   if(!e.repeat&&e.code==='KeyF'&&game.mode==='PLAY'){useMedkit();return;}
-  if(!e.repeat&&e.code==='Space'&&game.mode==='PLAY')inputs.shotgunPendingPresses++;
+  if(!e.repeat&&e.code==='Space'&&['PLAY','PORT'].includes(game.mode))inputs.shotgunPendingPresses++;
   if(!e.repeat&&e.code==='KeyC'&&game.mode==='PLAY'){inputs.sneakTouch=!inputs.sneakTouch;document.getElementById('sneakButton').classList.toggle('active',!!inputs.sneakTouch);return;}
   inputs.keys.add(e.code);
 });
