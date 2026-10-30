@@ -212,6 +212,7 @@ var firewall_profile: Dictionary = FirewallGame.default_profile()
 var breach_web_callback
 var breach_spaceport_requested := false
 var breach_arrival_serial := 0
+var breach_port_security_alert := false
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -486,6 +487,7 @@ func _open_breach_spaceport() -> bool:
             "requestId": "%d:%s" % [active_career_slot, current_planet],
             "seed": abs(world_seed ^ hash(current_planet)),
             "arrivalSeed": arrival_seed,
+            "securityAlert": breach_port_security_alert,
             "planetId": current_planet,
             "planetName": _planet_display_name(current_planet),
             "archetype": _planet_type(current_planet),
@@ -494,6 +496,7 @@ func _open_breach_spaceport() -> bool:
         }
     }
     JavaScriptBridge.eval("window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(payload), false)
+    breach_port_security_alert = false
     breach_spaceport_requested = true
     return true
 
@@ -531,8 +534,8 @@ func _on_breach_web_message(args: Array) -> void:
         "dmc-privateer-terminal":
             _close_breach_spaceport_request()
             if _open_firewall():
-                firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)))
-                firewall.notice = "PHYSICAL TERMINAL // CLEAR ONE SECURITY LAYER"
+                firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)), int(detail.get("difficulty", 1)), String(detail.get("terminal", "spaceport")), bool(detail.get("hidden", false)))
+                firewall.notice = "PHYSICAL TERMINAL // BREACH BEFORE THE TRACE COMPLETES"
                 firewall.notice_clock = 5
         "dmc-privateer-rumor":
             last_trip_summary = "%s: %s" % [String(detail.get("speaker", "LOCAL")), String(detail.get("rumor", "No useful rumor."))]
@@ -668,7 +671,23 @@ func _setup_firewall() -> void:
     add_child(firewall)
 
 func _terminal_hack_finished(success: bool) -> void:
-    last_trip_summary = "PORT TERMINAL BYPASSED" if success else "PORT TERMINAL REJECTED ACCESS"
+    var result: Dictionary = firewall.challenge_result.duplicate(true)
+    var difficulty := clampi(int(result.get("difficulty", 1)), 1, 5)
+    if success:
+        var reward := maxi(0, int(result.get("reward", 0)))
+        research_credits += reward
+        firewall.balance = research_credits
+        last_trip_summary = "TERMINAL D%d BYPASSED · %d CR · TRACE %.0f%%" % [difficulty, reward, 100.0 * float(result.get("trace", 0.0)) / maxf(1.0, float(result.get("trace_limit", 1.0)))]
+    elif bool(result.get("detected", false)):
+        breach_port_security_alert = true
+        var faction_id := _planet_primary_faction(current_planet)
+        if not faction_id.is_empty():
+            _record_faction_crime(faction_id, difficulty + 2, difficulty * 5, "terminal_intrusion_detected", false)
+        last_trip_summary = "TERMINAL D%d TRACE COMPLETE · INTRUSION ATTRIBUTED" % difficulty
+    elif bool(result.get("aborted", false)):
+        last_trip_summary = "TERMINAL D%d ABORTED BEFORE ATTRIBUTION" % difficulty
+    else:
+        last_trip_summary = "TERMINAL D%d REJECTED ACCESS" % difficulty
     _close_firewall()
 
 func _open_firewall() -> bool:

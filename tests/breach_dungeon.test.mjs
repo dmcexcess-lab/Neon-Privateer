@@ -135,6 +135,7 @@ assert.equal(port.stations.filter(s=>s.service==='venue').length,port.structures
 const hiddenTerminals=port.stations.filter(s=>s.hidden);
 assert.ok(hiddenTerminals.length>=4&&hiddenTerminals.length<=7,'each arrival conceals a variable number of extra access nodes');
 assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidden access nodes start undiscovered but remain hackable terminals');
+assert.ok(hiddenTerminals.every(s=>s.difficulty>=1&&s.difficulty<=5&&s.label.includes(`D${s.difficulty}`)),'each concealed node exposes a randomized security tier');
 assert.deepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),samePort.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'one arrival reproduces its concealed network exactly');
 assert.notDeepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),nextArrival.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'returning to the same starport rerolls concealed terminals');
 const bounds={minX:Math.min(...port.rooms.map(r=>r.x)),maxX:Math.max(...port.rooms.map(r=>r.x+r.w)),minY:Math.min(...port.rooms.map(r=>r.y)),maxY:Math.max(...port.rooms.map(r=>r.y+r.h))};

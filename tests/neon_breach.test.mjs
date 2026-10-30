@@ -84,6 +84,7 @@ test('concealed spaceport terminals reroll by arrival, reveal nearby and launch 
   assert.equal(b.nearbyStation(),hidden);assert.equal(b.interactPort(),true);
   const message=privateerMessages.at(-1);
   assert.equal(message.type,'dmc-privateer-terminal');assert.equal(message.detail.terminal,hidden.id);assert.equal(message.detail.hidden,true);
+  assert.ok(message.detail.difficulty>=1&&message.detail.difficulty<=5,'terminal reports its randomized security difficulty');
   assert.equal(typeof message.detail.seed,'number','every concealed node receives its own deterministic hack seed');
   const nextContext={...context,arrivalSeed:77102};b.enterPrivateerPort(nextContext);
   assert.notDeepEqual(b.game.world.stations.filter(station=>station.hidden).map(station=>[station.id,station.x,station.y]),firstArrival,'a new landing rerolls the concealed network');

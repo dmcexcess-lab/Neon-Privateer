@@ -30,6 +30,21 @@ func _run() -> void:
         totals[level]=cells
     check(int(totals[40])>int(totals[1])*2,"later layouts grow in size/density")
     for kind in ["armor","cache","blast","prism","relay","locked","phase","moving","steel","turret"]:check(kinds.has(kind),"generated feature "+kind)
+    var easy=Simulation.new();easy.new_challenge({},5150,1)
+    var hard=Simulation.new();hard.new_challenge({},5150,5)
+    check(easy.security_rating()==1 and hard.security_rating()==9,"terminal difficulty drives effective network security")
+    var easy_hp:int=0
+    var hard_hp:int=0
+    for node in easy.bricks:easy_hp+=int(node.max_hp)
+    for node in hard.bricks:hard_hp+=int(node.max_hp)
+    check(hard.bricks.size()>easy.bricks.size() and hard_hp>easy_hp,"hard intrusions contain denser, tougher networks")
+    check(hard.trace_limit<easy.trace_limit and hard.ball_speed()>easy.ball_speed(),"hard intrusions trace faster and run faster")
+    var caught=Simulation.new();caught.new_challenge({},991,4);caught.launch();caught.stage_time=caught.trace_limit-.001;caught.step(.02)
+    check(caught.detected and caught.state=="dead" and caught.events.any(func(event):return event.kind=="detected"),"completed trace attributes the intrusion")
+    var locked_trace=Simulation.new();locked_trace.new_challenge({},812,3)
+    var locked_index:int=locked_trace.bricks.find_custom(func(node):return node.kind=="locked")
+    var before_trace:float=locked_trace.stage_time;locked_trace.damage_brick(locked_index,99)
+    check(locked_index>=0 and locked_trace.stage_time>before_trace,"attacking a locked firewall raises trace")
     var s=scenario();s.bricks[0]=brick(100,200,"armor",3)
     s.balls=[{"x":120.0,"y":239.0,"dx":0.0,"dy":-1.0,"r":6.0,"held":false,"spread":0.0}]
     s.step(.05);check(s.bricks[0].hp==2 and s.balls[0].dy>0,"real ball damage and bounce")
@@ -85,6 +100,13 @@ func _run() -> void:
     check(game.sim.rank("damage")==0 and game.sim.rank("width")==permanent and game.balance==cash,"new run resets temporary upgrades only")
     game.sim.launch();game.sim.step(.1);game.pause_game();var snap:Dictionary=game.sim.snapshot();game._process(10)
     check(game.sim.snapshot()==snap,"pause freezes simulation")
+    var challenge_game=Game.new();challenge_game.embedded=true;challenge_game.configure(Game.default_profile(),3200);root.add_child(challenge_game)
+    challenge_game.start_challenge(challenge_game.profile,7001,1,"public",false);var easy_reward:=challenge_game.challenge_max_reward()
+    check(challenge_game.balance==3200,"starting a Privateer intrusion preserves the linked career wallet")
+    challenge_game.start_challenge(challenge_game.profile,7002,5,"hidden",true);var hard_reward:=challenge_game.challenge_max_reward()
+    check(hard_reward>easy_reward*8,"reward scales sharply with security difficulty and concealed-terminal risk")
+    challenge_game.sim.state="clear";challenge_game._settle_events()
+    check(challenge_game.challenge_result.success and int(challenge_game.challenge_result.reward)>=challenge_game.challenge_base_reward(),"successful intrusion reports a difficulty-scaled payout")
     # Isolated user data directory supplied by the test runner.
     var stored=Game.new();stored.embedded=false;root.add_child(stored);stored.load_slot(3)
     check(stored.music_player != null and stored.music_player.stream is AudioStreamOggVorbis and stored.music_player.stream.get_length() > 170.0,
@@ -95,6 +117,6 @@ func _run() -> void:
     stored.load_slot(2);check(stored.balance==0,"empty profile is isolated")
     stored.load_slot(3);check(stored.balance==expected and stored.profile.research.width==1,"credits/research load from chosen profile")
     check(stored.sim.snapshot()==expected_run and stored.phase=="TITLE","active run restores awaiting deliberate resume")
-    game.queue_free();stored.queue_free();await process_frame;await process_frame;await create_timer(.2).timeout
+    game.queue_free();challenge_game.queue_free();stored.queue_free();await process_frame;await process_frame;await create_timer(.2).timeout
     if failures.is_empty():print("NEON FIREWALL OK: %d checks, 400 generated boards, physics, powerups, progression, profiles and lifecycle" % checks);call_deferred("quit",0)
     else:print("NEON FIREWALL FAIL: "+str(failures));call_deferred("quit",1)

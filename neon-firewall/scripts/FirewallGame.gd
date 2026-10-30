@@ -5,6 +5,9 @@ signal challenge_finished(success: bool)
 var pay_brick_rewards := true
 var challenge_mode := false
 var challenge_settled := false
+var challenge_terminal := "spaceport"
+var challenge_hidden := false
+var challenge_result: Dictionary = {}
 signal exit_requested
 const Simulation = preload("FirewallSimulation.gd")
 const W := 390.0
@@ -18,6 +21,7 @@ const MUTED := Color("8ca9bf")
 const LABELS := {"width":"PADDLE ARRAY","damage":"PACKET DAMAGE","multi":"PARALLEL BALLS","lives":"RETRY BUFFER","shield":"FLOOR SHIELD","laser":"LASER INJECTOR"}
 const DESCRIPTIONS := {"width":"Wider paddle (+14)","damage":"+1 damage per ball","multi":"+1 starting ball / max 7","lives":"+1 life / retry","shield":"+1 shield each level","laser":"+8 laser shots each level"}
 const EFFECT_LABELS := {"wide":"WIDE PADDLE","split":"MULTIBALL","slow":"SLOW BALLS","shield":"SHIELD +1","laser":"LASER +12","life":"RETRY +1","magnet":"MAGNET +3","shrink":"PADDLE SHRINK","fast":"OVERCLOCK","reverse":"REVERSED INPUT","trace":"TRACE +20s"}
+const NODE_LABELS := {"normal":"ROUTE","armor":"ENCRYPTED","cache":"CREDENTIALS","blast":"EXPLOIT","prism":"FORK","relay":"AUTH RELAY","locked":"FIREWALL","phase":"ROTATING KEY","moving":"PROXY","steel":"AIR GAP","turret":"IDS"}
 var embedded := false
 var slot := 1
 var profile: Dictionary = {}
@@ -104,12 +108,27 @@ func persist() -> void:
         else:notice="SAVE FAILED // KEEP THIS TAB OPEN";notice_clock=5
     save_clock=0.0
 
-func start_challenge(data: Dictionary, seed_number: int) -> void:
+func start_challenge(data: Dictionary, seed_number: int, difficulty: int = 1, terminal: String = "spaceport", hidden: bool = false) -> void:
     challenge_mode=true;challenge_settled=false
-    configure(data,0)
-    if not sim.bricks.is_empty() and sim.state in ["ready","play"]:phase="PLAY"
-    else:start_new_run(seed_number)
-    notice="SAFEHOUSE FIREWALL // CLEAR ONE LAYER";notice_clock=4
+    var linked_balance:=balance
+    configure(data,linked_balance)
+    challenge_terminal=terminal;challenge_hidden=hidden;challenge_result={}
+    sim.new_challenge(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1,difficulty)
+    credited_earned=0;credited_destroyed=0;cleared_stage=0;death_recorded=false
+    profile.run=sim.snapshot();phase="PLAY";confirm_new=false;particles.clear();floats.clear()
+    notice="INTRUSION D%d // PAYOUT UP TO %d CR" % [sim.security_difficulty,challenge_max_reward()];notice_clock=5
+    persist()
+
+func challenge_base_reward() -> int:
+    var difficulty:=clampi(sim.security_difficulty,1,5)
+    return 40+difficulty*difficulty*30+(25*difficulty if challenge_hidden else 0)
+
+func challenge_max_reward() -> int:
+    return challenge_base_reward()+int(round(challenge_base_reward()*.35))
+
+func challenge_reward() -> int:
+    var remaining:=clampf(1.0-sim.stage_time/maxf(1.0,sim.trace_limit),0.0,1.0)
+    return challenge_base_reward()+int(round(challenge_base_reward()*.35*remaining))
 
 func start_new_run(seed_number: int = 0) -> void:
     sim.new_run(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1)
@@ -178,20 +197,29 @@ func _settle_events() -> void:
                 if particles.size()<280:
                     var angle:=float(i)*TAU/9+ui_time
                     particles.append({"pos":Vector2(float(event.x),float(event.y)),"vel":Vector2(cos(angle),sin(angle))*75.0,"life":.4+float(i%3)*.1,"color":PINK if i%2 else CYAN})
-            floats.append({"x":event.x,"y":event.y,"text":"NODE" if challenge_mode or not pay_brick_rewards else "+%d" % int(event.cash),"life":.9,"color":GOLD})
+            floats.append({"x":event.x,"y":event.y,"text":String(NODE_LABELS.get(event.get("node","normal"),"NODE")) if challenge_mode or not pay_brick_rewards else "+%d" % int(event.cash),"life":.9,"color":GOLD})
         elif kind=="effect":
             notice=String(EFFECT_LABELS.get(event.effect,event.effect));notice_clock=2.2
-        elif kind=="miss":notice="TRACE HIT // CREDITS SAFE";notice_clock=2.0
+        elif kind=="blocked":notice="FIREWALL LOCKED // FIND AUTH RELAY // TRACE RISING";notice_clock=2.4
+        elif kind=="trace_relief":notice="SECURITY NODE DISABLED // TRACE -%ds" % int(event.amount);notice_clock=2.2
+        elif kind=="miss":notice="PACKET LOST // TRACE SPIKE // RETRY BUFFER USED";notice_clock=2.0
+        elif kind=="detected":notice="TRACE COMPLETE // INTRUSION ATTRIBUTED";notice_clock=3.0
         if sounds<3 and kind in ["hit","break","paddle","miss","effect","clear"]:_sound(kind);sounds+=1
     sim.events.clear()
     if sim.state=="clear":
         if cleared_stage!=int(sim.stage):profile.clears=int(profile.clears)+1;cleared_stage=int(sim.stage)
         phase="SHOP";persist()
-        if challenge_mode and not challenge_settled:challenge_settled=true;challenge_finished.emit(true)
+        if challenge_mode and not challenge_settled:
+            challenge_settled=true
+            challenge_result={"success":true,"detected":false,"aborted":false,"difficulty":sim.security_difficulty,"reward":challenge_reward(),"trace":sim.stage_time,"trace_limit":sim.trace_limit,"terminal":challenge_terminal,"hidden":challenge_hidden}
+            challenge_finished.emit(true)
     elif sim.state=="dead":
         if not death_recorded:profile.deaths=int(profile.deaths)+1;death_recorded=true
         phase="DEAD";persist()
-        if challenge_mode and not challenge_settled:challenge_settled=true;challenge_finished.emit(false)
+        if challenge_mode and not challenge_settled:
+            challenge_settled=true
+            challenge_result={"success":false,"detected":sim.detected,"aborted":false,"difficulty":sim.security_difficulty,"reward":0,"trace":sim.stage_time,"trace_limit":sim.trace_limit,"terminal":challenge_terminal,"hidden":challenge_hidden}
+            challenge_finished.emit(false)
 
 func _move_paddle(x: float) -> void:
     sim.target_x=Simulation.LEFT+Simulation.RIGHT-x if sim.effects.has("reverse") else x
@@ -220,7 +248,8 @@ func _tap(pos: Vector2) -> void:
         if Rect2(28,310,334,58).has_point(pos):phase="PLAY"
         elif Rect2(28,390,334,58).has_point(pos):persist()
         elif Rect2(28,470,334,58).has_point(pos):
-            if not challenge_settled:challenge_settled=true;challenge_finished.emit(false)
+            if not challenge_settled:
+                challenge_settled=true;challenge_result={"success":false,"detected":false,"aborted":true,"difficulty":sim.security_difficulty,"reward":0,"terminal":challenge_terminal,"hidden":challenge_hidden};challenge_finished.emit(false)
         return
     if phase=="PLAY":
         if Rect2(298,24,74,44).has_point(pos) or Rect2(266,754,106,52).has_point(pos):pause_game()
@@ -375,13 +404,13 @@ func _draw_upgrades() -> void:
     _center("DEATH KEEPS CREDITS AND PERMANENT RESEARCH",807,9,MUTED)
 
 func _draw_board() -> void:
-    _text("FIREWALL / %02d" % sim.stage,Vector2(18,40),21)
-    _text("%07d CR" % balance,Vector2(18,66),17,GOLD)
+    _text("INTRUSION / D%d" % sim.security_difficulty if challenge_mode else "FIREWALL / %02d" % sim.stage,Vector2(18,40),21)
+    _text("PAYOUT %d-%d CR" % [challenge_base_reward(),challenge_max_reward()] if challenge_mode else "%07d CR" % balance,Vector2(18,66),17,GOLD)
     _button(Rect2(298,24,74,44),"PAUSE")
     _text("RETRY %d  SHIELD %d  DMG %d  BALLS %d" % [sim.lives,sim.shields,sim.ball_damage(),sim.balls.size()],Vector2(18,94),11,MUTED)
     var remaining_time:float=maxf(0,sim.trace_limit-sim.stage_time)
     _text("TRACE",Vector2(18,117),9,RED)
-    draw_rect(Rect2(67,108,252,5),Color("3b263c"));draw_rect(Rect2(67,108,252*remaining_time/sim.trace_limit,5),PINK)
+    draw_rect(Rect2(67,108,252,5),Color("3b263c"));draw_rect(Rect2(67,108,252*(sim.stage_time/sim.trace_limit if challenge_mode else remaining_time/sim.trace_limit),5),RED if challenge_mode else PINK)
     _text("%ds" % int(ceil(remaining_time)),Vector2(330,116),10,MUTED)
     _panel(Rect2(Simulation.LEFT,Simulation.TOP,Simulation.RIGHT-Simulation.LEFT,Simulation.BOTTOM-Simulation.TOP),Color("244859"),Color(0.02,.045,.07,.85))
     var locked:bool=sim.relay_alive()
@@ -424,4 +453,4 @@ func _draw_board() -> void:
     else:
         var labels:Array=[]
         for key in sim.effects:labels.append("%s %ds" % [String(key).to_upper(),int(ceil(float(sim.effects[key])))])
-        _center(" / ".join(labels).left(53) if not labels.is_empty() else "GREEN + BONUS / RED ! HAZARD // RELAYS UNLOCK #",829,9,MUTED)
+        _center(" / ".join(labels).left(53) if not labels.is_empty() else "O AUTH RELAY · # FIREWALL · v IDS · ? CREDENTIALS",829,9,MUTED)

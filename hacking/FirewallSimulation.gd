@@ -38,6 +38,9 @@ var laser_clock := 0.0
 var turret_clock := 0.0
 var combo := 0
 var best_combo := 0
+var intrusion_mode := false
+var security_difficulty := 1
+var detected := false
 
 static func normalized_levels(value: Dictionary) -> Dictionary:
     var result: Dictionary = {}
@@ -65,7 +68,7 @@ func ball_damage() -> int:
     return 1 + rank("damage")
 
 func ball_speed() -> float:
-    var speed := minf(520.0, 320.0 + (stage-1)*13.0)
+    var speed := minf(560.0, 320.0 + (security_rating()-1)*13.0)
     if effects.has("slow"): speed *= .72
     if effects.has("fast"): speed *= 1.38
     return speed
@@ -79,8 +82,29 @@ func new_run(levels: Dictionary, seed_number: int) -> void:
     destroyed = 0
     total_time = 0.0
     best_combo = 0
+    intrusion_mode = false
+    security_difficulty = 1
+    detected = false
     lives = 3 + rank("lives")
     generate_stage()
+
+func new_challenge(levels: Dictionary, seed_number: int, difficulty: int) -> void:
+    permanent = normalized_levels(levels)
+    temporary = normalized_levels({})
+    stage = 1
+    seed_value = maxi(1,seed_number)
+    earned = 0
+    destroyed = 0
+    total_time = 0.0
+    best_combo = 0
+    intrusion_mode = true
+    security_difficulty = clampi(difficulty,1,5)
+    detected = false
+    lives = 3 + rank("lives")
+    generate_stage()
+
+func security_rating() -> int:
+    return stage + ((security_difficulty-1)*2 if intrusion_mode else 0)
 
 func generate_stage() -> void:
     rng.seed = seed_value + stage*7919
@@ -95,9 +119,11 @@ func generate_stage() -> void:
     shields = rank("shield")
     laser_ammo = rank("laser")*8
     magnets = 0
-    trace_limit = 190.0 + minf(80.0,stage*4.0)
-    var columns := mini(10,7+int((stage-1)/4))
-    var rows := mini(12,4+int((stage-1)/2))
+    detected = false
+    var security:=security_rating()
+    trace_limit = maxf(78.0,165.0-(security_difficulty-1)*19.0) if intrusion_mode else 190.0+minf(80.0,stage*4.0)
+    var columns := mini(10,7+int((security-1)/4))
+    var rows := mini(12,4+int((security-1)/2))
     var width := (RIGHT-LEFT-28.0-(columns-1)*5.0)/columns
     var layout := rng.randi_range(0,3)
     for row in rows:
@@ -110,21 +136,21 @@ func generate_stage() -> void:
             var roll := rng.randf()
             if roll<.08:kind="cache"
             elif roll<.20:kind="armor"
-            elif stage>=2 and roll<.27:kind="blast"
-            elif stage>=3 and roll<.32:kind="prism"
-            elif stage>=4 and roll<.45:kind="locked"
-            elif stage>=5 and roll<.51:kind="phase"
-            elif stage>=7 and roll<.56 and row>0:kind="steel"
-            elif stage>=8 and roll<.60:kind="turret"
-            if stage>=6 and row==rows-2:kind="moving"
-            var hp_value := 1+mini(7,int((stage-1)/3))
-            if kind=="armor" or kind=="cache":hp_value+=1+int(stage/5)
-            if row==0 and col==int(columns/2) and stage>=4:kind="relay";hp_value=1+int(stage/4)
-            bricks.append({"x":LEFT+14+col*(width+5),"base_x":LEFT+14+col*(width+5),"y":160.0+row*29.0,"w":width,"h":23.0,"hp":hp_value,"max_hp":hp_value,"kind":kind,"active":true,"phase":rng.randf_range(0,TAU),"reward":EFFECTS[rng.randi_range(0,EFFECTS.size()-1)],"cache_cash":rng.randi_range(25,85)+stage*4,"row":row})
+            elif security>=2 and roll<.27:kind="blast"
+            elif security>=3 and roll<.32:kind="prism"
+            elif security>=4 and roll<.45:kind="locked"
+            elif security>=5 and roll<.51:kind="phase"
+            elif security>=7 and roll<.56 and row>0:kind="steel"
+            elif security>=8 and roll<.60:kind="turret"
+            if security>=6 and row==rows-2:kind="moving"
+            var hp_value := 1+mini(7,int((security-1)/3))
+            if kind=="armor" or kind=="cache":hp_value+=1+int(security/5)
+            if row==0 and col==int(columns/2) and security>=4:kind="relay";hp_value=1+int(security/4)
+            bricks.append({"x":LEFT+14+col*(width+5),"base_x":LEFT+14+col*(width+5),"y":160.0+row*29.0,"w":width,"h":23.0,"hp":hp_value,"max_hp":hp_value,"kind":kind,"active":true,"phase":rng.randf_range(0,TAU),"reward":EFFECTS[rng.randi_range(0,EFFECTS.size()-1)],"cache_cash":rng.randi_range(25,85)+security*4,"row":row})
     # Every run introduces actual caches, and relays always have reachable targets.
     if not bricks.is_empty():bricks.back().kind="cache"
     if bricks.size()>1:bricks[-2].kind="cache"
-    if stage>=4:
+    if security>=4:
         bricks[0].kind="relay"
         bricks.back().kind="locked"
     _serve()
@@ -163,6 +189,7 @@ func damage_brick(index: int, amount: int, chain: bool = false) -> void:
     var brick: Dictionary=bricks[index]
     if not bool(brick.active):return
     if String(brick.kind)=="steel" or (String(brick.kind)=="locked" and relay_alive()):
+        if intrusion_mode and String(brick.kind)=="locked":stage_time=minf(trace_limit,stage_time+1.5+security_difficulty*.7)
         events.append({"kind":"blocked","x":float(brick.x)+float(brick.w)*.5,"y":brick.y});return
     brick.hp=int(brick.hp)-amount
     events.append({"kind":"hit","x":float(brick.x)+float(brick.w)*.5,"y":brick.y})
@@ -172,7 +199,10 @@ func damage_brick(index: int, amount: int, chain: bool = false) -> void:
     var cash:=5+int(brick.max_hp)*2+int(stage*.5)+mini(10,int(combo/5))
     if String(brick.kind)=="cache":cash+=int(brick.cache_cash)
     earned+=cash
-    events.append({"kind":"break","x":float(brick.x)+float(brick.w)*.5,"y":brick.y,"cash":cash})
+    events.append({"kind":"break","x":float(brick.x)+float(brick.w)*.5,"y":brick.y,"cash":cash,"node":String(brick.kind)})
+    if intrusion_mode and String(brick.kind) in ["relay","turret"]:
+        var relief:=6.0+security_difficulty*1.5 if String(brick.kind)=="relay" else 9.0+security_difficulty*2.0
+        stage_time=maxf(0.0,stage_time-relief);events.append({"kind":"trace_relief","amount":int(relief)})
     if String(brick.kind)=="cache" or rng.randf()<.15:
         drops.append({"x":float(brick.x)+float(brick.w)*.5,"y":float(brick.y)+12,"kind":brick.reward})
     if String(brick.kind)=="prism":apply_effect("split")
@@ -226,13 +256,20 @@ func fire_laser() -> bool:
     for side in [-1,1]:lasers.append({"x":paddle_x+side*(paddle_width()*.5-5),"y":PADDLE_Y-14.0})
     return true
 
-func lose_life() -> void:
+func lose_life(reason: String = "packet_loss") -> void:
     if state not in ["play","ready"]:return
     lives-=1;combo=0
+    if intrusion_mode:stage_time=minf(trace_limit,stage_time+8.0+security_difficulty*2.0)
     effects.clear();bolts.clear();drops.clear();lasers.clear()
-    events.append({"kind":"miss"})
-    if lives<=0:state="dead";balls.clear()
+    events.append({"kind":"miss","reason":reason})
+    if lives<=0:
+        if intrusion_mode:_trigger_detection("retry_buffer_exhausted")
+        else:state="dead";balls.clear()
     else:_serve()
+
+func _trigger_detection(reason: String) -> void:
+    detected=true;state="dead";balls.clear();bolts.clear();lasers.clear()
+    events.append({"kind":"detected","reason":reason})
 
 func step(delta: float) -> void:
     if state not in ["play","ready"]:return
@@ -249,7 +286,10 @@ func _tick(dt: float) -> void:
         for ball in balls:ball.x=paddle_x;ball.y=PADDLE_Y-15.0
         return
     stage_time+=dt;total_time+=dt
-    if stage_time>=trace_limit:lose_life();stage_time=maxf(0.0,trace_limit-35.0);return
+    if stage_time>=trace_limit:
+        if intrusion_mode:_trigger_detection("trace_complete")
+        else:lose_life();stage_time=maxf(0.0,trace_limit-35.0)
+        return
     laser_clock=maxf(0,laser_clock-dt)
     for key in effects.keys():
         effects[key]=float(effects[key])-dt
@@ -318,17 +358,18 @@ func _tick(dt: float) -> void:
         if absf(float(bolt.y)-PADDLE_Y)<10 and absf(float(bolt.x)-paddle_x)<half:
             bolts.erase(bolt)
             if shields>0:shields-=1
-            else:lose_life();return
+            else:lose_life("ids_sentinel_hit");return
         elif float(bolt.y)>BOTTOM:bolts.erase(bolt)
 
 func snapshot() -> Dictionary:
-    return {"schema":1,"stage":stage,"seed":seed_value,"permanent":permanent.duplicate(true),"temporary":temporary.duplicate(true),"bricks":bricks.duplicate(true),"balls":balls.duplicate(true),"drops":drops.duplicate(true),"bolts":bolts.duplicate(true),"lasers":lasers.duplicate(true),"effects":effects.duplicate(true),"state":state,"paddle_x":paddle_x,"target_x":target_x,"lives":lives,"shields":shields,"laser_ammo":laser_ammo,"magnets":magnets,"earned":earned,"destroyed":destroyed,"stage_time":stage_time,"total_time":total_time,"trace_limit":trace_limit,"accumulator":accumulator,"laser_clock":laser_clock,"turret_clock":turret_clock,"combo":combo,"best_combo":best_combo,"rng_state":rng.state}
+    return {"schema":1,"stage":stage,"seed":seed_value,"permanent":permanent.duplicate(true),"temporary":temporary.duplicate(true),"bricks":bricks.duplicate(true),"balls":balls.duplicate(true),"drops":drops.duplicate(true),"bolts":bolts.duplicate(true),"lasers":lasers.duplicate(true),"effects":effects.duplicate(true),"state":state,"paddle_x":paddle_x,"target_x":target_x,"lives":lives,"shields":shields,"laser_ammo":laser_ammo,"magnets":magnets,"earned":earned,"destroyed":destroyed,"stage_time":stage_time,"total_time":total_time,"trace_limit":trace_limit,"accumulator":accumulator,"laser_clock":laser_clock,"turret_clock":turret_clock,"combo":combo,"best_combo":best_combo,"rng_state":rng.state,"intrusion_mode":intrusion_mode,"security_difficulty":security_difficulty,"detected":detected}
 
 func restore(data: Dictionary) -> bool:
     if int(data.get("schema",0))!=1 or not data.get("bricks",null) is Array or not data.get("balls",null) is Array:return false
     if data.get("state","") not in ["ready","play","clear","dead"]:return false
     for key in ["stage","lives","shields","laser_ammo","magnets","earned","destroyed","combo","best_combo"]:set(key,int(data.get(key,0)))
     seed_value=int(data.get("seed",1))
+    intrusion_mode=bool(data.get("intrusion_mode",false));security_difficulty=clampi(int(data.get("security_difficulty",1)),1,5);detected=bool(data.get("detected",false))
     permanent=normalized_levels(data.get("permanent",{}));temporary=normalized_levels(data.get("temporary",{}))
     for key in ["bricks","balls","drops","bolts","lasers"]:set(key,data.get(key,[]).duplicate(true))
     effects=data.get("effects",{}).duplicate(true)

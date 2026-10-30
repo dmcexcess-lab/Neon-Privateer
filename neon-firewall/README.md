@@ -1,5 +1,7 @@
 # Neon Firewall
 
+Privateer terminals use the same native simulation as a contextual intrusion game. Terminal security is rated D1–D5 and changes network density, node durability, packet speed, trace time and IDS pressure. Blocks represent network functions rather than literal masonry: authentication relays unlock firewalls, credential caches hold payloads, exploit nodes chain, rotating keys phase, proxies move, air gaps obstruct and IDS sentinels fire trace bolts. Privateer payouts scale with difficulty, concealed-node risk and trace time remaining; allowing the trace to complete attributes the crime and alerts port security.
+
 A standalone neon brick-breaker and the actual native hacking arcade inside Neon Privateer.
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/firewall/

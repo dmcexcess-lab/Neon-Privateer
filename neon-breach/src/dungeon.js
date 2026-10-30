@@ -343,7 +343,7 @@ export function createHQWorld(){
 
 // Privateer spaceports use the real Breach geometry and navigation rather than
 // the small native 3x3 imitation. A planet seed always recreates the same port.
-export function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY'}={}){
+export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY'}={}){
   const rng=new RNG((Number(seed)>>>0)||1);
   const profile={
     LUSH:{id:'sewers',color:'#123b37',edge:'#75ffb0'},
@@ -375,7 +375,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',pl
     {id:'contracts',service:'contracts',x:-230,y:900,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
     {id:'upgrades',service:'upgrades',x:230,y:900,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
     {id:'careers',service:'careers',x:-1080,y:-120,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
-    {id:'terminal',service:'terminal',x:1100,y:900,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
+    {id:'terminal',service:'terminal',x:1100,y:900,label:'RESTRICTED NETWORK TERMINAL · SECURITY D1',short:'HACK',color:'#ff60bd',difficulty:1},
     {id:'alley',service:'alley',x:-1080,y:850,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];
   const names=['Mara','Kest','Ivo','Sable','Rin','Juno','Vale','Tarn','Orr','Nyx'];
@@ -399,7 +399,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',pl
   const actors=[];
   const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
-    shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,crime:{heat:0,witnessed:false}};
+    shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,securityAlert:!!securityAlert,crime:{heat:securityAlert?20:0,witnessed:!!securityAlert}};
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
     const o=overlap(rooms[i],rooms[j]);if(o.w<60||o.h<60)continue;
     world.links.push({a:i,b:j,via:{x:(o.minX+o.maxX)/2,y:(o.minY+o.maxY)/2},width:Math.min(o.w,o.h)*.5});
@@ -460,7 +460,9 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',pl
   for(const candidate of terminalCandidates.slice(0,terminalCount)){
     let x=candidate.x+terminalRng.range(-14,14),y=candidate.y+terminalRng.range(-14,14);
     if(!walkable(world,x,y,18)){x=candidate.x;y=candidate.y;}
-    stations.push({...candidate,id:`hidden-${candidate.id}`,service:'terminal',x,y,color:'#ff60bd',hidden:true,discovered:false});
+    const difficulty=terminalRng.int(1,5),color=['','#5af0ff','#b999ff','#ff60bd','#ff9f55','#ff627f'][difficulty];
+    stations.push({...candidate,id:`hidden-${candidate.id}`,service:'terminal',x,y,label:`${candidate.label} · SECURITY D${difficulty}`,
+      difficulty,color,hidden:true,discovered:false});
   }
   for(let i=0;i<18;i++){
     const room=rooms[rng.int(0,rooms.length-1)],pos=randomSpot(world,room,rng,18),target=randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
@@ -474,6 +476,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',pl
     actors.push({id:`guard-${i}`,kind:'guard',name:`${faction} PATROL ${i+1}`,x:pos.x,y:pos.y,r:16,hp:5,maxHp:5,
       home:{x:pos.x,y:pos.y},target,speed:52,alert:false,cool:rng.range(0,.8)});
   }
+  if(world.securityAlert)for(const guard of actors.filter(actor=>actor.kind==='guard'))guard.alert=true;
   return world;
 }
 

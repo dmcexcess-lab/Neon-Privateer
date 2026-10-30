@@ -147,7 +147,7 @@ function enterPrivateerPort(context){
   document.body?.classList.toggle('hq-mode',false);
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
   updateUI();
-  announce('SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
+  announce(game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
 function startPrivateerMission(spec){
@@ -194,7 +194,7 @@ function interactPort(){
   if(station){
     if(station.service==='terminal'){
       const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
-      privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,seed:terminalSeed});
+      privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,difficulty:station.difficulty||1,seed:terminalSeed});
     }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
     else if(station.service==='venue')announce(`${station.venue} · LOCALS, RUMORS AND MISSION CONTACTS INSIDE`,3);

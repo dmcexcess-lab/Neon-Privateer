@@ -51,6 +51,16 @@ func _run() -> void:
     check(scene._open_firewall() and scene.firewall_open,"physical terminal bridge launches the native challenge")
     scene._notification(Node.NOTIFICATION_APPLICATION_PAUSED)
     check(scene.firewall.phase!="PLAY","backgrounding pauses terminal")
-    scene._close_firewall();scene.queue_free();await process_frame;await create_timer(.2).timeout
+    scene._close_firewall()
+    var hack_cash_before:int=scene.research_credits
+    check(scene._open_firewall(),"difficulty-scaled terminal can open")
+    scene.firewall.start_challenge(scene.firewall_profile,4401,5,"hidden-test",true)
+    scene.firewall.sim.state="clear";scene.firewall._settle_events()
+    check(not scene.firewall_open and scene.research_credits>hack_cash_before and scene.last_trip_summary.contains("TERMINAL D5 BYPASSED"),"successful high-security intrusion pays the career wallet exactly once")
+    check(scene._open_firewall(),"detected terminal can open")
+    scene.firewall.start_challenge(scene.firewall_profile,4402,4,"hidden-detected",true)
+    scene.firewall.sim.detected=true;scene.firewall.sim.state="dead";scene.firewall._settle_events()
+    check(not scene.firewall_open and scene.breach_port_security_alert and scene.last_trip_summary.contains("INTRUSION ATTRIBUTED"),"completed trace creates a crime consequence and alerts returning port security")
+    scene.queue_free();await process_frame;await create_timer(.2).timeout
     if failures.is_empty():print("NEON FIREWALL INTEGRATION OK: %d checks, shared economy, career isolation, run continuity, exactly-once rewards, returns and interruptions" % checks);call_deferred("quit",0)
     else:print("NEON FIREWALL INTEGRATION FAIL: "+str(failures));call_deferred("quit",1)
