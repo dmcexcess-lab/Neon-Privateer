@@ -122,7 +122,7 @@ for(const station of hq.stations)assert.ok(walkable(hq,station.x,station.y,16),`
 for(const connection of hq.links)assert.ok(walkable(hq,connection.via.x,connection.via.y,18),'HQ corridors must stay open');
 const port=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
 const samePort=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
-assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.equal(port.stations.length,13);
+assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.equal(port.stations.length,18);
 assert.equal(port.actors.filter(a=>a.kind==='civilian').length,18);assert.equal(port.actors.filter(a=>a.kind==='guard').length,6);
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
@@ -131,6 +131,9 @@ assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
 assert.deepEqual(port.structures.map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains several public buildings');
 assert.equal(port.stations.filter(s=>s.service==='venue').length,port.structures.length,'each public building has a physical venue interaction');
+const hiddenTerminals=port.stations.filter(s=>s.hidden);
+assert.equal(hiddenTerminals.length,5,'alleys, freight areas and venues conceal extra access nodes');
+assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidden access nodes start undiscovered but remain hackable terminals');
 const bounds={minX:Math.min(...port.rooms.map(r=>r.x)),maxX:Math.max(...port.rooms.map(r=>r.x+r.w)),minY:Math.min(...port.rooms.map(r=>r.y)),maxY:Math.max(...port.rooms.map(r=>r.y+r.h))};
 assert.ok(bounds.maxX-bounds.minX>3200&&bounds.maxY-bounds.minY>2900,'spaceport is a full urban map, not a small menu room');
 const reached=new Set([0]),frontier=[0];

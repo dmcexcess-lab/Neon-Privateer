@@ -396,6 +396,16 @@ export function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPO
   ];
   for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
+  // These access nodes are intentionally absent from the initial directory.
+  // They sit in low-traffic corners and become normal physical stations only
+  // after the player gets close enough to notice the concealed panel.
+  stations.push(
+    {id:'hidden-alley-relay',service:'terminal',x:-1200,y:430,label:'CONCEALED ALLEY RELAY',short:'RELAY',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-freight-node',service:'terminal',x:1900,y:500,label:'FREIGHT CONTROL BACKDOOR',short:'NODE',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-promenade-tap',service:'terminal',x:650,y:1700,label:'PROMENADE MAINTENANCE TAP',short:'TAP',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-cafe-panel',service:'terminal',x:-1200,y:-100,label:'CAFE SERVICE PANEL',short:'PANEL',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-club-uplink',service:'terminal',x:1170,y:800,label:'CLUB PRIVATE UPLINK',short:'UPLINK',color:'#ff60bd',hidden:true,discovered:false}
+  );
   const actors=[];
   const world={floor:0,seed:Number(seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,

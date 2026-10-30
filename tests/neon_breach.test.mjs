@@ -52,6 +52,7 @@ vm.runInNewContext(source+`
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
   startPrivateerMission,finishPrivateerMission,enterPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
+  discoverPortStations,nearbyStation,interactPort,
   setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
@@ -67,6 +68,21 @@ test('full spaceports support armed play and guards react to gunfire',()=>{
   assert.ok(civilian.hp<2,'player bullet damages a civilian inside the persistent port');
   assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'a witnessed shooting alerts every living patrol');
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='assault_civilian'),'the full game receives the port crime');
+  b.setPrivateerContext(null);
+});
+
+test('concealed spaceport terminals reveal nearby and launch distinct hacks',()=>{
+  const context={mode:'spaceport',requestId:'hidden-terminal-test',seed:881,planetId:'p-hidden',planetName:'Relay Port',archetype:'FROZEN',faction:'Relay Security',loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const hidden=b.game.world.stations.find(station=>station.id==='hidden-freight-node');
+  assert.equal(hidden.discovered,false);assert.equal(b.game.world.stations.filter(station=>station.hidden&&station.discovered).length,0);
+  b.game.player.x=hidden.x-130;b.game.player.y=hidden.y;
+  assert.equal(b.discoverPortStations(),true);assert.equal(hidden.discovered,true,'proximity reveals the concealed panel');
+  b.game.player.x=hidden.x;b.game.player.y=hidden.y;
+  assert.equal(b.nearbyStation(),hidden);assert.equal(b.interactPort(),true);
+  const message=privateerMessages.at(-1);
+  assert.equal(message.type,'dmc-privateer-terminal');assert.equal(message.detail.terminal,hidden.id);assert.equal(message.detail.hidden,true);
+  assert.equal(typeof message.detail.seed,'number','every concealed node receives its own deterministic hack seed');
   b.setPrivateerContext(null);
 });
 

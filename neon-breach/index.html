@@ -584,6 +584,16 @@ function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',arc
   ];
   for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
+  // These access nodes are intentionally absent from the initial directory.
+  // They sit in low-traffic corners and become normal physical stations only
+  // after the player gets close enough to notice the concealed panel.
+  stations.push(
+    {id:'hidden-alley-relay',service:'terminal',x:-1200,y:430,label:'CONCEALED ALLEY RELAY',short:'RELAY',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-freight-node',service:'terminal',x:1900,y:500,label:'FREIGHT CONTROL BACKDOOR',short:'NODE',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-promenade-tap',service:'terminal',x:650,y:1700,label:'PROMENADE MAINTENANCE TAP',short:'TAP',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-cafe-panel',service:'terminal',x:-1200,y:-100,label:'CAFE SERVICE PANEL',short:'PANEL',color:'#ff60bd',hidden:true,discovered:false},
+    {id:'hidden-club-uplink',service:'terminal',x:1170,y:800,label:'CLUB PRIVATE UPLINK',short:'UPLINK',color:'#ff60bd',hidden:true,discovered:false}
+  );
   const actors=[];
   const world={floor:0,seed:Number(seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
@@ -1192,7 +1202,10 @@ function interactPort(){
   if(game.mode!=='PORT')return false;
   const station=nearbyStation(),actor=nearbyPortActor();
   if(station){
-    if(station.service==='terminal')privateerMessage('dmc-privateer-terminal',{terminal:'spaceport',seed:game.world.seed});
+    if(station.service==='terminal'){
+      const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,game.world.seed>>>0);
+      privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,seed:terminalSeed});
+    }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
     else if(station.service==='venue')announce(`${station.venue} · LOCALS, RUMORS AND MISSION CONTACTS INSIDE`,3);
     else privateerMessage('dmc-privateer-service',{service:station.service});
@@ -1222,6 +1235,7 @@ function updatePort(dt){
   game.portClock=(game.portClock||0)+dt;
   p.invuln=Math.max(0,p.invuln-dt);p.cool=Math.max(0,p.cool-dt);p.punchTimer=Math.max(0,p.punchTimer-dt);updateWeaponTimers(dt);
   moveWithCollisions(p,control.mx*p.speed*(p.sneaking?.62:1)*dt,control.my*p.speed*(p.sneaking?.62:1)*dt,p.r);
+  discoverPortStations();
   if(Math.hypot(control.ax,control.ay)>.01)p.facing=Math.atan2(control.ay,control.ax);
   else if(Math.hypot(control.mx,control.my)>.25)p.facing=Math.atan2(control.my,control.mx);
   const queuedPress=inputs.shotgunPendingPresses>0&&p.weaponDrawn!==false;if(queuedPress)inputs.shotgunPendingPresses--;
@@ -1257,6 +1271,16 @@ function updatePort(dt){
 function nearbyStation(){
   if(!game.world?.isHQ||!game.player)return null;
   return game.world.stations.find(s=>Math.hypot(game.player.x-s.x,game.player.y-s.y)<91)||null;
+}
+function discoverPortStations(){
+  if(!game.world?.isSpaceport||!game.player)return false;
+  let found=false;
+  for(const station of game.world.stations){
+    if(!station.hidden||station.discovered||Math.hypot(game.player.x-station.x,game.player.y-station.y)>135)continue;
+    station.discovered=true;found=true;
+    announce(`HIDDEN ACCESS NODE FOUND · ${station.label}`,2.6);
+  }
+  return found;
 }
 function updateHQPrompt(){
   const station=nearbyStation();
@@ -2391,7 +2415,12 @@ function drawPortStructureFloors(){
 function drawHQStations(){
   const p=game.player;
   for(const station of game.world.stations){
-    const near=Math.hypot(p.x-station.x,p.y-station.y)<91;
+    const distanceToPlayer=Math.hypot(p.x-station.x,p.y-station.y),near=distanceToPlayer<91;
+    if(station.hidden&&!station.discovered){
+      if(distanceToPlayer>250)continue;
+      ctx.save();ctx.translate(station.x,station.y);ctx.globalAlpha=.22+.16*Math.sin(now*5+station.x);
+      ctx.fillStyle=station.color;ctx.shadowColor=station.color;ctx.shadowBlur=9;ctx.fillRect(-5,-9,10,18);ctx.restore();continue;
+    }
     ctx.save();ctx.translate(station.x,station.y);
     const pulse=2*Math.sin(now*2.9+station.y);
     ctx.strokeStyle=station.color;ctx.lineWidth=near?4:2.5;
@@ -2432,7 +2461,7 @@ function drawHQDirectory(){
   const X=(wx)=>x+9+(wx-minX)*scale,Y=(wy)=>y+18+(wy-minY)*scale;
   for(const r of game.world.rooms){ctx.fillStyle='#163b4a';ctx.fillRect(X(r.x),Y(r.y),r.w*scale,r.h*scale);}
   for(const venue of game.world.structures||[]){ctx.strokeStyle=venue.color;ctx.lineWidth=1;ctx.strokeRect(X(venue.x),Y(venue.y),venue.w*scale,venue.h*scale);}
-  for(const s of game.world.stations){ctx.fillStyle=s.color;ctx.fillRect(X(s.x)-3,Y(s.y)-3,6,6);}
+  for(const s of game.world.stations){if(s.hidden&&!s.discovered)continue;ctx.fillStyle=s.color;ctx.fillRect(X(s.x)-3,Y(s.y)-3,6,6);}
   ctx.fillStyle=C.cyan;ctx.beginPath();ctx.arc(X(game.player.x),Y(game.player.y),4.5,0,TAU);ctx.fill();ctx.restore();
 }
 function drawAwareness(e){
