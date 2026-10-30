@@ -341,6 +341,78 @@ export function createHQWorld(){
   return world;
 }
 
+// Privateer spaceports use the real Breach geometry and navigation rather than
+// the small native 3x3 imitation. A planet seed always recreates the same port.
+export function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY'}={}){
+  const rng=new RNG((Number(seed)>>>0)||1);
+  const profile={
+    LUSH:{id:'sewers',color:'#123b37',edge:'#75ffb0'},
+    VOLCANIC:{id:'dig',color:'#3b211d',edge:'#ff8a62'},
+    FROZEN:{id:'maintenance',color:'#142e3f',edge:'#79dcff'},
+    INDUSTRIAL:{id:'hq',color:'#202c37',edge:'#f9cc70'}
+  }[String(archetype).toUpperCase()]||{id:'hq',color:'#202c37',edge:'#5af0ff'};
+  const jitter=()=>rng.range(-38,38);
+  const blocks=[
+    {name:'landing concourse',x:-310+jitter(),y:-250+jitter(),w:620,h:500},
+    {name:'market arcade',x:225+jitter(),y:-205+jitter(),w:555,h:420},
+    {name:'administration',x:-770+jitter(),y:-195+jitter(),w:545,h:390},
+    {name:'transit spine',x:-270+jitter(),y:-700+jitter(),w:550,h:520},
+    {name:'service quarter',x:-250+jitter(),y:190+jitter(),w:520,h:430},
+    {name:'back alleys',x:205+jitter(),y:190+jitter(),w:540,h:410}
+  ];
+  const rooms=blocks.map((b,id)=>({id,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.x+b.w/2,cy:b.y+b.h/2,
+    rx:b.w/2,ry:b.h/2,module:b.name,tileset:profile.id,approach:0,neighbors:[],visited:true,
+    cleared:true,opened:true,spawned:true,depth:0,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[]}));
+  const stations=[
+    {id:'return',service:'return',x:0,y:-540,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
+    {id:'trade',service:'trade',x:520,y:-35,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
+    {id:'bank',service:'bank',x:-560,y:-25,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
+    {id:'contracts',service:'contracts',x:-80,y:430,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
+    {id:'terminal',service:'terminal',x:340,y:330,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
+    {id:'alley',service:'alley',x:620,y:430,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
+  ];
+  const names=['Mara','Kest','Ivo','Sable','Rin','Juno','Vale','Tarn','Orr','Nyx'];
+  const rumors=[
+    'A freighter is paying double for medicine before departure.',
+    'Customs changes shifts soon. The maintenance route will be thinly watched.',
+    'A courier vanished after mentioning an unregistered cargo locker.',
+    'The guild board is holding a quiet job for someone who can avoid alarms.',
+    'A local captain wants armed help and does not care who notices.',
+    'Someone is buying restricted tech through the service quarter.'
+  ];
+  const actors=[];
+  for(let i=0;i<7;i++){
+    const room=rooms[rng.int(0,rooms.length-1)];
+    actors.push({id:`npc-${i}`,kind:'civilian',name:names[rng.int(0,names.length-1)],x:room.cx+jitter(),y:room.cy+jitter(),
+      home:{x:room.cx,y:room.cy},target:{x:room.cx+jitter(),y:room.cy+jitter()},speed:rng.range(23,38),
+      rumor:rumors[rng.int(0,rumors.length-1)],mission:i<3?{
+        style:['stealth','hot','choice'][i],kind:['evidence theft','raid','recovery'][i],difficulty:rng.int(1,4)
+      }:null});
+  }
+  for(let i=0;i<3;i++){
+    const room=rooms[(i*2+1)%rooms.length];
+    actors.push({id:`guard-${i}`,kind:'guard',name:`${faction} PATROL ${i+1}`,x:room.cx,y:room.cy,
+      home:{x:room.cx,y:room.cy},target:{x:rooms[(i*2+3)%rooms.length].cx,y:rooms[(i*2+3)%rooms.length].cy},speed:48,alert:false});
+  }
+  const world={floor:0,seed:Number(seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
+    stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
+    shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,isHQ:true,isSpaceport:true,crime:{heat:0,witnessed:false}};
+  for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
+    const o=overlap(rooms[i],rooms[j]);if(o.w<60||o.h<60)continue;
+    world.links.push({a:i,b:j,via:{x:(o.minX+o.maxX)/2,y:(o.minY+o.maxY)/2},width:Math.min(o.w,o.h)*.5});
+    rooms[i].neighbors.push(j);rooms[j].neighbors.push(i);
+  }
+  buildIndex(world);prepareWalls(world);
+  const furniture=[
+    {room:1,x:690,y:-120,w:60,h:44,kind:'market kiosk'},
+    {room:2,x:-690,y:105,w:54,h:46,kind:'customs desk'},
+    {room:4,x:155,y:515,w:48,h:42,kind:'console'},
+    {room:5,x:690,y:265,w:62,h:52,kind:'supply crate'}
+  ];
+  for(const obj of furniture)rooms[obj.room].cover.push({...obj,hp:999,maxHp:999});
+  return world;
+}
+
 // Blue-noise-style placement over the UNION of all walkable floor pieces.
 // A global candidate lattice plus farthest-point sampling avoids random
 // bunches in one end of the map. No rooms are selected or given a quota.

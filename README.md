@@ -419,14 +419,14 @@ The **Download submitted reports (.txt)** button exports public `beta-feedback` 
 
 ## Neon Firewall: standalone and integrated hacking arcade
 
-[Play Neon Firewall](https://dmcexcess-lab.github.io/Neon-Privateer/firewall/) or open **NETWORK / NEON FIREWALL** while docked in Privateer. This is a native shared Godot minigame: seeded growing brick grids, armor/caches, explosive chains, multiball, relays/locks, phase and moving bricks, steel, turrets, beneficial/harmful drops, permanent research and a between-level run store. Standalone profiles retain credits on death; the Privateer terminal uses the real career's carried cash, preserves its bank, and saves research plus active-run/reward history in the career meta file. This is currently a docked arcade/security terminal; opening physical doors, disabling ground alarms and boarding/mission objectives are future integration hooks. See [neon-firewall/README.md](neon-firewall/README.md).
+[Play Neon Firewall](https://dmcexcess-lab.github.io/Neon-Privateer/firewall/) as its own standalone arcade game. Privateer no longer exposes Firewall as a dock-menu diversion: the shared native challenge appears only at physical terminals encountered inside spaceports and operations. Terminal outcomes are contextual mission actions rather than a parallel source of career cash. See [neon-firewall/README.md](neon-firewall/README.md).
 
 
 ## Career RPG, guilds and justice (2026-10-27)
 
 Privateer combines missions (delivery, transport, ground/space mercenary work, tracking and investigations), trading/investing, and crime. New careers start with **zero cash, no field gear or upgrades, and the basic ship**. The free **ENTRY COURIER** ship contract gets the pilot earning; existing saves keep their equipment and funds.
 
-**PORT / OPERATIONS** offers nine job types across three pages and five difficulty tiers. Trader and Mercenary standing unlock harder legitimate jobs. Crime earns no guild credit. NETWORK Firewall practice no longer mints career cash; real mission/crime objectives pay on completion. Standalone Firewall remains an arcade game. Harder field jobs have more and tougher guards, not just a larger reward label. The JOURNAL records leads, extracted records, evidence filed, legal cases and payments.
+On Web, **PORT / OPERATIONS** now opens a persistent, planet-seeded spaceport in the actual Neon Breach engine. Services are physical locations; roaming civilians provide rumors and spontaneous stealth, hot or choice-driven jobs; faction guards patrol and react to witnessed crime; restricted terminals launch contextual Firewall challenges; and back alleys permit intentional robbery with witnesses, heat and arrest consequences. Standalone Firewall remains an arcade game. The older native ground controller remains only as a non-Web compatibility fallback until Breach is ported to GDScript.
 
 **Mission capture** is a Breach captivity escape: recover gear, get a badge or hack the terminal, then hold the extraction ring for eight seconds. It is not a criminal sentence and has no court-fine shortcut.
 

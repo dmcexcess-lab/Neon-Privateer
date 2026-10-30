@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {RNG,generateFloor,roomCount,enemyBudget,threat,strata,createHQWorld,enemyWeights,TILESETS,chooseEnemy,chooseGuardWeapon,walkable,roomAt,floorAt,propAt} from '../neon-breach/src/dungeon.js';
+import {RNG,generateFloor,roomCount,enemyBudget,threat,strata,createHQWorld,createSpaceportWorld,enemyWeights,TILESETS,chooseEnemy,chooseGuardWeapon,walkable,roomAt,floorAt,propAt} from '../neon-breach/src/dungeon.js';
 let count=0,chests=0,openSides=new Set(),moreThanTwoOpen=0;
 for(let floor=1;floor<=40;floor++){
   assert.ok(threat(floor,3)>threat(floor-1,3));
@@ -120,5 +120,15 @@ assert.equal(hq.stations.length,4);assert.equal(hq.exit,null);
 assert.ok(hq.rooms.every(r=>r.visited&&r.tileset==='hq'));
 for(const station of hq.stations)assert.ok(walkable(hq,station.x,station.y,16),`${station.id} must be reachable`);
 for(const connection of hq.links)assert.ok(walkable(hq,connection.via.x,connection.via.y,18),'HQ corridors must stay open');
+const port=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
+const samePort=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
+assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,6);assert.equal(port.stations.length,6);
+assert.equal(port.actors.filter(a=>a.kind==='civilian').length,7);assert.equal(port.actors.filter(a=>a.kind==='guard').length,3);
+assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
+assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
+assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
+assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice'],'spontaneous missions expose every approach');
+for(const station of port.stations)assert.ok(walkable(port,station.x,station.y,16),`${station.id} spaceport service must be reachable`);
+for(const connection of port.links)assert.ok(walkable(port,connection.via.x,connection.via.y,18),'spaceport corridors must stay open');
 assert.ok(lateGuards>=3700 && lateZ>=3000 && lateZ<=4400,`lower maintenance should mix zombies and guards: ${lateGuards}, ${lateZ}`);
 console.log(`PASS: ${count} merged modular floors across all four strata, 1–4 open sides ${[...openSides]}, ${chests} exploration chests; gradual 3–${enemyBudget(20)} enemy budgets`);

@@ -36,6 +36,30 @@ document.getElementById('github-report').addEventListener('click', () => {
 });
 const game = document.querySelector('[data-game-frame]');
 const gameStatus = document.getElementById('game-status');
+let breachLayer = null;
+function closeBreachLayer() {
+  if (!breachLayer) return;
+  breachLayer.remove();
+  breachLayer = null;
+  game.hidden = false;
+  game.focus();
+}
+function openBreachLayer(context) {
+  closeBreachLayer();
+  const layer = document.createElement('div');
+  layer.className = 'breach-layer';
+  const frame = document.createElement('iframe');
+  frame.className = 'breach-mission-frame';
+  frame.title = 'Privateer spaceport and ground operation';
+  frame.allow = 'autoplay; fullscreen';
+  frame.src = './breach/game.html?privateer=' + encodeURIComponent(JSON.stringify(context));
+  layer.appendChild(frame);
+  document.querySelector('.game-stage').appendChild(layer);
+  breachLayer = layer;
+  game.hidden = true;
+  gameStatus.textContent = context.mode === 'spaceport' ? 'Walking the local spaceport in Neon Breach.' : 'Ground operation active in Neon Breach.';
+  frame.focus();
+}
 document.getElementById('launch').addEventListener('click', () => {
   game.src = './game.html?v=' + encodeURIComponent(build); game.hidden = false; document.getElementById('launch-card').hidden = true;
   document.getElementById('close-game').hidden = false;
@@ -48,9 +72,20 @@ document.getElementById('close-game').addEventListener('click', () => {
   gameStatus.textContent = document.body.dataset.closedText;
 });
 window.addEventListener('message', (event) => {
-  if (event.origin !== location.origin || event.source !== game.contentWindow) return;
-  if (event.data === 'dmc-game-ready') gameStatus.textContent = document.body.dataset.readyText;
-  if (event.data === 'dmc-game-failed') gameStatus.textContent = 'The game reported an error. Reload or send a report with your browser and what happened.';
+  if (event.origin !== location.origin) return;
+  if (event.source === game.contentWindow) {
+    if (event.data === 'dmc-game-ready') gameStatus.textContent = document.body.dataset.readyText;
+    else if (event.data === 'dmc-game-failed') gameStatus.textContent = 'The game reported an error. Reload or send a report with your browser and what happened.';
+    else if (event.data?.type === 'dmc-open-breach') openBreachLayer(event.data.detail);
+    return;
+  }
+  const breachFrame = breachLayer?.querySelector('iframe');
+  if (!breachFrame || event.source !== breachFrame.contentWindow || !event.data?.type?.startsWith('dmc-privateer-')) return;
+  game.contentWindow.postMessage(event.data, location.origin);
+  if (['dmc-privateer-service','dmc-privateer-terminal','dmc-privateer-port-result','dmc-privateer-mission-result'].includes(event.data.type)) {
+    closeBreachLayer();
+    gameStatus.textContent = 'Returned to Neon Privateer.';
+  }
 });
 readReport();
 

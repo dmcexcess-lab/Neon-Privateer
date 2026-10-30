@@ -4,7 +4,7 @@ A standalone neon brick-breaker and the actual native hacking arcade inside Neon
 
 Play: https://dmcexcess-lab.github.io/Neon-Privateer/firewall/
 
-Privateer: dock, then choose **NETWORK / NEON FIREWALL**. The same Godot view and simulation run in-process, using that career's carried cash and saved hacking research. There is no external link, iframe between games, or second Privateer currency. The standalone Web export has its own three profiles. Standalone Breach and Classic remain independent.
+In Privateer, Firewall is not a dock-menu arcade button. The shared Godot challenge launches only after the player reaches and interacts with a physical terminal in a Breach spaceport or operation. It uses the career's hacking research without creating a second Privateer currency. The standalone Web export remains a complete independent game with its own three profiles.
 
 ## Progression and saves
 

@@ -24,6 +24,7 @@ const makeElement=()=>({
   querySelector(){return makeElement()}
 });
 const elements=new Map(),storage=new Map();
+const privateerMessages=[];
 let musicInstances=0;
 // Reproducible headings, pauses and spawn offsets for traversal regressions.
 let randomSeed=0x1234abcd;
@@ -37,6 +38,7 @@ const sandbox={
   ...eventTarget(),
   Math:seededMath,
   console,document,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v))},navigator:{getGamepads(){return []}},
+  parent:{postMessage(message){privateerMessages.push(message)}},location:{origin:'http://localhost',search:''},URLSearchParams,
   innerWidth:1080,innerHeight:830,devicePixelRatio:1,performance,
   requestAnimationFrame(){},
   Audio:class{constructor(){musicInstances++;this.paused=true;this.currentTime=0;}addEventListener(){} play(){this.paused=false;return Promise.resolve()} pause(){this.paused=true;}},
@@ -48,9 +50,27 @@ vm.runInNewContext(source+`
   updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
-  getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs};
+  getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
+  startPrivateerMission,finishPrivateerMission,setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
+
+test('Privateer mission approaches have distinct rules and contract rewards',()=>{
+  b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});
+  b.startPrivateerMission({style:'hot',difficulty:1,seed:919,objective:'raid'});
+  assert.equal(b.game.detectedThisFloor,true,'hot missions begin fully alerted');
+  assert.ok(b.game.enemies.length>0&&b.game.enemies.every(enemy=>enemy.state==='alert'));
+  b.game.runCash=7;b.finishPrivateerMission('completed');
+  let result=privateerMessages.at(-1).detail;
+  assert.equal(result.style,'hot');assert.equal(result.contractReward,65);assert.equal(result.cash,72);
+
+  b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});
+  b.startPrivateerMission({style:'stealth',difficulty:1,seed:919,objective:'evidence theft'});
+  assert.equal(b.game.detectedThisFloor,false,'stealth missions begin quiet');
+  b.finishPrivateerMission('completed');result=privateerMessages.at(-1).detail;
+  assert.equal(result.approachSucceeded,true);assert.equal(result.contractReward,114,'clean stealth completion earns a bonus');
+  b.setPrivateerContext(null);
+});
 
 test('everything costs twice the original price except the unchanged knife',()=>{
   const baseline={knife:95,revolver:165,auto_pistol:225,shotgun:285,ar:385,map:115,

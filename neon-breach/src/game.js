@@ -1,4 +1,4 @@
-import {RNG,generateFloor,createHQWorld,enemyBudget,chooseEnemy,chooseGuardWeapon,randomSpot,walkable,propAt,roomAt,TILESETS,planFloorPoints} from './dungeon.js';
+import {RNG,generateFloor,createHQWorld,createSpaceportWorld,enemyBudget,chooseEnemy,chooseGuardWeapon,randomSpot,walkable,propAt,roomAt,TILESETS,planFloorPoints} from './dungeon.js';
 import {VISION,canSpot,canHear,clearSight,turnToward,angleDifference,navigationPoint} from './ai.js';
 import {unlockAudio,sound,step,melee,weaponShot,reloadSound,pumpSound,monsterSound,enemyFootstep,getAudioSettings,setAudioSettings} from './audio.js';
 
@@ -45,6 +45,7 @@ function loadProfile(){
   }catch{return {credits:0,storage:cleanStash(),unlockedFloor:1,firstGuardFloor:Math.random()<.5?7:8};}
 }
 function saveProfile(syncHQ=true){
+  if(privateerContext)return;
   try{localStorage.setItem(PROFILE_KEY,JSON.stringify(game.profile));}catch{}
   if(syncHQ&&['HQ','HQ_PANEL','TRAVEL'].includes(game.mode))saveGame(true);
 }
@@ -58,6 +59,13 @@ const camera={x:0,y:0};
 const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false,stealthHeld:false},move:{x:0,y:0},aim:{x:0,y:0},map:false,sneakTouch:false,shotgunTriggerHeld:false,shotgunPendingPresses:0};
 let lastFrame=0,now=0,audio=null,gamepadPauseDown=false,toastTimeout=0;
 let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0};
+let privateerContext=null;
+try{
+  if(typeof URLSearchParams!=='undefined'&&typeof location!=='undefined'){
+    const params=new URLSearchParams(location.search),raw=params.get('privateer');
+    if(raw)privateerContext=JSON.parse(raw);
+  }
+}catch(error){console.warn('Privateer mission context rejected',error);}
 game.profile=loadProfile();game.loadout=emptyLoadout();
 let bestFloor=0;try{bestFloor=Number(localStorage.getItem('neon-breach.best')||0)}catch{}
 game.profile.unlockedFloor=Math.max(game.profile.unlockedFloor,Math.max(...travelTiers.filter(f=>f<=bestFloor),1));
@@ -116,16 +124,106 @@ function enterHQ(message='FIELD LOADOUT READY'){
   document.body?.classList.toggle('hq-mode',true);
   announce(`${message}  ·  WALK TO A STATION AND PRESS E / INTERACT`,3.7);
 }
+function privateerMessage(type,detail={}){
+  if(!privateerContext)return;
+  parent.postMessage({type,detail,requestId:privateerContext.requestId||'',planetId:privateerContext.planetId||''},location.origin);
+}
+function makeFieldPlayer(loadout={}){
+  const weapon=WEAPONS[loadout.weapon]?loadout.weapon:'hands',armor=clamp(Number(loadout.armor)||0,0,3);
+  return {x:0,y:0,r:16,hp:3+armor,maxHp:3+armor,cash:Number(loadout.cash)||0,weapon,weaponDrawn:false,
+    armorTier:armor,map:!!loadout.map,medkits:clamp(Number(loadout.medkits)||0,0,MAX_REPAIR_KITS),spares:[],magazines:initialMagazines(),
+    reloadClock:0,reloadTotal:0,reloadWeapon:null,reloadShells:0,reloadStage:null,pumpClock:0,pumpTotal:0,pumpNeeded:false,
+    swingHand:0,speed:235,damage:1,rate:1,armor:0,scavenging:1,stealth:1,sneaking:false,cool:0,invuln:0,
+    facing:-Math.PI/2,walkCycle:0,punchTimer:0,stepClock:0};
+}
+function enterPrivateerPort(context){
+  hiddenScreens();game.world=createSpaceportWorld(context);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
+  game.player=makeFieldPlayer(context.loadout||{});game.hqStation=null;game.portClock=0;
+  camera.x=0;camera.y=0;show('hud',false);show('location',true);show('touchUI',true);show('aimTip',false);show('hqPrompt',false);show('hqMenuButton',false);
+  document.body?.classList.toggle('hq-mode',true);
+  $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
+  announce('SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
+}
+function startPrivateerMission(spec){
+  privateerContext={...privateerContext,...spec,mode:'mission'};
+  game.loadout={...emptyLoadout(),...(privateerContext.loadout||{})};
+  resetRun(Math.max(1,Number(privateerContext.difficulty)||1),(Number(privateerContext.seed)>>>0)||null);
+  if(privateerContext.style==='hot'){
+    game.detectedThisFloor=true;
+    for(const enemy of game.enemies){enemy.state='alert';enemy.alertTime=999;enemy.lastKnown={x:game.player.x,y:game.player.y};}
+  }
+  announce(`${String(privateerContext.style||'choice').toUpperCase()} OPERATION · ${String(privateerContext.objective||privateerContext.kind||'COMPLETE OR EXTRACT').toUpperCase()}`,4);
+}
+function finishPrivateerMission(outcome){
+  if(privateerContext?.mode!=='mission')return false;
+  const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
+  const clean=style!=='stealth'||!game.detectedThisFloor;
+  const base=completed?40+Math.max(1,Number(privateerContext.difficulty)||1)*25:0;
+  const bonus=completed&&style==='stealth'&&clean?Math.ceil(base*.75):0;
+  privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,
+    detected:!!game.detectedThisFloor,cash:game.runCash+base+bonus,contractReward:base+bonus,objective:privateerContext.objective||''});
+  return true;
+}
+function nearbyPortActor(){
+  if(!game.world?.isSpaceport)return null;
+  return game.world.actors.find(a=>!a.robbed&&Math.hypot(game.player.x-a.x,game.player.y-a.y)<76)||null;
+}
+function interactPort(){
+  if(game.mode!=='PORT')return false;
+  const station=nearbyStation(),actor=nearbyPortActor();
+  if(station){
+    if(station.service==='terminal')privateerMessage('dmc-privateer-terminal',{terminal:'spaceport',seed:game.world.seed});
+    else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
+    else privateerMessage('dmc-privateer-service',{service:station.service});
+    return true;
+  }
+  if(!actor)return false;
+  if(actor.kind==='guard'){announce(actor.alert?'HALT · SURRENDER OR LEAVE THE PORT':'PATROL: KEEP YOUR WEAPON HOLSTERED.',2.5);return true;}
+  if(game.player.weaponDrawn){
+    const witnesses=game.world.actors.filter(a=>a!==actor&&!a.robbed&&Math.hypot(a.x-actor.x,a.y-actor.y)<260);
+    const amount=12+game.world.rng.int(0,28);actor.robbed=true;game.world.crime.heat+=witnesses.length?18:8;game.world.crime.witnessed=!!witnesses.length;
+    for(const guard of game.world.actors.filter(a=>a.kind==='guard'))guard.alert=!!witnesses.length;
+    privateerMessage('dmc-privateer-crime',{offense:'street_robbery',severity:witnesses.length?3:2,cash:amount,witnessed:!!witnesses.length});
+    announce(`${actor.name}: TAKE IT · +${amount} CR${witnesses.length?' · WITNESSES ALERT SECURITY':''}`,3);return true;
+  }
+  if(actor.mission&&!actor.offered){
+    actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name});
+    announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
+  }else if(actor.mission&&actor.offered){
+    startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,objective:actor.mission.kind});
+    return true;
+  }else announce(`${actor.name}: ${actor.rumor}`,4);
+  privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;
+}
+function updatePort(dt){
+  const p=game.player,control=captureInputs();
+  moveWithCollisions(p,control.mx*p.speed*(p.sneaking?.62:1)*dt,control.my*p.speed*(p.sneaking?.62:1)*dt,p.r);
+  if(Math.hypot(control.mx,control.my)>.25)p.facing=Math.atan2(control.my,control.mx);
+  for(const actor of game.world.actors){
+    if(actor.robbed&&actor.kind==='civilian')continue;
+    if(actor.kind==='guard'&&actor.alert)actor.target={x:p.x,y:p.y};
+    const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
+    if(d<18){
+      const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};
+    }else moveWithCollisions(actor,dx/d*actor.speed*dt,dy/d*actor.speed*dt,13);
+    if(actor.kind==='guard'&&actor.alert&&Math.hypot(actor.x-p.x,actor.y-p.y)<42){
+      privateerMessage('dmc-privateer-port-result',{outcome:'arrested',heat:game.world.crime.heat});actor.alert=false;announce('SECURITY DETAINED YOU · RETURNING TO LEGAL REVIEW',3);
+    }
+  }
+  camera.x+=(p.x-camera.x)*Math.min(1,dt*8);camera.y+=(p.y-camera.y)*Math.min(1,dt*8);updateHQPrompt();
+}
 function nearbyStation(){
   if(!game.world?.isHQ||!game.player)return null;
   return game.world.stations.find(s=>Math.hypot(game.player.x-s.x,game.player.y-s.y)<91)||null;
 }
 function updateHQPrompt(){
   const station=nearbyStation();
-  if(station?.id===game.hqStation)return;
-  game.hqStation=station?.id||null;
-  show('hqPrompt',!!station);
+  const actor=game.world?.isSpaceport?nearbyPortActor():null,key=station?.id||actor?.id||null;
+  if(key===game.hqStation)return;
+  game.hqStation=key;
+  show('hqPrompt',!!station||!!actor);
   if(station)$('hqInteractButton').textContent=`INTERACT · ${station.label}`;
+  else if(actor)$('hqInteractButton').textContent=`TALK · ${actor.name}${game.player.weaponDrawn&&actor.kind==='civilian'?' · ROB':''}`;
 }
 function openHQPanel(kind){
   if(game.mode!=='HQ')return false;
@@ -144,6 +242,7 @@ function closeHQPanel(){
   game.mode='HQ';show('hq',false);show('touchUI',true);game.hqStation=null;updateHQPrompt();
 }
 function interactHQ(){
+  if(game.mode==='PORT')return interactPort();
   if(game.mode!=='HQ')return false;
   const station=nearbyStation();if(!station)return false;
   if(station.id==='deploy')openTravel();
@@ -226,10 +325,10 @@ function fastTravel(floor){
   return true;
 }
 function initialMagazines(){return Object.fromEntries(Object.entries(WEAPONS).filter(([,w])=>w.magazine).map(([id,w])=>[id,w.magazine]));}
-function resetRun(startFloor=1){
+function resetRun(startFloor=1,runSeed=null){
   inputs.sneakTouch=false;inputs.shotgunTriggerHeld=false;inputs.shotgunPendingPresses=0;$('sneakButton').classList.toggle('active',false);
   const l=game.loadout;
-  game.floor=startFloor;game.seed=(Math.random()*0xffffffff)>>>0;game.kills=0;game.runCash=0;game.time=0;
+  game.floor=startFloor;game.seed=runSeed===null?(Math.random()*0xffffffff)>>>0:runSeed;game.kills=0;game.runCash=0;game.time=0;
   game.upgradeLevels={};
   game.player={x:0,y:0,r:16,hp:3+l.armor,maxHp:3+l.armor,cash:game.profile.credits,weapon:l.weapon,
     armorTier:l.armor,map:l.map,medkits:l.medkits,spares:[...l.spares],magazines:initialMagazines(),reloadClock:0,reloadTotal:0,reloadWeapon:null,reloadShells:0,reloadStage:null,pumpClock:0,pumpTotal:0,pumpNeeded:false,swingHand:0,speed:230,damage:1,rate:1,armor:0,scavenging:1,stealth:1,
@@ -316,6 +415,7 @@ function playerDamage(amount){
 }
 function die(){
   game.extraction=null;game.exitClock=0;
+  finishPrivateerMission('captured');
   game.mode='DEAD';show('death',true);show('touchUI',false);show('aimTip',false);
   game.loadout=emptyLoadout();saveProfile();
   saveGame(true);
@@ -335,9 +435,11 @@ function recoverGear(){
 }
 function exfil(){
   game.extraction=null;game.exitClock=0;
+  if(finishPrivateerMission('extracted'))return;
   recoverGear();playSound('start');enterHQ(`EXFIL SUCCESS // GEAR RECOVERED // ${game.profile.credits} CREDITS SAFE`);saveGame(true);
 }
 function nextFloor(){
+  if(finishPrivateerMission('completed'))return;
   for(const e of game.enemies)recordAlert(e);
   const clear=floorAdvanceAward(game.floor,game.world.rooms.length),stealth=game.detectedThisFloor?0:stealthAward(game.floor);
   credit(clear+stealth);game.floor++;beginFloor();game.mode='PLAY';
@@ -366,6 +468,7 @@ function returnToTitle(){
 }
 function hasSave(){try{return !!JSON.parse(localStorage.getItem(SAVE_KEY)||'null')?.version;}catch{return false;}}
 function saveGame(forceHQ=false){
+  if(privateerContext)return false;
   const mode=forceHQ?'HQ':game.mode==='SETTINGS'?(settingsReturn==='PAUSE'?game.pausedFrom:'HQ'):game.mode==='PAUSE'?game.pausedFrom:game.mode;
   const inMission=mode==='PLAY';
   const slot={version:1,profile:structuredCloneSafe(game.profile),loadout:structuredCloneSafe(game.loadout),
@@ -1035,6 +1138,7 @@ function update(dt){
   game.enemyFootBudget=Math.max(0,(game.enemyFootBudget||0)-dt);
   if(toastTimeout>0){toastTimeout-=dt;if(toastTimeout<=0)show('toast',false);}
   game.shake=Math.max(0,game.shake-dt*40);game.flashed=Math.max(0,game.flashed-dt);
+  if(game.mode==='PORT'){updatePort(dt);return;}
   if(game.mode==='HQ'){
     if(!game.world?.isHQ)return;
     const p=game.player,control=captureInputs();
@@ -1221,22 +1325,33 @@ function drawHQStations(){
     ctx.strokeRect(-45-pulse/2,-32-pulse/2,90+pulse,64+pulse);ctx.shadowBlur=0;
     ctx.fillStyle='#0b2731';ctx.fillRect(-36,-24,72,48);
     ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 15px ui-monospace,monospace';
-    ctx.fillText(({shop:'BUY',storage:'STASH',deploy:'DEPLOY',medical:'MED'})[station.id],0,5);
+    ctx.fillText(station.short||({shop:'BUY',storage:'STASH',deploy:'DEPLOY',medical:'MED'})[station.id]||station.id.toUpperCase(),0,5);
     ctx.font='700 11px ui-monospace,monospace';ctx.fillText(station.label,0,64);
     if(near){ctx.fillStyle='#f0ffff';ctx.fillText('PRESS E / INTERACT',0,85);}
     ctx.restore();
   }
+  if(game.world.isSpaceport)return;
   // Signage visible from HQ's central spawn points toward every facility.
   const signs=[[-170,0,'◀ STORAGE',C.green],[175,0,'ARMORY ▶',C.gold],[0,-115,'▲ DEPLOY',C.cyan],[0,138,'▼ MEDICAL','#ff88bc']];
   ctx.textAlign='center';ctx.font='900 16px ui-monospace,monospace';
   for(const [x,y,label,color] of signs){ctx.fillStyle=color;ctx.fillText(label,x,y);}
+}
+function drawPortActors(){
+  if(!game.world?.isSpaceport)return;
+  for(const actor of game.world.actors){
+    if(actor.robbed&&actor.kind==='civilian')continue;
+    const guard=actor.kind==='guard',color=guard?(actor.alert?C.red:C.cyan):C.green;
+    ctx.save();ctx.translate(actor.x,actor.y);ctx.fillStyle=guard?'#17384c':'#163c34';ctx.strokeStyle=color;ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.arc(0,0,guard?16:13,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=color;ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(guard?'SEC':'NPC',0,4);
+    if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.fillText('!',0,-24);}ctx.restore();
+  }
 }
 function drawHQDirectory(){
   const size=Math.min(144,SW*.38),x=SW-size-12,y=SW<600?20:22;
   const minX=-750,minY=-680,worldW=1490,worldH=1280,scale=(size-18)/worldW;
   ctx.save();ctx.fillStyle='rgba(5,18,31,.91)';ctx.fillRect(x-5,y-5,size+10,size*worldH/worldW+36);
   ctx.strokeStyle='#397b88';ctx.lineWidth=1;ctx.strokeRect(x-5,y-5,size+10,size*worldH/worldW+36);
-  ctx.textAlign='left';ctx.fillStyle='#75c9d7';ctx.font='800 10px ui-monospace,monospace';ctx.fillText('HQ DIRECTORY',x+2,y+9);
+  ctx.textAlign='left';ctx.fillStyle='#75c9d7';ctx.font='800 10px ui-monospace,monospace';ctx.fillText(game.world.isSpaceport?'SPACEPORT DIRECTORY':'HQ DIRECTORY',x+2,y+9);
   const X=(wx)=>x+9+(wx-minX)*scale,Y=(wy)=>y+18+(wy-minY)*scale;
   for(const r of game.world.rooms){ctx.fillStyle='#163b4a';ctx.fillRect(X(r.x),Y(r.y),r.w*scale,r.h*scale);}
   for(const s of game.world.stations){ctx.fillStyle=s.color;ctx.fillRect(X(s.x)-3,Y(s.y)-3,6,6);}
@@ -1422,7 +1537,7 @@ function render(){
     if(sx>SW+300||sy>SH+300||sx+room.w*zoom< -300||sy+room.h*zoom < -300)continue;
     drawRoom(room);
   }
-  if(game.world.isHQ)drawHQStations();
+  if(game.world.isHQ){drawHQStations();drawPortActors();}
   else drawPickups();
   const visibleEnemies=game.enemies.filter(e=>Math.abs(e.x-camera.x)<SW/(zoom*2)+350&&Math.abs(e.y-camera.y)<SH/(zoom*2)+350);
   for(const e of visibleEnemies)drawAwareness(e);
@@ -1451,7 +1566,7 @@ function attachStick(element,target){
     const vx=len<7?0:dx/Math.max(len,max),vy=len<7?0:dy/Math.max(len,max);
     inputs[target]={x:vx,y:vy};knob.style.transform=`translate(${vx*max}px,${vy*max}px)`;
   }
-  element.addEventListener('pointerdown',e=>{if(!['PLAY','HQ'].includes(game.mode)||pointer!==null)return;pointer=e.pointerId;element.setPointerCapture(pointer);move(e);e.preventDefault();});
+  element.addEventListener('pointerdown',e=>{if(!['PLAY','HQ','PORT'].includes(game.mode)||pointer!==null)return;pointer=e.pointerId;element.setPointerCapture(pointer);move(e);e.preventDefault();});
   element.addEventListener('pointermove',e=>{if(pointer===e.pointerId){move(e);e.preventDefault();}});
   function release(e){if(pointer!==e.pointerId)return;pointer=null;inputs[target]={x:0,y:0};knob.style.transform='translate(0,0)';}
   element.addEventListener('pointerup',release);element.addEventListener('pointercancel',release);element.addEventListener('lostpointercapture',e=>{if(pointer===e.pointerId)release(e);});
@@ -1478,10 +1593,11 @@ addEventListener('pagehide',()=>{if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SE
 addEventListener('keydown',e=>{
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if(!e.repeat&&game.mode==='HQ_PANEL'&&(e.code==='Escape'||e.code==='KeyE')){closeHQPanel();return;}
-  if(!e.repeat&&game.mode==='HQ'&&e.code==='KeyE'){interactHQ();return;}
+  if(!e.repeat&&['HQ','PORT'].includes(game.mode)&&e.code==='KeyE'){interactHQ();return;}
   if(!e.repeat&&game.mode==='TRAVEL'&&e.code==='Escape'){closeTravel();return;}
   if(!e.repeat&&game.mode==='SETTINGS'&&e.code==='Escape'){closeSettings();return;}
   if(!e.repeat&&game.mode==='HQ'&&e.code==='Escape'){togglePause();return;}
+  if(!e.repeat&&game.mode==='PORT'&&e.code==='KeyH'){game.player.weaponDrawn=!game.player.weaponDrawn;game.hqStation=null;updateHQPrompt();announce(game.player.weaponDrawn?'WEAPON DRAWN · SECURITY MAY REACT':'WEAPON HOLSTERED',1.6);return;}
   if(!e.repeat&&(e.code==='Escape'||e.code==='KeyP')){if(game.mode==='PLAY'||game.mode==='PAUSE')togglePause();return;}
   if(!e.repeat&&e.code==='KeyM'&&game.mode==='PLAY'&&game.player?.map){inputs.map=!inputs.map;return;}
   if(!e.repeat&&e.code==='KeyH'&&game.mode==='PLAY'){toggleWeaponDraw();return;}
@@ -1518,6 +1634,11 @@ $('drawButton').addEventListener('click',toggleWeaponDraw);
 $('sneakButton').addEventListener('click',()=>{inputs.sneakTouch=!inputs.sneakTouch;$('sneakButton').classList.toggle('active',!!inputs.sneakTouch);});
 $('medkitButton').addEventListener('click',useMedkit);
 requestAnimationFrame(frame);
+
+if(privateerContext){
+  if(privateerContext.mode==='spaceport')enterPrivateerPort(privateerContext);
+  else if(privateerContext.mode==='mission')startPrivateerMission(privateerContext);
+}
 
 function forgetWanderer(e){
   e.state='idle';e.alertTime=0;e.searchTime=0;e.lastKnown=null;

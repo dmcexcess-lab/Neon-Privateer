@@ -87,7 +87,6 @@ const PROFILE_CONTINUE_RECT := Rect2(54.0, 352.0, 282.0, 64.0)
 const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
 const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
 const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
-const HUB_FIREWALL_RECT := Rect2(35.0, 774.0, 320.0, 48.0)
 const HUB_CAREERS_RECT := Rect2(35.0, 710.0, 320.0, 54.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 390.0, 320.0, 54.0)
 const HUB_TRADE_RECT := Rect2(35.0, 454.0, 320.0, 54.0)
@@ -210,6 +209,7 @@ var covert: Node2D
 var firewall_open := false
 var firewall: Node2D
 var firewall_profile: Dictionary = FirewallGame.default_profile()
+var breach_web_callback
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -454,12 +454,96 @@ func _ready() -> void:
     _setup_audio()
     _setup_firewall()
     _setup_covert()
+    _setup_breach_bridge()
     _load_career_index()
     _migrate_legacy_career_if_needed()
     profile_menu_open = true
     career_slots_open = false
     hub_open = false
     set_process(true)
+    queue_redraw()
+
+func _setup_breach_bridge() -> void:
+    if not OS.has_feature("web"):
+        return
+    breach_web_callback = JavaScriptBridge.create_callback(_on_breach_web_message)
+    JavaScriptBridge.get_interface("window").addEventListener("message", breach_web_callback)
+
+func _open_breach_spaceport() -> bool:
+    if active_career_slot <= 0 or playing or route_active or not hub_open:
+        return false
+    if not OS.has_feature("web"):
+        return _open_covert()
+    var faction_id := _planet_primary_faction(current_planet)
+    var payload := {
+        "type": "dmc-open-breach",
+        "detail": {
+            "mode": "spaceport",
+            "requestId": "%d:%s" % [active_career_slot, current_planet],
+            "seed": abs(world_seed ^ hash(current_planet)),
+            "planetId": current_planet,
+            "planetName": _planet_display_name(current_planet),
+            "archetype": _planet_type(current_planet),
+            "faction": _contract_issuer_name(faction_id),
+            "loadout": {"weapon": "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
+        }
+    }
+    JavaScriptBridge.eval("window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(payload), false)
+    return true
+
+func _on_breach_web_message(args: Array) -> void:
+    if args.is_empty() or not OS.has_feature("web"):
+        return
+    var json_api = JavaScriptBridge.get_interface("JSON")
+    var decoded = JSON.parse_string(String(json_api.stringify(args[0].data)))
+    if not decoded is Dictionary:
+        return
+    var message: Dictionary = decoded
+    var kind := String(message.get("type", ""))
+    var detail: Dictionary = message.get("detail", {})
+    match kind:
+        "dmc-privateer-service":
+            var service := String(detail.get("service", "return"))
+            if service == "trade":
+                trade_view = "green"; trade_page = 0; trade_open = true; hub_open = false
+            elif service == "bank":
+                bank_view = "account"; bank_market_page = 0; market_open = true; hub_open = false
+            elif service == "contracts":
+                contracts_open = true; contract_notice = ""; hub_open = false
+        "dmc-privateer-terminal":
+            if _open_firewall():
+                firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)))
+                firewall.notice = "PHYSICAL TERMINAL // CLEAR ONE SECURITY LAYER"
+                firewall.notice_clock = 5
+        "dmc-privateer-rumor":
+            last_trip_summary = "%s: %s" % [String(detail.get("speaker", "LOCAL")), String(detail.get("rumor", "No useful rumor."))]
+        "dmc-privateer-mission-offer":
+            contract_notice = "%s offers a %s %s operation" % [String(detail.get("contact", "LOCAL")), String(detail.get("style", "choice")).to_upper(), String(detail.get("kind", "field"))]
+        "dmc-privateer-crime":
+            var severity := maxi(1, int(detail.get("severity", 1)))
+            research_credits += maxi(0, int(detail.get("cash", 0)))
+            var crime_faction_id := _planet_primary_faction(current_planet)
+            if not crime_faction_id.is_empty():
+                _record_faction_crime(crime_faction_id, severity * 4, severity * 10, String(detail.get("offense", "spaceport_crime")), false)
+            last_trip_summary = "Spaceport crime witnessed" if bool(detail.get("witnessed", false)) else "Unreported spaceport robbery"
+            _save_all_state()
+        "dmc-privateer-mission-result":
+            var outcome := String(detail.get("outcome", "returned"))
+            var style := String(detail.get("style", "choice"))
+            var reward := maxi(0, int(detail.get("cash", 0)))
+            research_credits += reward
+            var approach := "clean" if bool(detail.get("approachSucceeded", true)) else "approach compromised"
+            last_trip_summary = "%s ground operation %s · %s · %d kills · %d CR" % [style.capitalize(), outcome, approach, int(detail.get("kills", 0)), reward]
+            if outcome == "captured":
+                covert_profile["captured"] = true
+            _save_all_state()
+        "dmc-privateer-port-result":
+            if String(detail.get("outcome", "")) == "arrested":
+                var arrest_faction_id := _planet_primary_faction(current_planet)
+                if not arrest_faction_id.is_empty():
+                    Justice.record(covert_profile.justice, arrest_faction_id, "spaceport_arrest", 3)
+                    covert_profile.justice.forced_faction = arrest_faction_id
+                _save_all_state()
     queue_redraw()
 
 func _notification(what: int) -> void:
@@ -554,7 +638,12 @@ func _setup_firewall() -> void:
     firewall.configure(firewall_profile, research_credits)
     firewall.career_changed.connect(_firewall_changed)
     firewall.exit_requested.connect(_close_firewall)
+    firewall.challenge_finished.connect(_terminal_hack_finished)
     add_child(firewall)
+
+func _terminal_hack_finished(success: bool) -> void:
+    last_trip_summary = "PORT TERMINAL BYPASSED" if success else "PORT TERMINAL REJECTED ACCESS"
+    _close_firewall()
 
 func _open_firewall() -> bool:
     if active_career_slot <= 0 or playing or route_active or not hub_open:
@@ -3874,7 +3963,7 @@ func _contract_status_suffix(contract: Dictionary) -> String:
 
 func _handle_hub_tap(pos: Vector2) -> void:
     if HUB_OPERATIONS_RECT.has_point(pos):
-        _open_covert()
+        _open_breach_spaceport()
         get_viewport().set_input_as_handled()
     elif HUB_TRAVEL_RECT.has_point(pos):
         travel_selected_planet = _default_travel_selection()
@@ -3900,8 +3989,6 @@ func _handle_hub_tap(pos: Vector2) -> void:
     elif HUB_UPGRADES_RECT.has_point(pos):
         research_open = true
         hub_open = false
-    elif HUB_FIREWALL_RECT.has_point(pos):
-        _open_firewall()
     elif HUB_CAREERS_RECT.has_point(pos):
         _open_profile_menu()
         return
@@ -6686,9 +6773,6 @@ func _draw_title() -> void:
     draw_rect(HUB_CAREERS_RECT, Color(0.07, 0.08, 0.16, 0.92), true)
     draw_rect(HUB_CAREERS_RECT, Color("b56cff"), false, 3.0)
     _text_center("CAREERS", HUB_CAREERS_RECT.position.y + 38.0, 20, Color("f0fbff"), HUB_CAREERS_RECT.position.x, HUB_CAREERS_RECT.end.x)
-    draw_rect(HUB_FIREWALL_RECT, Color("182039"), true)
-    draw_rect(HUB_FIREWALL_RECT, Color("ff60bd"), false, 2.0)
-    _text_center("NETWORK / NEON FIREWALL", HUB_FIREWALL_RECT.position.y + 31.0, 17, Color("f0fbff"), HUB_FIREWALL_RECT.position.x, HUB_FIREWALL_RECT.end.x)
 
 func _draw_submenu_back() -> void:
     draw_rect(SUBMENU_BACK_RECT, Color(0.05, 0.15, 0.19, 0.94), true)

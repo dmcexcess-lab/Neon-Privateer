@@ -24,6 +24,7 @@ body[data-game-slug="neon-driftline-classic"] .game-stage{height:min(90svh,1000p
 .game-stage{position:relative}
 body .game-stage.expanded-play{position:fixed;inset:0;z-index:10000;width:100%;height:100dvh!important;min-height:0!important;max-height:none;background:#050a13;border:0;display:flex;align-items:center;justify-content:center;padding:0}
 .game-stage.expanded-play .game-frame{height:100%;width:100%;max-height:none;aspect-ratio:auto}
+.breach-layer{position:absolute;inset:0;z-index:8;background:#050a13}.breach-mission-frame{display:block;width:100%;height:100%;border:0;background:#050a13}.game-stage{position:relative}
 .expanded-play .exit-fullscreen{display:block}
 body.playing-expanded{overflow:hidden;overscroll-behavior:none}
 /* Reserve a slim independent rail for the exit control, above the in-game HUD. */

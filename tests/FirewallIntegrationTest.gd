@@ -11,7 +11,7 @@ func _run() -> void:
     scene._create_new_career(1);scene.bank_balance=444;scene.research_credits=2200
     var planet:String=scene.current_planet
     var world:Dictionary=scene.political_world.duplicate(true)
-    check(scene._open_firewall() and scene.firewall_open and scene.firewall.visible,"actual native game opens from dock")
+    check(scene._open_firewall() and scene.firewall_open and scene.firewall.visible,"actual native challenge opens from a physical terminal")
     check(scene.firewall.embedded and scene.firewall.music_player==null,"embedded game cannot create overlapping standalone music")
     var view=scene.firewall
     view.set_process(false);view.phase="RESEARCH"
@@ -47,9 +47,8 @@ func _run() -> void:
     check(scene.research_credits==987 and scene.firewall_profile.research.width==0,"second career retained")
     scene.playing=true;check(not scene._open_firewall(),"cannot open terminal during spaceflight");scene.playing=false
     scene.hub_open=true
-    var terminal_rect:Rect2=scene.HUB_FIREWALL_RECT
-    check(terminal_rect.size.y>=44 and terminal_rect.end.y<=scene.H,"terminal touch target fits viewport")
-    scene._handle_hub_tap(terminal_rect.get_center());check(scene.firewall_open,"port button launches game")
+    check(not String(scene.get_script().source_code).contains("NETWORK / NEON FIREWALL"),"dock menu has no direct Firewall arcade button")
+    check(scene._open_firewall() and scene.firewall_open,"physical terminal bridge launches the native challenge")
     scene._notification(Node.NOTIFICATION_APPLICATION_PAUSED)
     check(scene.firewall.phase!="PLAY","backgrounding pauses terminal")
     scene._close_firewall();scene.queue_free();await process_frame;await create_timer(.2).timeout

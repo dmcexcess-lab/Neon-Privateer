@@ -34,9 +34,13 @@ function ready() {setStatusMode('hidden');}</script></body>''')
 
     def test_privateer_feedback_is_below_full_width_game(self):
         css = (SCRIPT.parents[1] / 'web' / 'beta' / 'beta.css').read_text()
+        js = (SCRIPT.parents[1] / 'web' / 'beta' / 'beta.js').read_text()
         self.assertIn('body[data-game-slug="neon-privateer"] .beta-layout{grid-template-columns:minmax(0,1fr)', css)
         self.assertIn('body[data-game-slug="neon-privateer"] .feedback-inner{max-width:920px', css)
         self.assertIn('body[data-game-slug="neon-privateer"] .game-stage{height:clamp(', css)
+        self.assertIn('breach-mission-frame', css)
+        self.assertIn("event.data?.type === 'dmc-open-breach'", js)
+        self.assertIn("dmc-privateer-terminal", js)
 
     def test_standalone_games_have_complete_independent_pages(self):
         fixtures = {
