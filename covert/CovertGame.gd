@@ -199,7 +199,7 @@ func file_charges() -> bool:
     data.prosecutions.append(filed)
     cash+=Career.settle(data);notice="EVIDENCE FILED // INVESTIGATION PAID";persist();return true
 func _start_hack() -> void:
-    if sim.state.is_empty() or sim.state.kind not in ["intel","evidence","station_hack","robbery","mission_escape","prison_escape"]:return
+    if sim.state.is_empty() or sim.state.kind not in ["intel","evidence","wiretap","breach","station_hack","robbery","mission_escape","prison_escape"]:return
     sim.state.paused=true;clear_inputs()
     var profile:Dictionary=data.challenge.duplicate(true)
     if profile.is_empty():profile=Hacker.default_profile();profile.research=data.get("research",{}).duplicate(true)
@@ -396,7 +396,7 @@ func _draw_ground() -> void:
     _label("HP %d / %s / %s"%[s.hp,"PISTOL" if s.pistol else "HANDS","DRAWN" if s.drawn else "HOLSTERED"],Vector2(15,86),13,GOLD)
     var tip:="PORT: WALK TO A CONTACT / INTERACT"
     match String(s.kind):
-        "tail":tip="NE ROOM: LISTEN %.1f / 6s UNSEEN"%s.heard
+        "tail","stakeout","eavesdrop":tip="SURVEILLANCE %.1fs · HOLSTERED / UNSEEN / HOLD RANGE"%s.heard
         "intel","evidence","station_hack","robbery":tip="NE TERMINAL: "+("OPEN / EXTRACT SW" if s.hacked else "HACK / THEN EXTRACT SW")
         "bounty","assassinate":tip="SE TARGET / DEAD OR ALIVE / EXTRACT SW"
         "assault":tip="DEFEAT ALL HOSTILES / EXTRACT SW"
@@ -439,7 +439,7 @@ func _draw_ground() -> void:
     _label("EXIT / 8s",exit+Vector2(-32,-51),12,GREEN)
     if s.kind in ["intel","evidence","station_hack","robbery","prison","mission_escape","prison_escape"]:
         var t:=_map(sim.center(2));draw_rect(Rect2(t-Vector2(14,14),Vector2(28,28)),GREEN if s.hacked else GOLD);_label("TERMINAL",t+Vector2(-30,-24),11,GOLD)
-    if s.kind=="tail":_label("MEETING",_map(sim.center(2))+Vector2(-25,-45),12,GOLD)
+    if s.kind in ["tail","stakeout","eavesdrop"]:_label("SUBJECT",_map(sim.center(2))+Vector2(-25,-45),12,GOLD)
     if s.kind in ["prison","mission_escape","prison_escape"]:
         for item in [{"p":sim.center(3),"t":"BADGE"},{"p":sim.center(1),"t":"GEAR"}]:
             var pos:=_map(item.p);draw_circle(pos,12,GOLD);_label(item.t,pos+Vector2(-25,-22),12,GOLD)

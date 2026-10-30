@@ -10,6 +10,7 @@ const SURRENDER_RECT := Rect2(270,216,104,44)
 const CovertGame = preload("res://covert/CovertGame.gd")
 const CovertCareer = preload("res://covert/CovertCareer.gd")
 const Storyteller = preload("res://covert/Storyteller.gd")
+const CaseDirector = preload("res://covert/CaseDirector.gd")
 const HUB_OPERATIONS_RECT := Rect2(105,174,180,48)
 const FirewallGame = preload("res://hacking/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
@@ -214,6 +215,7 @@ var breach_web_callback
 var breach_spaceport_requested := false
 var breach_arrival_serial := 0
 var breach_port_security_alert := false
+var pending_case_hack_task := ""
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -497,6 +499,7 @@ func _open_breach_spaceport() -> bool:
             "contacts": covert_profile.get("contacts",{}),
             "needs": covert_profile.get("needs",{}),
             "story": covert_profile.get("story",{}),
+            "caseContext": _active_case_context(),
             "loadout": {"weapon": "auto_pistol" if bool(covert_profile.get("gear", {}).get("pistol", false)) else "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
         }
     }
@@ -544,9 +547,19 @@ func _on_breach_web_message(args: Array) -> void:
                 firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)), int(detail.get("difficulty", 1)), String(detail.get("terminal", "spaceport")), bool(detail.get("hidden", false)))
                 firewall.notice = "PHYSICAL TERMINAL // BREACH BEFORE THE TRACE COMPLETES"
                 firewall.notice_clock = 5
+        "dmc-privateer-case-hack":
+            _close_breach_spaceport_request();pending_case_hack_task=String(detail.get("task","wiretap"))
+            if _open_firewall():
+                firewall.start_challenge(firewall_profile,int(detail.get("seed",world_seed)),int(detail.get("difficulty",1)),String(detail.get("site","case-wiretap")),true)
+                firewall.notice="CASE WIRETAP // BEAT THE TRACE TO INSTALL THE TAP";firewall.notice_clock=5
+        "dmc-privateer-case-discovery":
+            if CovertCareer.accidental_discovery(covert_profile,String(detail.get("site","")),String(detail.get("person",""))):
+                last_trip_summary="ACCIDENTAL DISCOVERY · TARGET LOCATION FOUND · DOSSIER JUMPED AHEAD"
+                _save_all_state()
         "dmc-privateer-rumor":
             var dossier:=Storyteller.observe_rumor(covert_profile,detail,_personal_story_style())
             last_trip_summary = "%s · %s" % [String(dossier.get("title","PERSONAL LEAD")),String(dossier.get("status","OPEN"))]
+            if CovertCareer.next_task(covert_profile.get("active",{}))=="rumor":_advance_active_case("rumor",String(detail.get("speaker","Dock contact")))
             _save_all_state()
         "dmc-privateer-contact":
             var contact:=Storyteller.remember_contact(covert_profile,detail)
@@ -584,6 +597,10 @@ func _on_breach_web_message(args: Array) -> void:
                 if not known.is_empty():
                     Storyteller.remember_contact(covert_profile,{"id":detail.contactId,"name":known.name,"planet":known.planet,"venue":known.venue,"path":known.path,"role":known.role,"trust":2,"rumor":known.last_rumor})
             Storyteller.observe_outcome(covert_profile,detail)
+            var case_task:=String(detail.get("caseTask",""))
+            var surveillance_clean:=case_task not in ["tail","stakeout","eavesdrop"] or bool(detail.get("approachSucceeded",false))
+            if outcome=="completed" and not case_task.is_empty() and surveillance_clean:_advance_active_case(case_task,String(detail.get("contact","Field team")))
+            elif outcome=="completed" and not surveillance_clean:last_trip_summary="SURVEILLANCE BLOWN · SUBJECT CHANGED ROUTES · LEAD REMAINS OPEN"
             _save_all_state()
         "dmc-privateer-port-result":
             _close_breach_spaceport_request()
@@ -604,6 +621,45 @@ func _personal_story_style() -> String:
     if not covert_profile.get("justice",{}).get("cases",[]).is_empty():return "pirate"
     if int(trade_ledger.get("shipments",0))>0 or int(covert_profile.get("guilds",{}).get("trader",0))>int(covert_profile.get("guilds",{}).get("merc",0)):return "trader"
     return "independent"
+
+func _active_case_context() -> Dictionary:
+    var job:Dictionary=covert_profile.get("active",{})
+    if job.is_empty() or String(job.get("planet",""))!=current_planet:return {}
+    var site:=CaseDirector.current_site(job)
+    var accidental_site:Dictionary={};var accidental_person:=""
+    var steps:Array=job.get("steps",[]);var sites:Array=job.get("sites",[])
+    for i in range(int(job.get("stage",0))+1,steps.size()):
+        if String(steps[i]) in ["target","mastermind"] and i<sites.size():accidental_site=sites[i];break
+    var people:Array=job.get("people",[])
+    if not people.is_empty():accidental_person=String(people[-1].get("id",""))
+    return {"id":String(job.get("id","")),"task":CovertCareer.next_task(job),"difficulty":int(job.get("difficulty",1)),"target":String(job.get("target","")),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person}
+
+func _advance_active_case(task: String,speaker: String="Field contact") -> bool:
+    var job:Dictionary=covert_profile.get("active",{})
+    if job.is_empty() or String(job.get("planet",""))!=current_planet or not CovertCareer.advance(covert_profile,task,speaker):return false
+    if CovertCareer.finished(covert_profile.active):_resolve_active_case()
+    else:last_trip_summary="CASE LEAD SECURED · NEXT: %s"%CovertCareer.next_task(covert_profile.active).to_upper()
+    _save_all_state();return true
+
+func _resolve_active_case() -> void:
+    var job:Dictionary=covert_profile.get("active",{}).duplicate(true)
+    if job.is_empty():return
+    var issuer:=String(job.get("issuer_faction",""));var effect:Dictionary=job.get("world_effect",{})
+    if bool(job.get("criminal",false)):
+        var victim:=_planet_primary_faction(current_planet)
+        if not victim.is_empty():_record_faction_crime(victim,4+int(job.get("difficulty",1))*2,8+int(job.get("difficulty",1))*4,"criminal_merc_operation",false)
+    elif not issuer.is_empty():
+        _adjust_faction_relation(issuer,int(effect.get("relation",3)),false)
+        var faction:=PoliticalWorld.faction_record(political_world,issuer).duplicate(true)
+        if not faction.is_empty():
+            faction.strength=clampf(float(faction.get("strength",1.0))+float(effect.get("strength",0.02)),0.2,3.0)
+            faction.treasury=float(faction.get("treasury",0.0))+float(active_contract.get("reward",0))*.08
+            PoliticalWorld._replace_faction(political_world,issuer,faction)
+    covert_profile.completed=int(covert_profile.get("completed",0))+1
+    CovertCareer.add_entry(covert_profile,"CASE CLOSED: %s. Political and faction consequences applied."%String(job.get("target","organization")))
+    covert_profile.active={};bounty_completed_this_route=true
+    var payment:=_complete_contract_if_ready();research_credits+=payment
+    last_trip_summary="CASE CLOSED · %s · %d CR · WORLD STATE CHANGED"%[String(job.get("target","TARGET")),payment]
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
@@ -708,6 +764,7 @@ func _terminal_hack_finished(success: bool) -> void:
         research_credits += reward
         firewall.balance = research_credits
         last_trip_summary = "TERMINAL D%d BYPASSED · %d CR · TRACE %.0f%%" % [difficulty, reward, 100.0 * float(result.get("trace", 0.0)) / maxf(1.0, float(result.get("trace_limit", 1.0)))]
+        if not pending_case_hack_task.is_empty():_advance_active_case(pending_case_hack_task,"Wiretap analysis")
     elif bool(result.get("detected", false)):
         breach_port_security_alert = true
         var faction_id := _planet_primary_faction(current_planet)
@@ -718,6 +775,7 @@ func _terminal_hack_finished(success: bool) -> void:
         last_trip_summary = "TERMINAL D%d ABORTED BEFORE ATTRIBUTION" % difficulty
     else:
         last_trip_summary = "TERMINAL D%d REJECTED ACCESS" % difficulty
+    pending_case_hack_task=""
     _close_firewall()
 
 func _open_firewall() -> bool:
@@ -2611,7 +2669,9 @@ func _regenerate_contracts() -> void:
     var bounty_number:=0
     for bounty_profile in _best_bounty_profiles(profiles, 2):
         var bounty:=_make_contract("bounty",current_planet,bounty_profile)
-        if bounty_number==1:bounty.role="SPACE ASSASSINATION";bounty["mission_role"]="space_assassination"
+        if bounty_number==1:
+            bounty.role="PIRATE MERC CASE";bounty.guild="";bounty.required_rank=0;bounty.criminal=true
+            bounty.issuer_faction="";bounty.issuer_name="FREE CAPTAINS";bounty.reward=int(round(float(bounty.reward)*1.2))
         contract_board.append(bounty);bounty_number+=1
 
     var smuggling_profile := _best_smuggling_profile(current_planet, profiles)
@@ -2661,11 +2721,14 @@ func _accept_contract(index: int) -> bool:
         return false
     var contract: Dictionary = _upgrade_contract_record(contract_board[index], current_planet)
     active_contract = contract.duplicate(true)
+    if String(contract.type)=="bounty":
+        covert_profile.active=CaseDirector.create(contract,GuildProgress.rank(covert_profile.guilds,"merc"))
+        CovertCareer.add_entry(covert_profile,"CASE OPENED: %s · %d linked stages · %s"%[String(covert_profile.active.target),int(covert_profile.active.steps.size()),String(contract.get("issuer_name","CLIENT"))])
     if String(contract.type) == "passenger":
         passengers += 1
     contract_board.remove_at(index)
     contract_page=0
-    contract_notice = "CONTRACT ACCEPTED — OPEN TRAVEL TO DEPART"
+    contract_notice = "CASE ACCEPTED — FOLLOW THE DOSSIER" if String(contract.type)=="bounty" else "CONTRACT ACCEPTED — OPEN TRAVEL TO DEPART"
     contract_abandon_confirm = false
     _play_sfx(buy_sfx, 1.10)
     _save_all_state()
@@ -2676,6 +2739,8 @@ func _fail_active_contract(reason: String) -> void:
         return
     if String(active_contract.get("type", "")) == "passenger":
         passengers = maxi(0, passengers - 1)
+    if String(active_contract.get("type", "")) == "bounty":
+        covert_profile.active={}
     active_contract.clear()
     last_trip_summary = reason
     weapon_banner_text = reason
@@ -3115,7 +3180,7 @@ func _begin_bounty_boss() -> void:
 func _handle_route_end() -> void:
     if not route_active:
         return
-    var bounty_due := _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty"
+    var bounty_due: bool = _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty" and covert_profile.get("active",{}).is_empty()
     if bounty_due and not bounty_completed_this_route:
         _begin_bounty_boss()
         return

@@ -109,6 +109,20 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   b.setPrivateerContext(null);
 });
 
+test('active cases expose named off-port landings and tailored wiretap or field operations',()=>{
+  const site={id:'site:44:1',name:'ORBITAL ANNEX 44',type:'orbital_annex',task:'wiretap',seed:9981,station:true,discovered:true};
+  const accidentalSite={id:'site:44:8',name:'SAFEHOUSE 91',type:'safehouse',task:'mastermind',seed:771,discovered:false};
+  const context={mode:'spaceport',requestId:'case-site-test',seed:885,arrivalSeed:2001,planetId:'p-case',planetName:'Case Port',faction:'Case Authority',caseContext:{id:'case:44',task:'wiretap',difficulty:4,target:'Sera Quill',site,accidentalSite,accidentalPerson:'suspect:44:3'},loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const landing=b.game.world.stations.find(station=>station.service==='case_site');
+  assert.ok(landing&&landing.label.includes('ORBITAL ANNEX 44'),'case creates an actual landing distinct from the main starport');
+  b.game.player.x=landing.x;b.game.player.y=landing.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-case-hack'&&message.detail.site===site.id&&message.detail.difficulty===4),'wiretap landing launches the contextual Privateer Firewall');
+  const unknown=b.game.world.stations.find(station=>station.accidental);b.game.player.x=unknown.x;b.game.player.y=unknown.y;b.interactPort();
+  assert.ok(privateerMessages.some(item=>item.type==='dmc-privateer-case-discovery'&&item.detail.site===accidentalSite.id),'exploration can uncover the real target before the planned clue chain');
+  b.setPrivateerContext(null);
+});
+
 test('Privateer mission approaches have distinct rules and contract rewards',()=>{
   b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});
   b.startPrivateerMission({style:'hot',difficulty:1,seed:919,objective:'raid'});

@@ -139,6 +139,9 @@ assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidde
 assert.ok(hiddenTerminals.every(s=>s.difficulty>=1&&s.difficulty<=5&&s.label.includes(`D${s.difficulty}`)),'each concealed node exposes a randomized security tier');
 assert.deepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),samePort.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'one arrival reproduces its concealed network exactly');
 assert.notDeepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),nextArrival.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'returning to the same starport rerolls concealed terminals');
+const dialogue=new Set();
+for(let seed=1;seed<=16;seed++)for(const actor of createSpaceportWorld({seed,planetId:`dialogue-${seed}`,faction:'Test Authority'}).actors.filter(a=>a.kind==='civilian'))dialogue.add(actor.rumor);
+assert.ok(dialogue.size>220,'combinatorial canned dialogue bank supplies hundreds of deterministic NPC conversations');
 const bounds={minX:Math.min(...port.rooms.map(r=>r.x)),maxX:Math.max(...port.rooms.map(r=>r.x+r.w)),minY:Math.min(...port.rooms.map(r=>r.y)),maxY:Math.max(...port.rooms.map(r=>r.y+r.h))};
 assert.ok(bounds.maxX-bounds.minX>3200&&bounds.maxY-bounds.minY>2900,'spaceport is a full urban map, not a small menu room');
 const reached=new Set([0]),frontier=[0];

@@ -2,6 +2,7 @@ extends RefCounted
 const Guild=preload("GuildProgress.gd")
 const Justice=preload("JusticeSystem.gd")
 const Storyteller=preload("Storyteller.gd")
+const CaseDirector=preload("CaseDirector.gd")
 const NAMES := ["Mara Voss","Ivo Slate","Sera Quill","Niko Vale","Ash Renn","Len Orra"]
 const JOBS := ["track","recover","assault","terminal","assassinate","investigate","station_hack","robbery","mug"]
 const STEPS := {"track":["rumor","tail","intel","bounty"],"recover":["rumor","intel"],"assault":["assault"],"terminal":["intel"],"assassinate":["assassinate"],"investigate":["rumor","tail","evidence","file_charges"],"station_hack":["station_hack"],"robbery":["robbery"],"mug":["mug"]}
@@ -23,10 +24,20 @@ static func offer(planet: String,kind: String,sequence: int,difficulty: int=1) -
     var target:String=NAMES[seed_number%NAMES.size()]
     var criminal:bool=kind in ["station_hack","robbery","mug"]
     var base:int={"track":900,"recover":650,"assault":450,"terminal":400,"assassinate":550,"investigate":1000,"station_hack":200,"robbery":350,"mug":90}.get(kind,0)
-    return {"id":"%s:%s:%d:%d"%[planet,kind,sequence,tier],"planet":planet,"type":kind,"target":target,"stage":0,"seed":seed_number,"difficulty":tier,"guild":"" if criminal else "merc","required_rank":0 if criminal else Guild.required(tier),"criminal":criminal,"reward":base*tier}
+    var base_offer:={"id":"%s:%s:%d:%d"%[planet,kind,sequence,tier],"planet":planet,"type":kind,"target":target,"stage":0,"seed":seed_number,"difficulty":tier,"guild":"" if criminal else "merc","required_rank":0 if criminal else Guild.required(tier),"criminal":criminal,"reward":base*tier}
+    # Street crimes remain immediate sandbox actions. Guild, faction and pirate
+    # mercenary contracts become clue-driven cases in Privateer.
+    if criminal:
+        base_offer["steps"]=STEPS[kind].duplicate()
+        return base_offer
+    var tailored:=CaseDirector.create(base_offer,tier);tailored.id=base_offer.id;tailored.type=kind;tailored.reward=base_offer.reward
+    if kind=="investigate":
+        tailored.steps.append("file_charges")
+        tailored.sites.append({"id":"site:%d:filing"%seed_number,"planet":planet,"name":"LOCAL AUTHORITY CASE DESK","type":"authority","task":"file_charges","discovered":false,"visited":false,"seed":seed_number+9973,"station":true})
+    return tailored
 static func next_task(job: Dictionary) -> String:
     if job.is_empty():return "port"
-    var steps:Array=STEPS.get(String(job.type),[]);var stage:=int(job.stage)
+    var steps:Array=job.get("steps",STEPS.get(String(job.type),[]));var stage:=int(job.stage)
     return String(steps[stage]) if stage<steps.size() else "done"
 static func objective(job: Dictionary) -> String:
     if job.is_empty():return "Choose work or crime. Start with courier work from ship CONTRACTS if you have no equipment."
@@ -34,6 +45,13 @@ static func objective(job: Dictionary) -> String:
     match next_task(job):
         "rumor":return "Ask a dock contact about %s. Approach an NPC and interact with your weapon holstered."%who
         "tail":return "Listen at the northeast meeting for 6 seconds, unseen and holstered. Extract with the lead."
+        "stakeout":return "Land at the marked site and watch the location without approaching or drawing a weapon."
+        "eavesdrop":return "Shadow the meeting and remain close enough to hear it without being made."
+        "wiretap":return "Land at the marked relay and defeat its contextual Firewall to install the wiretap."
+        "breach":return "Land away from the main starport, enter the named safehouse and recover its records."
+        "lieutenant":return "Find the identified lieutenant at the marked hideout and secure the next link."
+        "target":return "The dossier has located %s. Land at the marked site and apprehend or eliminate the target."%who
+        "mastermind":return "The organization points to %s. Breach the final site and resolve the mastermind."%who
         "intel","evidence":return "Reach the northeast terminal on foot, defeat its Firewall, then extract the records."
         "bounty":return "The manifest identifies %s in the southeast room. Dead or alive. Secure the target and extract."%who
         "assassinate":return "On-foot assassination: eliminate %s in the southeast room, then extract. This is a mercenary contract, not an investigation."%who
@@ -62,10 +80,23 @@ static func advance(data: Dictionary,task: String,speaker: String="Dock contact"
     match task:
         "rumor":add_entry(data,"%s: 'Ask the freight runner. %s pays for sealed crates and never collects them personally.'"%[speaker,job.target])
         "tail":add_entry(data,"OVERHEARD: 'The northeast safehouse keeps the payment manifest. %s's location is in the terminal.'"%job.target)
+        "stakeout":add_entry(data,"STAKEOUT: movement pattern recorded without alerting the site.")
+        "wiretap":add_entry(data,"WIRETAP: encrypted traffic captured and linked to the next location.")
+        "eavesdrop":add_entry(data,"EAVESDROP: the meeting exposed a name and a transfer point.")
+        "breach":add_entry(data,"SAFEHOUSE BREACHED: records and physical evidence secured.")
+        "lieutenant":add_entry(data,"LIEUTENANT IDENTIFIED: the organization now points upward.")
+        "target":add_entry(data,"TARGET RESOLVED: %s located through the completed clue chain."%job.target)
+        "mastermind":add_entry(data,"MASTERMIND RESOLVED: %s's network is broken."%job.target)
         "intel","evidence":add_entry(data,"RECORDS EXTRACTED: identified %s and preserved the payment manifest."%job.target)
         "file_charges":add_entry(data,"CHARGES FILED: witness account and recovered manifest submitted against %s."%job.target)
         _:add_entry(data,"EXTRACTED: %s / %s objective confirmed."%[task,job.target])
-    job.stage+=1;return true
+    var site:=CaseDirector.current_site(job)
+    if not site.is_empty():site.visited=true
+    job.stage+=1;CaseDirector.reveal_current(job);return true
+static func accidental_discovery(data: Dictionary,site_id: String,person_id: String="") -> bool:
+    if data.active.is_empty() or not CaseDirector.accidental_discovery(data.active,site_id,person_id):return false
+    add_entry(data,"ACCIDENTAL DISCOVERY: the target was found before the planned clue chain finished.")
+    return true
 static func finished(job: Dictionary) -> bool:return not job.is_empty() and next_task(job)=="done"
 static func settle(data: Dictionary) -> int:
     var job:Dictionary=data.active

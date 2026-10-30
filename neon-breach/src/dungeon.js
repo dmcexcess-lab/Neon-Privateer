@@ -343,7 +343,15 @@ export function createHQWorld(){
 
 // Privateer spaceports use the real Breach geometry and navigation rather than
 // the small native 3x3 imitation. A planet seed always recreates the same port.
-export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY',contacts={},needs={},story={}}={}){
+const DIALOGUE_OPEN=['Keep this between us','I heard it over breakfast','A freight clerk owes me','Nobody at customs will say this aloud','A pilot came through shaking','My friend behind the bar swears','The night shift saw something','A union runner passed me a note','Someone paid cash for silence','The patrol logs do not match','A miner recognized the insignia','This name keeps surfacing'];
+const DIALOGUE_LEAD=['a courier changed transponders near the relay','a safehouse took a delivery without a manifest','two suspects meet after the patrol turns east','an orbital annex is drawing power off-book','a listening post activates for eleven minutes','a freighter docks without requesting fuel','someone is moving restricted technology through the market','a missing passenger used a false guild credential','the warehouse cameras lose the same hour nightly','a bounty target is paying locals to report strangers','a government handler met a known pirate lieutenant','the cargo trail points toward a protected official'];
+const DIALOGUE_CLOSE=['Start with the dock records','Watch before you move','The terminal will know more','Do not let them see you tailing','Try the back entrance','Ask who profits','Follow the second ship','The mastermind will burn the lower ranks','There may be more than one perpetrator','A direct assault will destroy the evidence','The club staff remember faces','Check the off-port landing registry'];
+function portDialogue(seed,index,faction){
+  let mix=(Math.imul((seed>>>0)^0x9e3779b9,index+0x45d9f3b)>>>0);mix^=mix>>>16;mix=Math.imul(mix,0x7feb352d)>>>0;mix^=mix>>>15;
+  const a=mix%DIALOGUE_OPEN.length,b=(mix>>>7)%DIALOGUE_LEAD.length,c=(mix>>>15)%DIALOGUE_CLOSE.length,bay=1+((mix>>>3)%97);
+  return `${DIALOGUE_OPEN[a]}. ${DIALOGUE_LEAD[b]}. ${DIALOGUE_CLOSE[c]}. Bay ${bay}, ${faction}.`;
+}
+export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY',contacts={},needs={},story={},caseContext={}}={}){
   const rng=new RNG((Number(seed)>>>0)||1);
   const profile={
     LUSH:{id:'sewers',color:'#123b37',edge:'#75ffb0'},
@@ -396,10 +404,17 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     {id:'club',name:'PULSE CLUB',kind:'club',room:6,x:900,y:720,w:370,h:390,door:'west',color:'#ff60bd'},
     {id:'lodge',name:'CREW LODGE',kind:'lodge',room:8,x:-220,y:1330,w:450,h:370,door:'north',color:'#b6c8ff'}
   ];
+  if(caseContext?.site?.id)stations.push({id:'case-site',service:'case_site',x:-300,y:-1040,
+    label:`OFF-PORT LANDING · ${caseContext.site.name} · ${String(caseContext.task||'lead').toUpperCase()}`,short:'LAND',color:'#f9cc70',caseContext});
+  if(caseContext?.accidentalSite?.id){
+    const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050]],pick=(Number(arrivalSeed??seed)>>>0)%accidentalPositions.length;
+    stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
+      label:`UNMARKED LANDING SIGNAL · ${caseContext.accidentalSite.name}`,short:'UNKNOWN',color:'#ff60bd',hidden:true,discovered:false,accidental:true,caseContext});
+  }
   for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
   const actors=[];
-  const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,contacts,needs,story,
+  const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,contacts,needs,story,caseContext,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
     shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,securityAlert:!!securityAlert,crime:{heat:securityAlert?20:0,witnessed:!!securityAlert}};
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
@@ -474,7 +489,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     const path=saved?.path||['friendship','business','romance'][i%3];
     actors.push({id,contactId,kind:'civilian',name:saved?.name||names[i%names.length],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
       connected:!!saved,trust:Number(saved?.trust)||0,bond:saved?.bond||'LOCAL',path,venue:venue.id,role:['regular','trader','fixer','artist','crew'][i%5],
-      home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:rumors[rng.int(0,rumors.length-1)],mission:i<6?{
+      home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:saved?.last_rumor||portDialogue(world.seed,i,faction),mission:i<6?{
         style:['stealth','hot','choice'][i%3],kind:['evidence theft','raid','recovery'][i%3],difficulty:rng.int(1,4)
       }:null});
   }

@@ -19,10 +19,10 @@ func new_mission(kind: String, seed_number: int, gear: Dictionary,difficulty: in
             state.guards.append({"pos":center(room)+Vector2(random.randf_range(-50,50),random.randf_range(-50,50)),"angle":random.randf()*TAU,"hp":60.0+float(tier-1)*20,"mode":"patrol","suspicion":0.0,"route":i*3,"post":i==0,"turn":2.5,"wait":0.0,"nav":[],"nav_time":0.0,"last":center(room),"cool":0.0})
     for i in 3:
         state.npcs.append({"name":["Rook · dock runner","Sella · freight clerk","Venn · fixer"][i],"pos":center([6,4,2][i])+Vector2(40,0),"base":center([6,4,2][i]),"phase":float(i)*2})
-    if kind=="tail":
+    if kind in ["tail","stakeout","eavesdrop"]:
         state.npcs[0].base=center(2)+Vector2(-22,0);state.npcs[1].base=center(2)+Vector2(22,0)
     if kind in ["prison","mission_escape","prison_escape"]:state.hp=100.0;state.max_hp=100.0
-    if kind in ["bounty","assassinate"] and not state.guards.is_empty():state.guards[-1].pos=center(8)
+    if kind in ["bounty","assassinate","target","lieutenant","mastermind"] and not state.guards.is_empty():state.guards[-1].pos=center(8)
     if kind=="mug":state.npcs[0].base=center(2);state.npcs[0].pos=center(2)
     events.clear();nav_cache.clear()
 func restore(data: Dictionary) -> bool:
@@ -88,7 +88,7 @@ func near_marker() -> String:
     if state.kind in ["prison","mission_escape","prison_escape"]:
         if state.pos.distance_to(center(3))<65 and not state.badge:return "badge"
         if state.pos.distance_to(center(1))<65 and not state.gear_recovered:return "locker"
-    if state.pos.distance_to(center(2))<65 and not state.hacked and state.kind in ["intel","evidence","station_hack","robbery","prison","mission_escape","prison_escape"]:return "terminal"
+    if state.pos.distance_to(center(2))<65 and not state.hacked and state.kind in ["intel","evidence","wiretap","breach","station_hack","robbery","prison","mission_escape","prison_escape"]:return "terminal"
     if state.kind=="mug" and not state.get("robbed",false) and state.pos.distance_to(state.npcs[0].pos)<65:return "victim"
     return ""
 func interact() -> String:
@@ -107,11 +107,11 @@ func hack_result(success: bool) -> void:
 func objective_ready() -> bool:
     match String(state.kind):
         "port":return true
-        "tail":return state.intel
-        "intel","evidence","station_hack","robbery":return state.hacked
+        "tail","stakeout","eavesdrop":return state.intel
+        "intel","evidence","wiretap","breach","station_hack","robbery":return state.hacked
         "mug":return state.get("robbed",false)
         "prison","mission_escape","prison_escape":return state.badge or state.hacked
-        "bounty","assassinate":return float(state.guards[-1].hp)<=0
+        "bounty","assassinate","target","lieutenant","mastermind":return float(state.guards[-1].hp)<=0
         "assault":
             for g in state.guards:
                 if g.hp>0:return false
@@ -127,10 +127,14 @@ func step(dt: float, movement: Vector2, aim: Vector2, trigger: bool) -> void:
     if trigger:attack(aim if aim.length()>.2 else Vector2.from_angle(state.facing))
     for npc in state.npcs:
         npc.phase+=dt*.55;npc.pos=npc.base+Vector2(cos(npc.phase)*38,sin(npc.phase)*24)
-    if state.kind=="tail":
-        var listening: bool=state.pos.distance_to(center(2))<95 and not state.drawn and not state.alerted and line_clear(state.pos,center(2))
-        state.heard=minf(6,state.heard+dt) if listening else maxf(0,state.heard-dt*.5)
-        if state.heard>=6 and not state.intel:state.intel=true;events.append({"kind":"intel"})
+    if state.kind in ["tail","stakeout","eavesdrop"]:
+        var min_distance:=105.0 if state.kind=="tail" else 70.0
+        var max_distance:=260.0 if state.kind=="tail" else 145.0 if state.kind=="eavesdrop" else 330.0
+        var distance:float=state.pos.distance_to(center(2))
+        var listening: bool=distance>=min_distance and distance<=max_distance and not state.drawn and not state.alerted and line_clear(state.pos,center(2))
+        var required:=10.0 if state.kind=="stakeout" else 8.0 if state.kind=="tail" else 6.0
+        state.heard=minf(required,state.heard+dt) if listening else maxf(0,state.heard-dt*.5)
+        if state.heard>=required and not state.intel:state.intel=true;events.append({"kind":"intel"})
     for g in state.guards:
         if g.hp<=0:continue
         g.cool=maxf(0,g.cool-dt);g.nav_time-=dt

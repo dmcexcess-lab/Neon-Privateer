@@ -2737,7 +2737,10 @@ func _initialize() -> void:
     if scene.contracts_open or not scene.hub_open or scene.contract_abandon_confirm:
         _fail("contract board BACK did not return to dock")
         return
-    scene.active_contract.clear()
+    scene._fail_active_contract("TEST CLEANUP")
+    if not scene.covert_profile.active.is_empty():
+        _fail("abandoning a bounty left its dossier active")
+        return
     scene.contract_board.clear()
     for saved_offer in previous_board:
         scene.contract_board.append(saved_offer.duplicate(true))
@@ -2795,8 +2798,9 @@ func _initialize() -> void:
         _fail("extremely delayed passenger did not leave")
         return
 
-    # Bounty target is reached through normal distance-based travel, then the
-    # final arrival becomes a no-forward-scroll boss arena.
+    # Boss combat remains available as a field encounter, but accepted bounty
+    # work now lands and opens a dossier instead of spawning the culprit in
+    # space. The arena checks below still cover the underlying combat mode.
     var bounty_profiles: Array = scene._best_bounty_profiles(contract_profiles, 1)
     if bounty_profiles.is_empty():
         _fail("max-range world produced no reachable bounty target")
@@ -2850,10 +2854,16 @@ func _initialize() -> void:
     scene.bounty_completed_this_route = false
     scene.objects.clear()
     scene.enemy_shots.clear()
+    scene.covert_profile.active=scene.CaseDirector.create(scene.active_contract,5)
+    var case_destination:String=scene.destination_planet
     scene._handle_route_end()
-    if not scene.boss_active or scene.current_planet == scene.destination_planet:
-        _fail("final bounty arrival did not stop before landing for boss fight")
+    if scene.boss_active or scene.current_planet != case_destination or scene.covert_profile.active.is_empty():
+        _fail("case bounty did not land at its destination with an active dossier")
         return
+    scene.destination_planet=case_destination
+    scene.route_active=true
+    scene.playing=true
+    scene._begin_bounty_boss()
     scene.elapsed = scene.route_duration
     scene.world_scroll = 321.0
     scene.neutral_spawn_clock = -1.0

@@ -169,13 +169,19 @@ function finishPrivateerMission(outcome){
   const clean=style!=='stealth'||!game.detectedThisFloor;
   const base=completed?40+Math.max(1,Number(privateerContext.difficulty)||1)*25:0;
   const bonus=completed&&style==='stealth'&&clean?Math.ceil(base*.75):0;
-  privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,contact:privateerContext.contact||'',contactId:privateerContext.contactId||'',
+  privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,contact:privateerContext.contact||'',contactId:privateerContext.contactId||'',caseTask:privateerContext.caseTask||'',caseSite:privateerContext.caseSite||'',
     detected:!!game.detectedThisFloor,cash:game.runCash+base+bonus,contractReward:base+bonus,objective:privateerContext.objective||''});
   return true;
 }
 function nearbyPortActor(){
   if(!game.world?.isSpaceport)return null;
-  return game.world.actors.find(a=>!a.robbed&&!a.down&&Math.hypot(game.player.x-a.x,game.player.y-a.y)<76)||null;
+  let nearest=null,best=76;
+  for(const actor of game.world.actors){
+    if(actor.robbed||actor.down)continue;
+    const distance=Math.hypot(game.player.x-actor.x,game.player.y-actor.y);
+    if(distance<best){nearest=actor;best=distance;}
+  }
+  return nearest;
 }
 function reportPortCrime(offense,severity,cash=0,witnessed=true){
   game.world.crime.heat+=severity*4;game.world.crime.witnessed ||= witnessed;
@@ -192,7 +198,10 @@ function damagePortActor(actor,damage){
 }
 function interactPort(){
   if(game.mode!=='PORT')return false;
-  const station=nearbyStation(),actor=nearbyPortActor();
+  let station=nearbyStation(),actor=nearbyPortActor();
+  // Venue-bound contacts may stand exactly on their venue marker. At equal
+  // distance, speaking to the person is more specific than using the venue.
+  if(station&&actor&&Math.hypot(game.player.x-actor.x,game.player.y-actor.y)<=Math.hypot(game.player.x-station.x,game.player.y-station.y))station=null;
   if(station){
     if(station.service==='terminal'){
       const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
@@ -207,6 +216,21 @@ function interactPort(){
       const dossier=game.world.story?.active_dossier;
       announce(dossier?.title?`${dossier.title} · ${dossier.status} · ${dossier.clues?.length||0} CLUES · ${dossier.objective}`:'NO PERSONAL DOSSIER · TALK TO PEOPLE AND FOLLOW RUMORS',6);
       privateerMessage('dmc-privateer-dossier',{});
+    }
+    else if(station.service==='case_site'){
+      const lead=station.caseContext||{},site=lead.site||{},task=String(lead.task||'breach');
+      if(station.accidental){
+        const found=lead.accidentalSite||{};
+        privateerMessage('dmc-privateer-case-discovery',{site:found.id,person:lead.accidentalPerson||''});
+        announce(`ACCIDENTAL DISCOVERY · ${found.name} · TARGET DOSSIER UPDATED`,5);
+      }
+      else if(task==='rumor')announce('THIS LEAD STARTS IN THE PORT · TALK TO LOCALS WITH YOUR WEAPON HOLSTERED',4);
+      else if(task==='wiretap')privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
+      else{
+        privateerMessage('dmc-privateer-loading',{mode:'case-site',task,site:site.name});
+        startPrivateerMission({style:['tail','stakeout','eavesdrop'].includes(task)?'stealth':task==='breach'?'choice':'hot',difficulty:lead.difficulty||1,
+          seed:site.seed,objective:`${task} · ${site.name}`,caseTask:task,caseSite:site.id,contact:lead.target||'CASE SUBJECT'});
+      }
     }
     else privateerMessage('dmc-privateer-service',{service:station.service});
     return true;

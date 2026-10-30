@@ -10,13 +10,13 @@ func _initialize() -> void:call_deferred("_run")
 func advance_time(sim: RefCounted,seconds: float) -> void:
     for i in int(ceil(seconds/.02)):sim.step(.02,Vector2.ZERO,Vector2.ZERO,false)
 func _run() -> void:
-    # Case graphs enforce causality, direct combat skips detective busywork.
+    # Every generated action job is now a causally ordered investigation.
     for kind in ["track","recover","assault"]:
         var data:Dictionary=Career.default_profile();var job:Dictionary=Career.offer("port-a",kind,0)
         check(Career.accept(data,job),"accept "+kind)
         check(not Career.accept(data,job),"one active job")
         check(Career.settle(data)==0,"cannot pay incomplete case")
-        var stages:Array=["rumor","tail","intel","bounty"] if kind=="track" else ["rumor","intel"] if kind=="recover" else ["assault"]
+        var stages:Array=job.steps
         for task in stages:
             check(Career.next_task(data.active)==task,"next objective "+task)
             check(not Career.advance(data,"invented"),"reject unrelated event")
@@ -47,11 +47,11 @@ func _run() -> void:
     check(restored.state.paused and restored.state.pos==ground.state.pos,"restores exact position paused")
     # Listening is earned by proximity, holstering and remaining unnoticed.
     ground.new_mission("tail",10,{});ground.state.guards=[]
-    advance_time(ground,7);check(not ground.state.intel,"cannot eavesdrop remotely")
-    ground.state.pos=ground.center(2);ground.state.drawn=true;advance_time(ground,7)
+    advance_time(ground,9);check(not ground.state.intel,"cannot eavesdrop remotely")
+    ground.state.pos=ground.center(2)+Vector2(-130,0);ground.state.drawn=true;advance_time(ground,9)
     check(not ground.state.intel,"drawn weapon blocks covert listening")
-    ground.state.drawn=false;advance_time(ground,5)
-    check(not ground.state.intel,"full six seconds required")
+    ground.state.drawn=false;advance_time(ground,7)
+    check(not ground.state.intel,"full eight seconds required")
     advance_time(ground,1.1);check(ground.state.intel,"real listening yields lead")
     ground.state.pos=ground.center(6);advance_time(ground,4)
     check(ground.state.result=="","eight second hold not five")
@@ -84,10 +84,10 @@ func _run() -> void:
     view._input(motion);view._process(.02)
     check(view.sim.state.bullets.is_empty(),"mouse aim alone must not fire")
     view.sim.state.drawn=false
-    view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2);advance_time(view.sim,6.1)
+    view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2)+Vector2(-130,0);advance_time(view.sim,8.1)
     view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
-    check(view.current_task()=="intel","extracted conversation unlocks safehouse")
-    check(view.begin_ground("intel"),"safehouse mission opens")
+    check(view.current_task()=="breach","extracted surveillance unlocks safehouse")
+    check(view.begin_ground("breach"),"safehouse mission opens")
     view.sim.state.pos=view.sim.center(2);view.sim.interact();view._process(.02)
     check(view.hack.visible and view.hack.challenge_mode,"actual Firewall minigame runs inside safehouse")
     view.hack.set_process(false)
@@ -104,14 +104,16 @@ func _run() -> void:
     check(view.sim.state.hacked and not view.hack.visible,"clearing Firewall opens actual terminal")
     check(scene.research_credits==wallet,"challenge cannot mint arcade cash")
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
-    check(view.current_task()=="bounty","safehouse records identify target")
-    view.begin_ground("bounty");view.sim.state.guards[-1].hp=0
+    check(view.current_task()=="target","safehouse records identify target")
+    view.begin_ground("target");view.sim.state.guards[-1].hp=0
     view.sim.state.pos=view.sim.center(6)
     for g in view.sim.state.guards:g.hp=0
     advance_time(view.sim,8.1);view._process(.02)
     check(view.data.completed==1 and scene.research_credits==wallet+900,"full case pays once at extraction")
     wallet=scene.research_credits
-    view.accept("assault");view.begin_ground("assault");view.sim.state.hp=0;view._process(.02)
+    # Immediate sandbox crime still launches directly; commissioned assaults
+    # now begin as cases and are covered by the case-chain checks above.
+    view.accept("mug");view.begin_ground("mug");view.sim.state.hp=0;view._process(.02)
     check(view.data.captured and not view.data.incarcerated and view.sim.state.kind=="mission_escape","capture enters playable custody")
     check(not view.return_to_board(),"cannot bypass prison through retreat")
     check(view.cash==wallet and scene.bank_balance==444,"arrest cannot raid protected bank")
@@ -127,7 +129,7 @@ func _run() -> void:
     for g in view.sim.state.guards:g.hp=0
     view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
     check(not view.data.captured and view.data.gear.pistol and view.data.gear.armor==1,"escape restores recovered gear")
-    check(not view.data.active.is_empty() and view.current_task()=="assault","prison preserves unfinished contract")
+    check(not view.data.active.is_empty() and view.current_task()=="mug","custody preserves unfinished sandbox crime")
     scene._close_covert();scene.playing=true;scene.current_weapon="single";scene.weapon_systems_online=false
     scene.shots.clear();scene._fire_weapon();check(scene.shots.is_empty(),"OFF blocks flight projectiles")
     scene._toggle_weapon_systems();scene._fire_weapon();check(not scene.shots.is_empty(),"ON restores weapons")
