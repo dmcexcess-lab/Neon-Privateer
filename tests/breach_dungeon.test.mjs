@@ -123,7 +123,7 @@ for(const connection of hq.links)assert.ok(walkable(hq,connection.via.x,connecti
 const port=createSpaceportWorld({seed:7123,arrivalSeed:4101,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
 const samePort=createSpaceportWorld({seed:7123,arrivalSeed:4101,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
 const nextArrival=createSpaceportWorld({seed:7123,arrivalSeed:4102,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
-assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.ok(port.stations.length>=17&&port.stations.length<=20);
+assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.ok(port.stations.length>=19&&port.stations.length<=22);
 assert.equal(port.actors.filter(a=>a.kind==='civilian').length,18);assert.equal(port.actors.filter(a=>a.kind==='guard').length,6);
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
@@ -132,6 +132,7 @@ assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
 assert.deepEqual(port.structures.map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains several public buildings');
 assert.equal(port.stations.filter(s=>s.service==='venue').length,port.structures.length,'each public building has a physical venue interaction');
+assert.ok(port.stations.some(s=>s.service==='firewall_dealer')&&port.stations.some(s=>s.service==='dossier'),'every port has physical hacking hardware and personal dossier services');
 const hiddenTerminals=port.stations.filter(s=>s.hidden);
 assert.ok(hiddenTerminals.length>=4&&hiddenTerminals.length<=7,'each arrival conceals a variable number of extra access nodes');
 assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidden access nodes start undiscovered but remain hackable terminals');

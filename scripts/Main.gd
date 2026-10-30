@@ -9,6 +9,7 @@ const RAID_RECT := Rect2(22,270,236,44)
 const SURRENDER_RECT := Rect2(270,216,104,44)
 const CovertGame = preload("res://covert/CovertGame.gd")
 const CovertCareer = preload("res://covert/CovertCareer.gd")
+const Storyteller = preload("res://covert/Storyteller.gd")
 const HUB_OPERATIONS_RECT := Rect2(105,174,180,48)
 const FirewallGame = preload("res://hacking/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
@@ -478,6 +479,7 @@ func _open_breach_spaceport() -> bool:
     if not OS.has_feature("web"):
         return _open_covert()
     breach_arrival_serial += 1
+    Storyteller.on_arrival(covert_profile)
     var arrival_seed := int(abs(hash("%s:%d:%d" % [current_planet, Time.get_ticks_usec(), breach_arrival_serial])))
     var faction_id := _planet_primary_faction(current_planet)
     var payload := {
@@ -492,6 +494,9 @@ func _open_breach_spaceport() -> bool:
             "planetName": _planet_display_name(current_planet),
             "archetype": _planet_type(current_planet),
             "faction": _contract_issuer_name(faction_id),
+            "contacts": covert_profile.get("contacts",{}),
+            "needs": covert_profile.get("needs",{}),
+            "story": covert_profile.get("story",{}),
             "loadout": {"weapon": "auto_pistol" if bool(covert_profile.get("gear", {}).get("pistol", false)) else "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
         }
     }
@@ -529,6 +534,8 @@ func _on_breach_web_message(args: Array) -> void:
                 contracts_open = true; contract_notice = ""; hub_open = false
             elif service == "upgrades":
                 research_open = true; hub_open = false
+            elif service == "firewall_dealer":
+                _open_firewall_dealer()
             elif service == "careers":
                 _open_profile_menu()
         "dmc-privateer-terminal":
@@ -538,7 +545,20 @@ func _on_breach_web_message(args: Array) -> void:
                 firewall.notice = "PHYSICAL TERMINAL // BREACH BEFORE THE TRACE COMPLETES"
                 firewall.notice_clock = 5
         "dmc-privateer-rumor":
-            last_trip_summary = "%s: %s" % [String(detail.get("speaker", "LOCAL")), String(detail.get("rumor", "No useful rumor."))]
+            var dossier:=Storyteller.observe_rumor(covert_profile,detail,_personal_story_style())
+            last_trip_summary = "%s · %s" % [String(dossier.get("title","PERSONAL LEAD")),String(dossier.get("status","OPEN"))]
+            _save_all_state()
+        "dmc-privateer-contact":
+            var contact:=Storyteller.remember_contact(covert_profile,detail)
+            if not contact.is_empty():
+                last_trip_summary="CONTACT SAVED · %s · %s · TRUST %d"%[String(contact.name),String(contact.bond),int(contact.trust)]
+                _save_all_state()
+        "dmc-privateer-venue":
+            var visit:=Storyteller.visit_venue(covert_profile,String(detail.get("kind","market")),research_credits)
+            if bool(visit.get("success",false)):research_credits-=int(visit.get("cost",0))
+            last_trip_summary=String(visit.get("summary","VENUE CLOSED"));_save_all_state()
+        "dmc-privateer-dossier":
+            last_trip_summary=Storyteller.dossier_summary(covert_profile)
         "dmc-privateer-mission-offer":
             contract_notice = "%s offers a %s %s operation" % [String(detail.get("contact", "LOCAL")), String(detail.get("style", "choice")).to_upper(), String(detail.get("kind", "field"))]
         "dmc-privateer-crime":
@@ -559,6 +579,11 @@ func _on_breach_web_message(args: Array) -> void:
             last_trip_summary = "%s ground operation %s · %s · %d kills · %d CR" % [style.capitalize(), outcome, approach, int(detail.get("kills", 0)), reward]
             if outcome == "captured":
                 covert_profile["captured"] = true
+            elif outcome == "completed" and not String(detail.get("contactId","")).is_empty():
+                var known:Dictionary=covert_profile.get("contacts",{}).get(String(detail.contactId),{})
+                if not known.is_empty():
+                    Storyteller.remember_contact(covert_profile,{"id":detail.contactId,"name":known.name,"planet":known.planet,"venue":known.venue,"path":known.path,"role":known.role,"trust":2,"rumor":known.last_rumor})
+            Storyteller.observe_outcome(covert_profile,detail)
             _save_all_state()
         "dmc-privateer-port-result":
             _close_breach_spaceport_request()
@@ -574,6 +599,11 @@ func _on_breach_web_message(args: Array) -> void:
                 last_trip_summary = "Dropped by spaceport security and evacuated to the ship"
                 _save_all_state()
     queue_redraw()
+
+func _personal_story_style() -> String:
+    if not covert_profile.get("justice",{}).get("cases",[]).is_empty():return "pirate"
+    if int(trade_ledger.get("shipments",0))>0 or int(covert_profile.get("guilds",{}).get("trader",0))>int(covert_profile.get("guilds",{}).get("merc",0)):return "trader"
+    return "independent"
 
 func _notification(what: int) -> void:
     if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT or what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
@@ -694,6 +724,8 @@ func _open_firewall() -> bool:
     if active_career_slot <= 0 or playing or route_active or not hub_open:
         return false
     firewall.configure(firewall_profile, research_credits)
+    firewall.dealer_mode=false
+    firewall.challenge_mode=false
     firewall.visible = true
     firewall.notice="PRACTICE / NO CASH PAYOUT / RESEARCH SUPPORTS MISSIONS"
     firewall.notice_clock=5
@@ -701,6 +733,13 @@ func _open_firewall() -> bool:
     hub_open = false
     _clear_control_holds()
     queue_redraw()
+    return true
+
+func _open_firewall_dealer() -> bool:
+    if not _open_firewall():return false
+    firewall.open_dealer()
+    firewall.notice="STARPORT HARDWARE DEALER // PERMANENT RIG UPGRADES"
+    firewall.notice_clock=5
     return true
 
 func _firewall_changed(data: Dictionary, cash: int) -> void:

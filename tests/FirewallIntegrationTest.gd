@@ -11,11 +11,11 @@ func _run() -> void:
     scene._create_new_career(1);scene.bank_balance=444;scene.research_credits=2200
     var planet:String=scene.current_planet
     var world:Dictionary=scene.political_world.duplicate(true)
-    check(scene._open_firewall() and scene.firewall_open and scene.firewall.visible,"actual native challenge opens from a physical terminal")
+    check(scene._open_firewall_dealer() and scene.firewall_open and scene.firewall.visible,"physical starport hardware dealer opens")
     check(scene.firewall.embedded and scene.firewall.music_player==null,"embedded game cannot create overlapping standalone music")
     var view=scene.firewall
-    view.set_process(false);view.phase="RESEARCH"
-    check(view.buy_research("width"),"research purchase")
+    view.set_process(false)
+    check(view.dealer_mode and view.phase=="RESEARCH" and view.buy_research("width"),"dealer sells permanent paddle hardware")
     check(scene.research_credits==1750 and scene.firewall_profile.research.width==1,"upgrade uses actual career cash")
     view.start_new_run(1234);view.sim.damage_brick(0,99);view._settle_events()
     var cash:int=scene.research_credits
@@ -34,6 +34,7 @@ func _run() -> void:
     check(scene._open_firewall(),"terminal reopens after reload")
     check(scene.firewall.sim.snapshot()==progress,"same active native run restored")
     check(scene.firewall.phase=="TITLE","reload cannot advance or award a run in the background")
+    view.phase="RESEARCH";check(not view.buy_research("multi"),"embedded hacking screen cannot sell dealer hardware");view.phase="TITLE"
     scene.firewall._settle_events();scene.firewall.persist()
     check(scene.research_credits==cash,"settling restored progress cannot duplicate cash")
     scene.firewall.resume_run();scene.firewall.sim.lives=1;scene.firewall.sim.lose_life();scene.firewall._settle_events()

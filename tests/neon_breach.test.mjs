@@ -91,6 +91,24 @@ test('concealed spaceport terminals reroll by arrival, reveal nearby and launch 
   b.setPrivateerContext(null);
 });
 
+test('starport dealers, needs and chosen NPC contacts are physical and persistent',()=>{
+  const contact={'p-social:npc-8':{name:'Dax Morrow',trust:5,bond:'FRIEND',path:'friendship',venue:'bar',role:'regular'}};
+  const context={mode:'spaceport',requestId:'social-test',seed:532,arrivalSeed:9081,planetId:'p-social',planetName:'Social Port',archetype:'LUSH',faction:'Port Union',contacts:contact,needs:{hunger:18,energy:20,morale:40,social:22},story:{active_dossier:{title:'THE DAX THREAD',status:'OPEN',clues:['one'],objective:'Find the missing ship.'}},loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  assert.ok(b.game.player.speed<200,'unmet hunger and energy have a real movement consequence');
+  const known=b.game.world.actors.find(actor=>actor.contactId==='p-social:npc-8');
+  assert.equal(known.connected,true);assert.equal(known.name,'Dax Morrow');assert.equal(known.speed,0,'saved contacts return to their known venue instead of becoming disposable crowds');
+  b.game.player.x=known.x;b.game.player.y=known.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-contact'&&message.detail.id===known.contactId),'talking exchanges persistent contact information');
+  const dealer=b.game.world.stations.find(station=>station.service==='firewall_dealer');b.game.player.x=dealer.x;b.game.player.y=dealer.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='firewall_dealer'),'hacking hardware is bought through a physical dealer');
+  const venue=b.game.world.stations.find(station=>station.service==='venue'&&station.venueKind==='club');b.game.player.x=venue.x;b.game.player.y=venue.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-venue'&&message.detail.kind==='club'),`clubs feed the needs and relationship layer: ${JSON.stringify(privateerMessages.slice(-4))}`);
+  const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-dossier'),'personal clue dossiers are available in the port world');
+  b.setPrivateerContext(null);
+});
+
 test('Privateer mission approaches have distinct rules and contract rewards',()=>{
   b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});
   b.startPrivateerMission({style:'hot',difficulty:1,seed:919,objective:'raid'});

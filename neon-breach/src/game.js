@@ -130,22 +130,24 @@ function privateerMessage(type,detail={}){
   if(!privateerContext)return;
   parent.postMessage({type,detail,requestId:privateerContext.requestId||'',planetId:privateerContext.planetId||''},location.origin);
 }
-function makeFieldPlayer(loadout={}){
+function makeFieldPlayer(loadout={},needs={}){
   const weapon=WEAPONS[loadout.weapon]?loadout.weapon:'hands',armor=clamp(Number(loadout.armor)||0,0,3);
+  const energy=clamp(Number(needs.energy??84),0,100),hunger=clamp(Number(needs.hunger??82),0,100);
   return {x:0,y:0,r:16,hp:3+armor,maxHp:3+armor,cash:Number(loadout.cash)||0,weapon,weaponDrawn:false,
     armorTier:armor,map:!!loadout.map,medkits:clamp(Number(loadout.medkits)||0,0,MAX_REPAIR_KITS),spares:[],magazines:initialMagazines(),
     reloadClock:0,reloadTotal:0,reloadWeapon:null,reloadShells:0,reloadStage:null,pumpClock:0,pumpTotal:0,pumpNeeded:false,
-    swingHand:0,speed:235,damage:1,rate:1,armor:0,scavenging:1,stealth:1,sneaking:false,cool:0,invuln:0,
+    swingHand:0,speed:235*(energy<25?.82:1)*(hunger<20?.88:1),damage:1,rate:1,armor:0,scavenging:1,stealth:1,sneaking:false,cool:0,invuln:0,
     facing:-Math.PI/2,walkCycle:0,punchTimer:0,stepClock:0};
 }
 function enterPrivateerPort(context){
   hiddenScreens();game.world=createSpaceportWorld(context);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
-  game.player=makeFieldPlayer(context.loadout||{});game.hqStation=null;game.portClock=0;
+  game.player=makeFieldPlayer(context.loadout||{},context.needs||{});game.hqStation=null;game.portClock=0;
   camera.x=0;camera.y=0;show('hud',true);show('location',true);show('touchUI',true);show('aimTip',true);show('hqPrompt',false);show('hqMenuButton',false);
   // A port uses the field-combat HUD and phone aim/draw controls. HQ mode
   // deliberately hides those controls, so it must not leak into this scene.
   document.body?.classList.toggle('hq-mode',false);
-  $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
+  const needs=context.needs||{};
+  $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction} // H${Math.round(needs.hunger??82)} E${Math.round(needs.energy??84)} M${Math.round(needs.morale??62)} S${Math.round(needs.social??55)}`;
   updateUI();
   announce(game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
@@ -167,7 +169,7 @@ function finishPrivateerMission(outcome){
   const clean=style!=='stealth'||!game.detectedThisFloor;
   const base=completed?40+Math.max(1,Number(privateerContext.difficulty)||1)*25:0;
   const bonus=completed&&style==='stealth'&&clean?Math.ceil(base*.75):0;
-  privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,
+  privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,contact:privateerContext.contact||'',contactId:privateerContext.contactId||'',
     detected:!!game.detectedThisFloor,cash:game.runCash+base+bonus,contractReward:base+bonus,objective:privateerContext.objective||''});
   return true;
 }
@@ -197,7 +199,15 @@ function interactPort(){
       privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,difficulty:station.difficulty||1,seed:terminalSeed});
     }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
-    else if(station.service==='venue')announce(`${station.venue} · LOCALS, RUMORS AND MISSION CONTACTS INSIDE`,3);
+    else if(station.service==='venue'){
+      privateerMessage('dmc-privateer-venue',{kind:station.venueKind,venue:station.venue});
+      announce(`${station.venue} · REST, SOCIALIZE, AND MEET CONTACTS`,3);
+    }
+    else if(station.service==='dossier'){
+      const dossier=game.world.story?.active_dossier;
+      announce(dossier?.title?`${dossier.title} · ${dossier.status} · ${dossier.clues?.length||0} CLUES · ${dossier.objective}`:'NO PERSONAL DOSSIER · TALK TO PEOPLE AND FOLLOW RUMORS',6);
+      privateerMessage('dmc-privateer-dossier',{});
+    }
     else privateerMessage('dmc-privateer-service',{service:station.service});
     return true;
   }
@@ -210,12 +220,17 @@ function interactPort(){
     privateerMessage('dmc-privateer-crime',{offense:'street_robbery',severity:witnesses.length?3:2,cash:amount,witnessed:!!witnesses.length});
     announce(`${actor.name}: TAKE IT · +${amount} CR${witnesses.length?' · WITNESSES ALERT SECURITY':''}`,3);return true;
   }
+  if(!actor.metThisArrival){
+    actor.metThisArrival=true;actor.connected=true;actor.trust=Math.min(20,(actor.trust||0)+1);
+    privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor});
+    announce(`${actor.name} SHARES CONTACT INFO · ${actor.bond||'NEW CONTACT'} · ${actor.venue.toUpperCase()}`,2.8);
+  }
   if(actor.mission&&!actor.offered){
-    actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name});
+    actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId});
     announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
   }else if(actor.mission&&actor.offered){
     privateerMessage('dmc-privateer-loading',{mode:'mission',style:actor.mission.style});
-    startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,objective:actor.mission.kind});
+    startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId,objective:actor.mission.kind});
     return true;
   }else announce(`${actor.name}: ${actor.rumor}`,4);
   privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;
@@ -279,7 +294,7 @@ function updateHQPrompt(){
   game.hqStation=key;
   show('hqPrompt',!!station||!!actor);
   if(station)$('hqInteractButton').textContent=`INTERACT · ${station.label}`;
-  else if(actor)$('hqInteractButton').textContent=`TALK · ${actor.name}${game.player.weaponDrawn&&actor.kind==='civilian'?' · ROB':''}`;
+  else if(actor)$('hqInteractButton').textContent=`TALK · ${actor.name}${actor.connected?` · ${actor.bond}`:''}${game.player.weaponDrawn&&actor.kind==='civilian'?' · ROB':''}`;
 }
 function openHQPanel(kind){
   if(game.mode!=='HQ')return false;
@@ -1435,7 +1450,8 @@ function drawPortActors(){
     if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
     const guard=actor.kind==='guard',color=actor.flash>0?'#ffffff':guard?(actor.alert?C.red:C.cyan):C.green;actor.flash=Math.max(0,(actor.flash||0)-.025);
     ctx.save();ctx.translate(actor.x,actor.y);ctx.fillStyle=guard?'#17384c':'#163c34';ctx.strokeStyle=color;ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.arc(0,0,guard?16:13,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=color;ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(guard?'SEC':'NPC',0,4);
+    ctx.beginPath();ctx.arc(0,0,guard?16:13,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=color;ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(guard?'SEC':actor.connected?'LINK':'NPC',0,4);
+    if(actor.connected){ctx.strokeStyle=C.gold;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,20+Math.sin(now*3+actor.x)*2,0,TAU);ctx.stroke();}
     if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.fillText('!',0,-24);}
     if(actor.hp<actor.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(-18,-25,36,3);ctx.fillStyle=color;ctx.fillRect(-18,-25,36*clamp(actor.hp/actor.maxHp,0,1),3);}ctx.restore();
   }

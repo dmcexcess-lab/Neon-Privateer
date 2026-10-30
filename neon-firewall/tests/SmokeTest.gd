@@ -87,7 +87,7 @@ func _run() -> void:
     check(not restored.restore({"schema":999}),"bad run snapshot rejected")
     var game=Game.new();game.embedded=true;game.configure(Game.default_profile(),5000);root.add_child(game)
     check(game.music_player==null,"embedded game never starts a second music player")
-    game.phase="RESEARCH";check(game.buy_research("width"),"research can be purchased")
+    game.open_dealer();check(game.buy_research("width"),"research can be purchased through the dealer")
     var permanent:int=game.profile.research.width;var cash:int=game.balance
     game.start_new_run(99);game.sim.damage_brick(0,99);game._settle_events()
     check(game.balance>cash,"destroyed nodes pay the persistent wallet")

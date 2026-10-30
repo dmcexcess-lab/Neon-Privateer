@@ -1,20 +1,22 @@
 extends RefCounted
 const Guild=preload("GuildProgress.gd")
 const Justice=preload("JusticeSystem.gd")
+const Storyteller=preload("Storyteller.gd")
 const NAMES := ["Mara Voss","Ivo Slate","Sera Quill","Niko Vale","Ash Renn","Len Orra"]
 const JOBS := ["track","recover","assault","terminal","assassinate","investigate","station_hack","robbery","mug"]
 const STEPS := {"track":["rumor","tail","intel","bounty"],"recover":["rumor","intel"],"assault":["assault"],"terminal":["intel"],"assassinate":["assassinate"],"investigate":["rumor","tail","evidence","file_charges"],"station_hack":["station_hack"],"robbery":["robbery"],"mug":["mug"]}
 static func default_profile() -> Dictionary:
-    return {"schema":2,"active":{},"journal":[],"prosecutions":[],"settled":{},"sequence":0,"completed":0,"arrests":0,"captures":0,"gear":{"pistol":false,"armor":0},"ground":{},"challenge":{},"captured":false,"incarcerated":false,"guilds":Guild.defaults(),"justice":Justice.defaults(),"prison_life":{},"fitness":0}
+    return {"schema":3,"active":{},"journal":[],"prosecutions":[],"settled":{},"sequence":0,"completed":0,"arrests":0,"captures":0,"gear":{"pistol":false,"armor":0},"ground":{},"challenge":{},"captured":false,"incarcerated":false,"guilds":Guild.defaults(),"justice":Justice.defaults(),"prison_life":{},"fitness":0,"needs":Storyteller.defaults().needs,"contacts":{},"story":Storyteller.defaults().story}
 static func decode(raw: Variant) -> Dictionary:
     var value:Variant=bytes_to_var(raw) if raw is PackedByteArray else raw
     var result:Dictionary=default_profile().merged(value.duplicate(true),true) if value is Dictionary else default_profile()
     result.guilds=Guild.normalize(result.guilds);result.justice=Justice.normalize(result.justice)
+    Storyteller.normalize(result)
     # Old tactical detention is not a criminal conviction. Preserve the escape.
     if int(result.schema)<2:
         result.captured=bool(result.incarcerated);result.incarcerated=false
         if not result.ground.is_empty() and result.ground.get("kind","")=="prison":result.ground.kind="mission_escape"
-    result.schema=2
+    result.schema=3
     return result
 static func offer(planet: String,kind: String,sequence: int,difficulty: int=1) -> Dictionary:
     var tier:=clampi(difficulty,1,5);var seed_number:=absi((planet+kind+str(sequence)+str(tier)).hash())

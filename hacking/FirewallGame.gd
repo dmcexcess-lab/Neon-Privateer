@@ -8,6 +8,7 @@ var challenge_settled := false
 var challenge_terminal := "spaceport"
 var challenge_hidden := false
 var challenge_result: Dictionary = {}
+var dealer_mode := false
 signal exit_requested
 const Simulation = preload("FirewallSimulation.gd")
 const W := 390.0
@@ -109,15 +110,21 @@ func persist() -> void:
     save_clock=0.0
 
 func start_challenge(data: Dictionary, seed_number: int, difficulty: int = 1, terminal: String = "spaceport", hidden: bool = false) -> void:
-    challenge_mode=true;challenge_settled=false
     var linked_balance:=balance
     configure(data,linked_balance)
+    challenge_mode=true;challenge_settled=false;dealer_mode=false
     challenge_terminal=terminal;challenge_hidden=hidden;challenge_result={}
     sim.new_challenge(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1,difficulty)
     credited_earned=0;credited_destroyed=0;cleared_stage=0;death_recorded=false
     profile.run=sim.snapshot();phase="PLAY";confirm_new=false;particles.clear();floats.clear()
     notice="INTRUSION D%d // PAYOUT UP TO %d CR" % [sim.security_difficulty,challenge_max_reward()];notice_clock=5
     persist()
+
+func open_dealer() -> void:
+    challenge_mode=false;challenge_settled=false;dealer_mode=true
+    phase="RESEARCH";confirm_new=false
+    notice="LICENSED HARDWARE // PURCHASES ARE PERMANENT";notice_clock=5
+    queue_redraw()
 
 func challenge_base_reward() -> int:
     var difficulty:=clampi(sim.security_difficulty,1,5)
@@ -144,7 +151,7 @@ func resume_run() -> void:
 
 func buy_research(track: String) -> bool:
     var cost:=Simulation.research_cost(track,profile.research)
-    if phase!="RESEARCH" or cost<0 or balance<cost:return false
+    if phase!="RESEARCH" or (embedded and not dealer_mode) or cost<0 or balance<cost:return false
     balance-=cost;profile.research[track]=int(profile.research.get(track,0))+1
     persist();_sound("buy");return true
 
@@ -270,6 +277,7 @@ func _tap(pos: Vector2) -> void:
                 return
         if Rect2(24,642,342,60).has_point(pos):
             if phase=="SHOP":sim.next_stage();phase="PLAY";persist()
+            elif embedded and dealer_mode:persist();exit_requested.emit()
             else:phase="TITLE"
         elif phase=="SHOP" and Rect2(24,718,342,52).has_point(pos):phase="TITLE";persist()
         return
