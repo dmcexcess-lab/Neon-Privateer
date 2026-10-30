@@ -211,6 +211,7 @@ var firewall: Node2D
 var firewall_profile: Dictionary = FirewallGame.default_profile()
 var breach_web_callback
 var breach_spaceport_requested := false
+var breach_arrival_serial := 0
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -475,6 +476,8 @@ func _open_breach_spaceport() -> bool:
         return false
     if not OS.has_feature("web"):
         return _open_covert()
+    breach_arrival_serial += 1
+    var arrival_seed := int(abs(hash("%s:%d:%d" % [current_planet, Time.get_ticks_usec(), breach_arrival_serial])))
     var faction_id := _planet_primary_faction(current_planet)
     var payload := {
         "type": "dmc-open-breach",
@@ -482,6 +485,7 @@ func _open_breach_spaceport() -> bool:
             "mode": "spaceport",
             "requestId": "%d:%s" % [active_career_slot, current_planet],
             "seed": abs(world_seed ^ hash(current_planet)),
+            "arrivalSeed": arrival_seed,
             "planetId": current_planet,
             "planetName": _planet_display_name(current_planet),
             "archetype": _planet_type(current_planet),

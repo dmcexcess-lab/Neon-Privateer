@@ -71,10 +71,12 @@ test('full spaceports support armed play and guards react to gunfire',()=>{
   b.setPrivateerContext(null);
 });
 
-test('concealed spaceport terminals reveal nearby and launch distinct hacks',()=>{
-  const context={mode:'spaceport',requestId:'hidden-terminal-test',seed:881,planetId:'p-hidden',planetName:'Relay Port',archetype:'FROZEN',faction:'Relay Security',loadout:{weapon:'hands'}};
+test('concealed spaceport terminals reroll by arrival, reveal nearby and launch distinct hacks',()=>{
+  const context={mode:'spaceport',requestId:'hidden-terminal-test',seed:881,arrivalSeed:77101,planetId:'p-hidden',planetName:'Relay Port',archetype:'FROZEN',faction:'Relay Security',loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
-  const hidden=b.game.world.stations.find(station=>station.id==='hidden-freight-node');
+  const firstArrival=b.game.world.stations.filter(station=>station.hidden).map(station=>[station.id,station.x,station.y]);
+  const hidden=b.game.world.stations.find(station=>station.hidden);
+  assert.ok(firstArrival.length>=4&&firstArrival.length<=7);
   assert.equal(hidden.discovered,false);assert.equal(b.game.world.stations.filter(station=>station.hidden&&station.discovered).length,0);
   b.game.player.x=hidden.x-130;b.game.player.y=hidden.y;
   assert.equal(b.discoverPortStations(),true);assert.equal(hidden.discovered,true,'proximity reveals the concealed panel');
@@ -83,6 +85,8 @@ test('concealed spaceport terminals reveal nearby and launch distinct hacks',()=
   const message=privateerMessages.at(-1);
   assert.equal(message.type,'dmc-privateer-terminal');assert.equal(message.detail.terminal,hidden.id);assert.equal(message.detail.hidden,true);
   assert.equal(typeof message.detail.seed,'number','every concealed node receives its own deterministic hack seed');
+  const nextContext={...context,arrivalSeed:77102};b.enterPrivateerPort(nextContext);
+  assert.notDeepEqual(b.game.world.stations.filter(station=>station.hidden).map(station=>[station.id,station.x,station.y]),firstArrival,'a new landing rerolls the concealed network');
   b.setPrivateerContext(null);
 });
 

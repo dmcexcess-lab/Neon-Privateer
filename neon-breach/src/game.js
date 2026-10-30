@@ -193,7 +193,7 @@ function interactPort(){
   const station=nearbyStation(),actor=nearbyPortActor();
   if(station){
     if(station.service==='terminal'){
-      const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,game.world.seed>>>0);
+      const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
       privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,seed:terminalSeed});
     }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);

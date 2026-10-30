@@ -531,7 +531,7 @@ function createHQWorld(){
 
 // Privateer spaceports use the real Breach geometry and navigation rather than
 // the small native 3x3 imitation. A planet seed always recreates the same port.
-function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY'}={}){
+function createSpaceportWorld({seed=1,arrivalSeed=null,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY'}={}){
   const rng=new RNG((Number(seed)>>>0)||1);
   const profile={
     LUSH:{id:'sewers',color:'#123b37',edge:'#75ffb0'},
@@ -584,18 +584,8 @@ function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',arc
   ];
   for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
-  // These access nodes are intentionally absent from the initial directory.
-  // They sit in low-traffic corners and become normal physical stations only
-  // after the player gets close enough to notice the concealed panel.
-  stations.push(
-    {id:'hidden-alley-relay',service:'terminal',x:-1200,y:430,label:'CONCEALED ALLEY RELAY',short:'RELAY',color:'#ff60bd',hidden:true,discovered:false},
-    {id:'hidden-freight-node',service:'terminal',x:1900,y:500,label:'FREIGHT CONTROL BACKDOOR',short:'NODE',color:'#ff60bd',hidden:true,discovered:false},
-    {id:'hidden-promenade-tap',service:'terminal',x:650,y:1700,label:'PROMENADE MAINTENANCE TAP',short:'TAP',color:'#ff60bd',hidden:true,discovered:false},
-    {id:'hidden-cafe-panel',service:'terminal',x:-1200,y:-100,label:'CAFE SERVICE PANEL',short:'PANEL',color:'#ff60bd',hidden:true,discovered:false},
-    {id:'hidden-club-uplink',service:'terminal',x:1170,y:800,label:'CLUB PRIVATE UPLINK',short:'UPLINK',color:'#ff60bd',hidden:true,discovered:false}
-  );
   const actors=[];
-  const world={floor:0,seed:Number(seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
+  const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
     shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,crime:{heat:0,witnessed:false}};
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
@@ -628,6 +618,38 @@ function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',arc
     {room:7,x:1700,y:120,w:74,h:58,kind:'supply crate'},{room:5,x:-850,y:650,w:62,h:52,kind:'supply crate'}
   ];
   for(const obj of furniture)rooms[obj.room].cover.push({...obj,hp:999,maxHp:999});
+  // Hidden access changes on every landing while the major planet-seeded port
+  // layout stays familiar. Candidates cover public interiors, service corners,
+  // freight space, alleys and the landing ring; only a randomized subset is
+  // installed for this arrival, with a little safe positional variation.
+  const terminalRng=new RNG(((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x45d9f3b))>>>0||1);
+  const terminalCandidates=[
+    {id:'alley-relay-a',x:-1200,y:430,label:'CONCEALED ALLEY RELAY',short:'RELAY'},
+    {id:'alley-relay-b',x:-1220,y:1060,label:'BACK-ALLEY DATA TAP',short:'TAP'},
+    {id:'freight-node-a',x:1900,y:500,label:'FREIGHT CONTROL BACKDOOR',short:'NODE'},
+    {id:'freight-node-b',x:1480,y:500,label:'CUSTOMS MAINTENANCE PORT',short:'PORT'},
+    {id:'freight-node-c',x:1900,y:-100,label:'CARGO GRID SERVICE JACK',short:'JACK'},
+    {id:'promenade-tap-a',x:650,y:1700,label:'PROMENADE MAINTENANCE TAP',short:'TAP'},
+    {id:'promenade-tap-b',x:560,y:1280,label:'LOWER-DECK ACCESS NODE',short:'NODE'},
+    {id:'promenade-tap-c',x:310,y:1800,label:'DRAINAGE GRID RELAY',short:'RELAY'},
+    {id:'cafe-panel',x:-1200,y:-100,label:'CAFE SERVICE PANEL',short:'PANEL'},
+    {id:'market-panel',x:650,y:-90,label:'MARKET VENDOR BACKDOOR',short:'PANEL'},
+    {id:'bar-panel',x:540,y:600,label:'BAR UTILITY CONSOLE',short:'CONSOLE'},
+    {id:'club-uplink',x:970,y:1050,label:'CLUB PRIVATE UPLINK',short:'UPLINK'},
+    {id:'lodge-panel',x:-150,y:1650,label:'CREW LODGE SERVICE JACK',short:'JACK'},
+    {id:'admin-tap',x:-520,y:300,label:'ADMINISTRATION DATA TAP',short:'TAP'},
+    {id:'service-node',x:400,y:1150,label:'SERVICE BOULEVARD NODE',short:'NODE'},
+    {id:'landing-relay',x:300,y:180,label:'LANDING CONTROL RELAY',short:'RELAY'},
+    {id:'transit-jack-a',x:-400,y:-1080,label:'TRANSIT POWER JACK',short:'JACK'},
+    {id:'transit-jack-b',x:400,y:-1080,label:'PAD GUIDANCE BACKDOOR',short:'NODE'}
+  ].filter(candidate=>walkable(world,candidate.x,candidate.y,18)&&stations.every(station=>Math.hypot(candidate.x-station.x,candidate.y-station.y)>112));
+  for(let i=terminalCandidates.length-1;i>0;i--){const j=terminalRng.int(0,i);[terminalCandidates[i],terminalCandidates[j]]=[terminalCandidates[j],terminalCandidates[i]];}
+  const terminalCount=Math.min(terminalCandidates.length,terminalRng.int(4,7));
+  for(const candidate of terminalCandidates.slice(0,terminalCount)){
+    let x=candidate.x+terminalRng.range(-14,14),y=candidate.y+terminalRng.range(-14,14);
+    if(!walkable(world,x,y,18)){x=candidate.x;y=candidate.y;}
+    stations.push({...candidate,id:`hidden-${candidate.id}`,service:'terminal',x,y,color:'#ff60bd',hidden:true,discovered:false});
+  }
   for(let i=0;i<18;i++){
     const room=rooms[rng.int(0,rooms.length-1)],pos=randomSpot(world,room,rng,18),target=randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
     actors.push({id:`npc-${i}`,kind:'civilian',name:names[rng.int(0,names.length-1)],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
@@ -1203,7 +1225,7 @@ function interactPort(){
   const station=nearbyStation(),actor=nearbyPortActor();
   if(station){
     if(station.service==='terminal'){
-      const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,game.world.seed>>>0);
+      const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
       privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,seed:terminalSeed});
     }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
