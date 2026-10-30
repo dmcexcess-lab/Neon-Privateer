@@ -122,11 +122,12 @@ for(const station of hq.stations)assert.ok(walkable(hq,station.x,station.y,16),`
 for(const connection of hq.links)assert.ok(walkable(hq,connection.via.x,connection.via.y,18),'HQ corridors must stay open');
 const port=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
 const samePort=createSpaceportWorld({seed:7123,planetId:'p-17',planetName:'Glass Harbor',archetype:'FROZEN',faction:'Orchid Compact'});
-assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,6);assert.equal(port.stations.length,6);
+assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,6);assert.equal(port.stations.length,8);
 assert.equal(port.actors.filter(a=>a.kind==='civilian').length,7);assert.equal(port.actors.filter(a=>a.kind==='guard').length,3);
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
+assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice'],'spontaneous missions expose every approach');
 for(const station of port.stations)assert.ok(walkable(port,station.x,station.y,16),`${station.id} spaceport service must be reachable`);
 for(const connection of port.links)assert.ok(walkable(port,connection.via.x,connection.via.y,18),'spaceport corridors must stay open');

@@ -368,6 +368,8 @@ export function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPO
     {id:'trade',service:'trade',x:520,y:-35,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
     {id:'bank',service:'bank',x:-560,y:-25,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
     {id:'contracts',service:'contracts',x:-80,y:430,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
+    {id:'upgrades',service:'upgrades',x:120,y:430,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
+    {id:'careers',service:'careers',x:-535,y:-155,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
     {id:'terminal',service:'terminal',x:340,y:330,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
     {id:'alley',service:'alley',x:620,y:430,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];

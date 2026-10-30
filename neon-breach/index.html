@@ -556,6 +556,8 @@ function createSpaceportWorld({seed=1,planetId='port',planetName='SPACEPORT',arc
     {id:'trade',service:'trade',x:520,y:-35,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
     {id:'bank',service:'bank',x:-560,y:-25,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
     {id:'contracts',service:'contracts',x:-80,y:430,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
+    {id:'upgrades',service:'upgrades',x:120,y:430,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
+    {id:'careers',service:'careers',x:-535,y:-155,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
     {id:'terminal',service:'terminal',x:340,y:330,label:'RESTRICTED NETWORK TERMINAL',short:'HACK',color:'#ff60bd'},
     {id:'alley',service:'alley',x:620,y:430,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];
@@ -1111,6 +1113,7 @@ function enterPrivateerPort(context){
   document.body?.classList.toggle('hq-mode',true);
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
   announce('SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
+  requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,mode:'mission'};
@@ -1121,6 +1124,7 @@ function startPrivateerMission(spec){
     for(const enemy of game.enemies){enemy.state='alert';enemy.alertTime=999;enemy.lastKnown={x:game.player.x,y:game.player.y};}
   }
   announce(`${String(privateerContext.style||'choice').toUpperCase()} OPERATION · ${String(privateerContext.objective||privateerContext.kind||'COMPLETE OR EXTRACT').toUpperCase()}`,4);
+  requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'mission',style:privateerContext.style||'choice'}));
 }
 function finishPrivateerMission(outcome){
   if(privateerContext?.mode!=='mission')return false;
@@ -1158,6 +1162,7 @@ function interactPort(){
     actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name});
     announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
   }else if(actor.mission&&actor.offered){
+    privateerMessage('dmc-privateer-loading',{mode:'mission',style:actor.mission.style});
     startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,objective:actor.mission.kind});
     return true;
   }else announce(`${actor.name}: ${actor.rumor}`,4);

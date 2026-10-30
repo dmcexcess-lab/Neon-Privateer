@@ -37,28 +37,99 @@ document.getElementById('github-report').addEventListener('click', () => {
 const game = document.querySelector('[data-game-frame]');
 const gameStatus = document.getElementById('game-status');
 let breachLayer = null;
-function closeBreachLayer() {
+let breachClosing = false;
+let pendingBreachContext = null;
+function destroyBreachLayer() {
   if (!breachLayer) return;
+  clearInterval(breachLayer.loadingTimer);
   breachLayer.remove();
   breachLayer = null;
-  game.hidden = false;
-  game.focus();
+  breachClosing = false;
+}
+function closeBreachLayer(message = 'RETURNING TO DOCK SERVICES') {
+  if (!breachLayer || breachClosing) return;
+  breachClosing = true;
+  clearInterval(breachLayer.loadingTimer);
+  const transition = breachLayer.querySelector('.breach-transition');
+  transition.querySelector('.breach-loading-state').textContent = message;
+  transition.querySelector('.breach-loading-progress').style.width = '100%';
+  breachLayer.classList.remove('is-ready');
+  breachLayer.classList.add('is-closing');
+  setTimeout(() => {
+    breachLayer?.querySelector('iframe')?.remove();
+    game.hidden = false;
+    game.focus();
+    breachLayer?.classList.add('is-revealing');
+    setTimeout(() => {
+      destroyBreachLayer();
+      if (pendingBreachContext) {
+        const context = pendingBreachContext;
+        pendingBreachContext = null;
+        openBreachLayer(context);
+      }
+    }, 620);
+  }, 380);
+}
+function revealBreachLayer() {
+  if (!breachLayer || breachClosing) return;
+  const elapsed = performance.now() - breachLayer.openedAt;
+  setTimeout(() => {
+    if (!breachLayer || breachClosing) return;
+    clearInterval(breachLayer.loadingTimer);
+    breachLayer.querySelector('.breach-loading-progress').style.width = '100%';
+    breachLayer.querySelector('.breach-loading-state').textContent = 'PORT LINK ESTABLISHED';
+    breachLayer.classList.add('is-ready');
+    breachLayer.querySelector('iframe').focus();
+  }, Math.max(0, 850 - elapsed));
+}
+function coverBreachLayer(detail = {}) {
+  if (!breachLayer || breachClosing) return;
+  clearInterval(breachLayer.loadingTimer);
+  breachLayer.openedAt = performance.now();
+  const transition = breachLayer.querySelector('.breach-transition');
+  transition.querySelector('h3').textContent = detail.mode === 'mission' ? `${String(detail.style || 'FIELD').toUpperCase()} OPERATION` : 'SPACEPORT TRANSIT';
+  transition.querySelector('.breach-loading-state').textContent = 'ASSEMBLING FIELD MAP · SYNCHRONIZING CONTACT';
+  transition.querySelector('.breach-loading-progress').style.width = '12%';
+  breachLayer.classList.remove('is-ready');
+  let progress = 12;
+  breachLayer.loadingTimer = setInterval(() => {
+    progress = Math.min(92, progress + Math.max(1, Math.round((94 - progress) * .13)));
+    transition.querySelector('.breach-loading-progress').style.width = progress + '%';
+  }, 110);
 }
 function openBreachLayer(context) {
-  closeBreachLayer();
+  if (breachClosing) {
+    pendingBreachContext = context;
+    return;
+  }
+  destroyBreachLayer();
   const layer = document.createElement('div');
   layer.className = 'breach-layer';
+  layer.openedAt = performance.now();
+  const transition = document.createElement('div');
+  transition.className = 'breach-transition';
+  transition.innerHTML = '<div class="breach-loading-mark">◈</div><p>NEON PRIVATEER // PORT TRANSIT</p><h3></h3><div class="breach-loading-track"><i class="breach-loading-progress"></i></div><small class="breach-loading-state">MAPPING CONCOURSE · LOCATING SERVICES</small>';
+  transition.querySelector('h3').textContent = context.mode === 'spaceport' ? `${context.planetName || 'LOCAL'} SPACEPORT` : `${String(context.style || 'FIELD').toUpperCase()} OPERATION`;
   const frame = document.createElement('iframe');
   frame.className = 'breach-mission-frame';
   frame.title = 'Privateer spaceport and ground operation';
   frame.allow = 'autoplay; fullscreen';
   frame.src = './breach/game.html?privateer=' + encodeURIComponent(JSON.stringify(context));
-  layer.appendChild(frame);
+  layer.append(frame, transition);
   document.querySelector('.game-stage').appendChild(layer);
   breachLayer = layer;
+  let progress = 7;
+  layer.loadingTimer = setInterval(() => {
+    progress = Math.min(92, progress + Math.max(1, Math.round((94 - progress) * .13)));
+    transition.querySelector('.breach-loading-progress').style.width = progress + '%';
+  }, 110);
   game.hidden = true;
-  gameStatus.textContent = context.mode === 'spaceport' ? 'Walking the local spaceport in Neon Breach.' : 'Ground operation active in Neon Breach.';
-  frame.focus();
+  gameStatus.textContent = context.mode === 'spaceport' ? 'Entering the local spaceport…' : 'Loading ground operation…';
+}
+function abandonBreachLayer() {
+  pendingBreachContext = null;
+  destroyBreachLayer();
+  game.hidden = false;
 }
 document.getElementById('launch').addEventListener('click', () => {
   game.src = './game.html?v=' + encodeURIComponent(build); game.hidden = false; document.getElementById('launch-card').hidden = true;
@@ -66,6 +137,7 @@ document.getElementById('launch').addEventListener('click', () => {
   gameStatus.textContent = 'Loading the game…'; game.focus();
 });
 document.getElementById('close-game').addEventListener('click', () => {
+  abandonBreachLayer();
   game.src = 'about:blank'; game.hidden = true;
   document.getElementById('launch-card').hidden = false;
   document.getElementById('close-game').hidden = true;
@@ -81,10 +153,21 @@ window.addEventListener('message', (event) => {
   }
   const breachFrame = breachLayer?.querySelector('iframe');
   if (!breachFrame || event.source !== breachFrame.contentWindow || !event.data?.type?.startsWith('dmc-privateer-')) return;
+  if (event.data.type === 'dmc-privateer-loading') {
+    coverBreachLayer(event.data.detail);
+    gameStatus.textContent = 'Loading ground operation…';
+    return;
+  }
+  if (event.data.type === 'dmc-privateer-ready') {
+    revealBreachLayer();
+    gameStatus.textContent = event.data.detail?.mode === 'spaceport' ? 'Spaceport online.' : 'Ground operation active.';
+    return;
+  }
   game.contentWindow.postMessage(event.data, location.origin);
   if (['dmc-privateer-service','dmc-privateer-terminal','dmc-privateer-port-result','dmc-privateer-mission-result'].includes(event.data.type)) {
-    closeBreachLayer();
-    gameStatus.textContent = 'Returned to Neon Privateer.';
+    const destination = event.data.type === 'dmc-privateer-terminal' ? 'CONNECTING PHYSICAL TERMINAL' : event.data.type === 'dmc-privateer-mission-result' ? 'RETURNING TO SPACEPORT' : 'OPENING DOCK SERVICE';
+    closeBreachLayer(destination);
+    gameStatus.textContent = 'Transitioning from the spaceport…';
   }
 });
 readReport();

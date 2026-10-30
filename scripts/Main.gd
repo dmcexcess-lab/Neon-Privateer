@@ -210,6 +210,7 @@ var firewall_open := false
 var firewall: Node2D
 var firewall_profile: Dictionary = FirewallGame.default_profile()
 var breach_web_callback
+var breach_spaceport_requested := false
 
 var rng := RandomNumberGenerator.new()
 var privateer_ui_atlas: Texture2D
@@ -470,7 +471,7 @@ func _setup_breach_bridge() -> void:
     JavaScriptBridge.get_interface("window").addEventListener("message", breach_web_callback)
 
 func _open_breach_spaceport() -> bool:
-    if active_career_slot <= 0 or playing or route_active or not hub_open:
+    if active_career_slot <= 0 or playing or route_active or not hub_open or breach_spaceport_requested:
         return false
     if not OS.has_feature("web"):
         return _open_covert()
@@ -489,7 +490,11 @@ func _open_breach_spaceport() -> bool:
         }
     }
     JavaScriptBridge.eval("window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(payload), false)
+    breach_spaceport_requested = true
     return true
+
+func _close_breach_spaceport_request() -> void:
+    breach_spaceport_requested = false
 
 func _on_breach_web_message(args: Array) -> void:
     if args.is_empty() or not OS.has_feature("web"):
@@ -503,14 +508,24 @@ func _on_breach_web_message(args: Array) -> void:
     var detail: Dictionary = message.get("detail", {})
     match kind:
         "dmc-privateer-service":
+            _close_breach_spaceport_request()
             var service := String(detail.get("service", "return"))
-            if service == "trade":
+            if service == "return" or service == "travel":
+                travel_selected_planet = _default_travel_selection()
+                _reset_system_map_view()
+                travel_open = true; hub_open = false
+            elif service == "trade":
                 trade_view = "green"; trade_page = 0; trade_open = true; hub_open = false
             elif service == "bank":
                 bank_view = "account"; bank_market_page = 0; market_open = true; hub_open = false
             elif service == "contracts":
                 contracts_open = true; contract_notice = ""; hub_open = false
+            elif service == "upgrades":
+                research_open = true; hub_open = false
+            elif service == "careers":
+                _open_profile_menu()
         "dmc-privateer-terminal":
+            _close_breach_spaceport_request()
             if _open_firewall():
                 firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)))
                 firewall.notice = "PHYSICAL TERMINAL // CLEAR ONE SECURITY LAYER"
@@ -528,6 +543,7 @@ func _on_breach_web_message(args: Array) -> void:
             last_trip_summary = "Spaceport crime witnessed" if bool(detail.get("witnessed", false)) else "Unreported spaceport robbery"
             _save_all_state()
         "dmc-privateer-mission-result":
+            _close_breach_spaceport_request()
             var outcome := String(detail.get("outcome", "returned"))
             var style := String(detail.get("style", "choice"))
             var reward := maxi(0, int(detail.get("cash", 0)))
@@ -538,6 +554,7 @@ func _on_breach_web_message(args: Array) -> void:
                 covert_profile["captured"] = true
             _save_all_state()
         "dmc-privateer-port-result":
+            _close_breach_spaceport_request()
             if String(detail.get("outcome", "")) == "arrested":
                 var arrest_faction_id := _planet_primary_faction(current_planet)
                 if not arrest_faction_id.is_empty():
@@ -3306,6 +3323,8 @@ func _save_all_state() -> void:
 func _process(delta: float) -> void:
     if active_career_slot>0 and not profile_menu_open and not covert_open and not String(covert_profile.justice.forced_faction).is_empty():
         if _open_justice_review(covert_profile.justice.forced_faction):return
+    if OS.has_feature("web") and hub_open and active_career_slot > 0 and not profile_menu_open and not career_slots_open and not breach_spaceport_requested:
+        if _open_breach_spaceport():return
     _sync_soundtrack()
     if not covert_open and not run_paused and not (firewall_open and firewall.phase != "PLAY"):
         _update_active_contract_clock(delta)

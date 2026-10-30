@@ -143,6 +143,7 @@ function enterPrivateerPort(context){
   document.body?.classList.toggle('hq-mode',true);
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction}`;
   announce('SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
+  requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,mode:'mission'};
@@ -153,6 +154,7 @@ function startPrivateerMission(spec){
     for(const enemy of game.enemies){enemy.state='alert';enemy.alertTime=999;enemy.lastKnown={x:game.player.x,y:game.player.y};}
   }
   announce(`${String(privateerContext.style||'choice').toUpperCase()} OPERATION · ${String(privateerContext.objective||privateerContext.kind||'COMPLETE OR EXTRACT').toUpperCase()}`,4);
+  requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'mission',style:privateerContext.style||'choice'}));
 }
 function finishPrivateerMission(outcome){
   if(privateerContext?.mode!=='mission')return false;
@@ -190,6 +192,7 @@ function interactPort(){
     actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name});
     announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
   }else if(actor.mission&&actor.offered){
+    privateerMessage('dmc-privateer-loading',{mode:'mission',style:actor.mission.style});
     startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,objective:actor.mission.kind});
     return true;
   }else announce(`${actor.name}: ${actor.rumor}`,4);

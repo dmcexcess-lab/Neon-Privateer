@@ -39,8 +39,12 @@ function ready() {setStatusMode('hidden');}</script></body>''')
         self.assertIn('body[data-game-slug="neon-privateer"] .feedback-inner{max-width:920px', css)
         self.assertIn('body[data-game-slug="neon-privateer"] .game-stage{height:clamp(', css)
         self.assertIn('breach-mission-frame', css)
+        self.assertIn('breach-transition', css)
+        self.assertIn('breach-loading-progress', css)
         self.assertIn("event.data?.type === 'dmc-open-breach'", js)
         self.assertIn("dmc-privateer-terminal", js)
+        self.assertIn("dmc-privateer-loading", js)
+        self.assertIn('PORT LINK ESTABLISHED', js)
 
     def test_standalone_games_have_complete_independent_pages(self):
         fixtures = {
