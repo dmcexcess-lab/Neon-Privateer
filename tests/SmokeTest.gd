@@ -238,6 +238,8 @@ func _funded_career(scene: Node,slot: int) -> bool:
     # JusticeCareerTest separately verifies the true zero-cash start and rank gates.
     var created:bool=scene._create_new_career(slot)
     if created:
+        # Production fixtures exercise the post-onboarding dock and flight UI.
+        scene._finish_tutorial()
         scene.research_credits=1200
         scene.covert_profile.guilds.trader=500;scene.covert_profile.guilds.merc=500
         scene._save_all_state()

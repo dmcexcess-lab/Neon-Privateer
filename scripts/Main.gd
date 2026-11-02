@@ -90,6 +90,8 @@ const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
 const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
 const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
 const HUB_CAREERS_RECT := Rect2(35.0, 710.0, 320.0, 54.0)
+const TUTORIAL_STEP_COUNT := 8
+const TUTORIAL_SKIP_RECT := Rect2(286.0, 16.0, 84.0, 38.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 390.0, 320.0, 54.0)
 const HUB_TRADE_RECT := Rect2(35.0, 454.0, 320.0, 54.0)
 const HUB_MARKET_RECT := Rect2(35.0, 518.0, 320.0, 54.0)
@@ -272,6 +274,9 @@ var profile_menu_open := true
 var career_slots_open := false
 var career_new_mode := false
 var pending_overwrite_slot := 0
+var tutorial_open := false
+var tutorial_complete := true
+var tutorial_step := 0
 var active_career_slot := 0
 var last_career_slot := 0
 var hub_open := false
@@ -988,6 +993,9 @@ func _reset_career_state() -> void:
     research_start_cone = false
     research_start_seeker = false
     starting_weapon = "none"
+    tutorial_open = false
+    tutorial_complete = false
+    tutorial_step = 0
 
     political_world.clear()
     world_seed = 0
@@ -1080,6 +1088,8 @@ func _create_new_career(slot: int) -> bool:
     career_new_mode = false
     pending_overwrite_slot = 0
     hub_open = true
+    tutorial_open = true
+    tutorial_step = 0
     queue_redraw()
     return true
 
@@ -1090,6 +1100,8 @@ func _load_career(slot: int) -> bool:
     _reset_career_state()
     _load_meta()
     _load_privateer_state()
+    tutorial_open = not tutorial_complete
+    tutorial_step = 0
     profile_menu_open = false
     career_slots_open = false
     career_new_mode = false
@@ -3455,7 +3467,7 @@ func _save_all_state() -> void:
 func _process(delta: float) -> void:
     if active_career_slot>0 and not profile_menu_open and not covert_open and not String(covert_profile.justice.forced_faction).is_empty():
         if _open_justice_review(covert_profile.justice.forced_faction):return
-    if OS.has_feature("web") and hub_open and active_career_slot > 0 and not profile_menu_open and not career_slots_open and not breach_spaceport_requested:
+    if OS.has_feature("web") and hub_open and active_career_slot > 0 and not tutorial_open and not profile_menu_open and not career_slots_open and not breach_spaceport_requested:
         if _open_breach_spaceport():return
     _sync_soundtrack()
     if not covert_open and not run_paused and not (firewall_open and firewall.phase != "PLAY"):
@@ -3578,6 +3590,19 @@ func _toggle_weapon_systems() -> void:
 func _input(event: InputEvent) -> void:
     if covert_open:return
     if event.device==InputEvent.DEVICE_ID_EMULATION:return
+    if tutorial_open:
+        if event is InputEventKey and event.pressed and not event.echo:
+            if event.keycode == KEY_ENTER or event.keycode == KEY_SPACE or event.keycode == KEY_RIGHT:
+                _tutorial_next()
+            elif event.keycode == KEY_LEFT or event.keycode == KEY_BACKSPACE:
+                _tutorial_back()
+            elif event.keycode == KEY_ESCAPE:
+                _finish_tutorial()
+        elif event is InputEventScreenTouch and event.pressed:
+            _handle_tutorial_tap(event.position)
+        elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+            _handle_tutorial_tap(event.position)
+        return
     if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_H:
         _toggle_weapon_systems()
         return
@@ -4305,7 +4330,169 @@ func _handle_contracts_tap(pos: Vector2) -> void:
             queue_redraw()
             return
 
+func _tutorial_target_rect() -> Rect2:
+    match tutorial_step:
+        1: return HUB_OPERATIONS_RECT
+        2: return HUB_TRAVEL_RECT
+        3: return HUB_TRADE_RECT
+        4: return HUB_MARKET_RECT
+        5: return HUB_CONTRACTS_RECT
+        6: return HUB_UPGRADES_RECT
+        7: return HUB_CAREERS_RECT
+    return Rect2()
+
+func _tutorial_panel_rect() -> Rect2:
+    if tutorial_step == 0:
+        return Rect2(28.0, 112.0, 334.0, 520.0)
+    var target := _tutorial_target_rect()
+    return Rect2(28.0, 400.0, 334.0, 286.0) if target.position.y < 350.0 else Rect2(28.0, 66.0, 334.0, 286.0)
+
+func _tutorial_back_rect() -> Rect2:
+    var panel := _tutorial_panel_rect()
+    return Rect2(panel.position.x + 18.0, panel.end.y - 60.0, 126.0, 42.0)
+
+func _tutorial_next_rect() -> Rect2:
+    var panel := _tutorial_panel_rect()
+    return Rect2(panel.end.x - 144.0, panel.end.y - 60.0, 126.0, 42.0)
+
+func _tutorial_title() -> String:
+    match tutorial_step:
+        0: return "WELCOME TO NEON PRIVATEER"
+        1: return "PORT / OPERATIONS"
+        2: return "TRAVEL & FLIGHT"
+        3: return "COMMODITY TRADE"
+        4: return "BANK & MARKETS"
+        5: return "CONTRACTS & CASES"
+        6: return "UPGRADES & HACKING"
+        7: return "CAREERS & CONSEQUENCES"
+    return "FIELD GUIDE"
+
+func _tutorial_lines() -> Array:
+    match tutorial_step:
+        0:
+            return [
+                "This is a living sandbox, not a fixed campaign.",
+                "Earn your way through trade, contracts, piracy,",
+                "mining, investigation, or people you meet.",
+                "",
+                "Markets, factions, laws and relationships",
+                "keep moving around your choices."
+            ]
+        1:
+            return [
+                "Your starport is home between flights.",
+                "Marked stations provide services. Locals",
+                "share jobs; venues restore personal needs.",
+                "Hidden terminals can be hacked. Theft, witnesses,",
+                "guards and drawn weapons make crime matter."
+            ]
+        2:
+            return [
+                "Pick a reachable planet; check your fuel",
+                "and jump range before you launch.",
+                "In flight use LEFT / RIGHT and DASH.",
+                "Toggle weapons on screen or with H.",
+                "Routes bring cargo, police or combat."
+            ]
+        3:
+            return [
+                "Buy low and sell high across worlds.",
+                "Green goods are legal. Grey goods may break",
+                "local law. Cargo uses space and is lost",
+                "when the ship is destroyed."
+            ]
+        4:
+            return [
+                "Deposit cash here to protect it from ship loss.",
+                "Trade market indices and faction money.",
+                "Banked funds survive ship destruction."
+            ]
+        5:
+            return [
+                "Guild and faction jobs become cases.",
+                "Follow clues through rumors and wiretaps,",
+                "tailing, stakeouts and Breach sites.",
+                "Ignore the board: NPC stories can still",
+                "grow into major investigations."
+            ]
+        6:
+            return [
+                "Improve range, speed, dash and defenses,",
+                "then unlock ship weapons.",
+                "Hacking gear comes from a starport dealer.",
+                "Harder breaches bring greater rewards",
+                "but also greater risk."
+            ]
+        7:
+            return [
+                "Careers are separate slots and autosave.",
+                "Cash, cargo and ship gear are at risk.",
+                "Banked money, contacts and reputation",
+                "survive with the living world.",
+                "No required path. Make your own story."
+            ]
+    return []
+
+func _tutorial_next() -> void:
+    if tutorial_step >= TUTORIAL_STEP_COUNT - 1:
+        _finish_tutorial()
+        return
+    tutorial_step += 1
+    queue_redraw()
+
+func _tutorial_back() -> void:
+    tutorial_step = maxi(0, tutorial_step - 1)
+    queue_redraw()
+
+func _finish_tutorial() -> void:
+    tutorial_open = false
+    tutorial_complete = true
+    tutorial_step = 0
+    _save_meta()
+    queue_redraw()
+
+func _handle_tutorial_tap(pos: Vector2) -> void:
+    if TUTORIAL_SKIP_RECT.has_point(pos):
+        _finish_tutorial()
+    elif _tutorial_back_rect().has_point(pos) and tutorial_step > 0:
+        _tutorial_back()
+    elif _tutorial_next_rect().has_point(pos):
+        _tutorial_next()
+
+func _draw_tutorial() -> void:
+    draw_rect(Rect2(Vector2.ZERO, Vector2(W, H)), Color(0.0, 0.015, 0.035, 0.80), true)
+    var target := _tutorial_target_rect()
+    if target.has_area():
+        draw_rect(target.grow(6.0), Color(0.10, 0.85, 0.92, 0.14), true)
+        draw_rect(target.grow(6.0), Color("77f7ff"), false, 3.0)
+        _draw_corner_brackets(target.grow(11.0), Color("f5d76e"), 17.0)
+
+    var panel := _tutorial_panel_rect()
+    _draw_menu_panel(panel, 0.97, Color(0.35, 0.95, 1.0, 0.72))
+    _text("FIELD GUIDE  %d/%d" % [tutorial_step + 1, TUTORIAL_STEP_COUNT], panel.position + Vector2(18.0, 28.0), 11, Color("8ea9b8"))
+    _text_center(_tutorial_title(), panel.position.y + 64.0, 20, Color("77f7ff"), panel.position.x + 14.0, panel.end.x - 14.0)
+    var line_y := panel.position.y + 102.0
+    for line in _tutorial_lines():
+        _text(String(line), Vector2(panel.position.x + 18.0, line_y), 13, Color("e7faff"))
+        line_y += 25.0
+
+    var back := _tutorial_back_rect()
+    var next := _tutorial_next_rect()
+    draw_rect(back, Color(0.04, 0.10, 0.14, 0.96), true)
+    draw_rect(back, Color("526f7b") if tutorial_step == 0 else Color("77f7ff"), false, 2.0)
+    _text_center("BACK", back.position.y + 28.0, 14, Color("526f7b") if tutorial_step == 0 else Color("e7faff"), back.position.x, back.end.x)
+    draw_rect(next, Color(0.04, 0.18, 0.15, 0.96), true)
+    draw_rect(next, Color("6bffb0"), false, 2.0)
+    _text_center("BEGIN" if tutorial_step == TUTORIAL_STEP_COUNT - 1 else "NEXT", next.position.y + 28.0, 14, Color("f0fff8"), next.position.x, next.end.x)
+
+    draw_rect(TUTORIAL_SKIP_RECT, Color(0.03, 0.07, 0.10, 0.94), true)
+    draw_rect(TUTORIAL_SKIP_RECT, Color("8ea9b8"), false, 1.5)
+    _text_center("SKIP", TUTORIAL_SKIP_RECT.position.y + 25.0, 11, Color("c7dce5"), TUTORIAL_SKIP_RECT.position.x, TUTORIAL_SKIP_RECT.end.x)
+
 func _handle_tap(pos: Vector2, touch_index: int = -1) -> void:
+    if tutorial_open:
+        _handle_tutorial_tap(pos)
+        return
     if career_slots_open:
         _handle_career_slots_tap(pos)
         return
@@ -4886,6 +5073,7 @@ func _save_meta() -> void:
     cfg.set_value("meta", "start_cone", research_start_cone)
     cfg.set_value("meta", "start_seeker", research_start_seeker)
     cfg.set_value("meta", "starting_weapon", starting_weapon)
+    cfg.set_value("meta", "tutorial_complete", tutorial_complete)
     var path := _active_meta_path()
     if path.is_empty():
         return
@@ -4915,6 +5103,8 @@ func _load_meta() -> void:
     research_start_cone = bool(cfg.get_value("meta", "start_cone", false))
     research_start_seeker = bool(cfg.get_value("meta", "start_seeker", false))
     starting_weapon = String(cfg.get_value("meta", "starting_weapon", "none"))
+    # Careers created before the guided tour existed remain uninterrupted.
+    tutorial_complete = bool(cfg.get_value("meta", "tutorial_complete", true))
     if not _weapon_start_unlocked(starting_weapon):
         starting_weapon = "none"
 
@@ -6184,6 +6374,8 @@ func _draw() -> void:
 
     if not playing and not game_over:
         _draw_title()
+        if tutorial_open:
+            _draw_tutorial()
         return
 
     for obj in objects:

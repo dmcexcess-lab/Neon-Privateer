@@ -93,6 +93,9 @@ jobs:
           XDG_DATA_HOME="$RUNNER_TEMP/justice-tests" timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --path . --script res://tests/JusticeCareerTest.gd 2>&1 | tee /tmp/justice-tests.log
           if grep -E 'SCRIPT ERROR|Parse Error|JUSTICE FAIL' /tmp/justice-tests.log; then exit 1; fi
           grep -q 'NEON JUSTICE OK' /tmp/justice-tests.log
+          XDG_DATA_HOME="$RUNNER_TEMP/tutorial-tests" timeout 90s "/tmp/godot/Godot_v${GODOT_VERSION}-${GODOT_STATUS}_linux.x86_64" --headless --path . --script res://tests/TutorialTest.gd 2>&1 | tee /tmp/tutorial-tests.log
+          if grep -E 'SCRIPT ERROR|Parse Error|TUTORIAL FAIL' /tmp/tutorial-tests.log; then exit 1; fi
+          grep -q 'NEON TUTORIAL OK' /tmp/tutorial-tests.log
 
       - name: Test Privateer soundtrack state and real loops
         shell: bash
