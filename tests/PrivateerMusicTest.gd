@@ -106,6 +106,18 @@ func _run() -> void:
     if not await _checkpoint(19.9, "release resumes the saved song position"):
         return
 
+    music.set_embedded_game_suspended(true)
+    var hidden_game_position := player.get_playback_position()
+    await create_timer(0.20).timeout
+    if not _check(player.stream_paused
+        and absf(player.get_playback_position() - hidden_game_position) < 0.05,
+        "hidden Privateer iframe kept playing beneath the Breach port"):
+        return
+    music.set_embedded_game_suspended(false)
+    if not _check(player.playing and not player.stream_paused,
+        "Privateer soundtrack did not resume after the Breach port closed"):
+        return
+
     # Seek near real EOF, crossing each available recording before wrapping.
     for i in expected.size():
         var before: int = music.playlist_index

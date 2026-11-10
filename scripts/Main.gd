@@ -529,6 +529,10 @@ func _on_breach_web_message(args: Array) -> void:
     var kind := String(message.get("type", ""))
     var detail: Dictionary = message.get("detail", {})
     match kind:
+        "dmc-privateer-audio":
+            var soundtrack := get_node_or_null("/root/PrivateerSoundtrack")
+            if soundtrack != null:
+                soundtrack.set_embedded_game_suspended(bool(detail.get("suspended", false)))
         "dmc-privateer-service":
             _close_breach_spaceport_request()
             var service := String(detail.get("service", "return"))

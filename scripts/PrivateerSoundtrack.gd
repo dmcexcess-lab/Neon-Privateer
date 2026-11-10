@@ -19,6 +19,7 @@ var tracks: Dictionary = {}
 var positions: Dictionary = {}
 var _application_paused := false
 var _audio_focus_lost := false
+var _embedded_game_suspended := false
 var _suspended := false
 
 func _ready() -> void:
@@ -118,10 +119,14 @@ func _set_audio_focus_lost(value: bool) -> void:
     _audio_focus_lost = value
     _update_suspension()
 
+func set_embedded_game_suspended(value: bool) -> void:
+    _embedded_game_suspended = value
+    _update_suspension()
+
 func _update_suspension() -> void:
     if not is_instance_valid(player):
         return
-    var suspended := _application_paused or _audio_focus_lost
+    var suspended := _application_paused or _audio_focus_lost or _embedded_game_suspended
     if suspended and not _suspended and player.playing and tracks.has(current_track_id):
         positions[current_track_id] = player.get_playback_position()
     _suspended = suspended

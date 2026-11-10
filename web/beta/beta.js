@@ -39,6 +39,11 @@ const gameStatus = document.getElementById('game-status');
 let breachLayer = null;
 let breachClosing = false;
 let pendingBreachContext = null;
+function suspendGameMusic(suspended) {
+  if (game?.contentWindow) {
+    game.contentWindow.postMessage({type: 'dmc-privateer-audio', detail: {suspended}}, location.origin);
+  }
+}
 function destroyBreachLayer() {
   if (!breachLayer) return;
   clearInterval(breachLayer.loadingTimer);
@@ -58,6 +63,7 @@ function closeBreachLayer(message = 'RETURNING TO DOCK SERVICES') {
   setTimeout(() => {
     breachLayer?.querySelector('iframe')?.remove();
     game.hidden = false;
+    suspendGameMusic(false);
     game.focus();
     breachLayer?.classList.add('is-revealing');
     setTimeout(() => {
@@ -124,6 +130,7 @@ function openBreachLayer(context) {
     progress = Math.min(92, progress + Math.max(1, Math.round((94 - progress) * .13)));
     transition.querySelector('.breach-loading-progress').style.width = progress + '%';
   }, 110);
+  suspendGameMusic(true);
   game.hidden = true;
   gameStatus.textContent = context.mode === 'spaceport' ? 'Entering the local spaceport…' : 'Loading ground operation…';
 }
@@ -131,6 +138,7 @@ function abandonBreachLayer() {
   pendingBreachContext = null;
   destroyBreachLayer();
   game.hidden = false;
+  suspendGameMusic(false);
 }
 document.getElementById('launch').addEventListener('click', () => {
   game.src = './game.html?v=' + encodeURIComponent(build); game.hidden = false; document.getElementById('launch-card').hidden = true;
