@@ -378,13 +378,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     cleared:true,opened:true,spawned:true,depth:0,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[]}));
   const stations=[
     {id:'return',service:'return',x:0,y:-930,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
-    {id:'trade',service:'trade',x:1120,y:40,label:'COMMODITY EXCHANGE',short:'TRADE',color:'#75ffb0'},
-    {id:'bank',service:'bank',x:-1050,y:50,label:'BANK & CURRENCY DESK',short:'BANK',color:'#f9cc70'},
-    {id:'contracts',service:'contracts',x:-230,y:900,label:'CONTRACT & GUILD BOARD',short:'JOBS',color:'#b999ff'},
-    {id:'upgrades',service:'upgrades',x:230,y:900,label:'SHIPYARD & EQUIPMENT LAB',short:'UPGRADE',color:'#ff9f55'},
-    {id:'firewall-dealer',service:'firewall_dealer',x:1260,y:-270,label:'NETWORK HARDWARE DEALER · LASERS / PADDLES / MULTIBALL',short:'DEALER',color:'#5af0ff'},
     {id:'dossier',service:'dossier',x:-560,y:-160,label:'PERSONAL DOSSIER · CLUES & OPEN THREADS',short:'DOSSIER',color:'#b999ff'},
-    {id:'careers',service:'careers',x:-1080,y:-120,label:'CAPTAIN RECORDS & CAREERS',short:'CAREER',color:'#b6c8ff'},
     {id:'terminal',service:'terminal',x:1700,y:420,label:'RESTRICTED NETWORK TERMINAL · SECURITY D1',short:'HACK',color:'#ff60bd',difficulty:1},
     {id:'alley',service:'alley',x:-1080,y:850,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];
@@ -402,8 +396,21 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     {id:'market',name:'NIGHT MARKET',kind:'market',room:1,x:590,y:-330,w:430,h:310,door:'south',color:'#75ffb0'},
     {id:'bar',name:'DOCKSIDE BAR',kind:'bar',room:6,x:500,y:350,w:380,h:320,door:'north',color:'#ff9f55'},
     {id:'club',name:'PULSE CLUB',kind:'club',room:6,x:900,y:720,w:370,h:390,door:'west',color:'#ff60bd'},
-    {id:'lodge',name:'CREW LODGE',kind:'lodge',room:8,x:-220,y:1330,w:450,h:370,door:'north',color:'#b6c8ff'}
+    {id:'lodge',name:'CREW LODGE',kind:'lodge',room:8,x:-220,y:1330,w:450,h:370,door:'north',color:'#b6c8ff'},
+    {id:'exchange',name:'COMMODITY EXCHANGE',kind:'service',service:'trade',room:1,x:950,y:-330,w:270,h:250,door:'south',color:'#75ffb0'},
+    {id:'hardware',name:'NETWORK HARDWARE',kind:'service',service:'firewall_dealer',room:7,x:1450,y:-200,w:400,h:250,door:'west',color:'#5af0ff'},
+    {id:'bank',name:'BANK & CURRENCY HOUSE',kind:'service',service:'bank',room:2,x:-1320,y:20,w:350,h:300,door:'east',color:'#f9cc70'},
+    {id:'guildhall',name:'GUILD & CONTRACT HALL',kind:'service',service:'contracts',room:4,x:-400,y:520,w:300,h:330,door:'north',color:'#b999ff'},
+    {id:'shipyard',name:'SHIPYARD & EQUIPMENT LAB',kind:'service',service:'upgrades',room:4,x:0,y:520,w:360,h:330,door:'north',color:'#ff9f55'},
+    {id:'registry',name:'CAPTAIN RECORDS',kind:'service',service:'careers',room:2,x:-810,y:-320,w:330,h:250,door:'south',color:'#b6c8ff'}
   ];
+  const serviceStations=structures.filter(building=>building.service).map(building=>{
+    const x=building.door==='west'?building.x-18:building.door==='east'?building.x+building.w+18:building.x+building.w/2;
+    const y=building.door==='north'?building.y-18:building.door==='south'?building.y+building.h+18:building.y+building.h/2;
+    const short={trade:'TRADE',firewall_dealer:'DEALER',bank:'BANK',contracts:'JOBS',upgrades:'YARD',careers:'RECORDS'}[building.service];
+    return {id:`entry-${building.id}`,service:building.service,x,y,label:`${building.name} · ENTER`,short,color:building.color,building:building.id};
+  });
+  stations.push(...serviceStations);
   if(caseContext?.site?.id)stations.push({id:'case-site',service:'case_site',x:-300,y:-1040,
     label:`OFF-PORT LANDING · ${caseContext.site.name} · ${String(caseContext.task||'lead').toUpperCase()}`,short:'LAND',color:'#f9cc70',caseContext});
   if(caseContext?.accidentalSite?.id){
@@ -411,7 +418,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
       label:`UNMARKED LANDING SIGNAL · ${caseContext.accidentalSite.name}`,short:'UNKNOWN',color:'#ff60bd',hidden:true,discovered:false,accidental:true,caseContext});
   }
-  for(const venue of structures)stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
+  for(const venue of structures.filter(item=>!item.service))stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
   const actors=[];
   const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,contacts,needs,story,caseContext,

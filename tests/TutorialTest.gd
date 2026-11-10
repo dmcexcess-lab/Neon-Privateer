@@ -23,12 +23,12 @@ func run() -> void:
 
     var expected_targets := [
         scene.HUB_OPERATIONS_RECT,
-        scene.HUB_TRAVEL_RECT,
-        scene.HUB_TRADE_RECT,
-        scene.HUB_MARKET_RECT,
-        scene.HUB_CONTRACTS_RECT,
-        scene.HUB_UPGRADES_RECT,
-        scene.HUB_CAREERS_RECT
+        Rect2(),
+        Rect2(),
+        Rect2(),
+        Rect2(),
+        Rect2(),
+        Rect2()
     ]
     for i in expected_targets.size():
         scene._tutorial_next()
@@ -57,7 +57,7 @@ func run() -> void:
     scene.queue_free()
     await process_frame
     if failures.is_empty():
-        print("NEON TUTORIAL OK: %d checks, overview, seven sections, persistence and legacy migration" % checks)
+        print("NEON TUTORIAL OK: %d checks, walkable-port guide, persistence and legacy migration" % checks)
         quit(0)
     else:
         print("NEON TUTORIAL FAIL: " + str(failures))

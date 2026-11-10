@@ -130,9 +130,13 @@ assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.ac
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
 assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
-assert.deepEqual(port.structures.map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains several public buildings');
-assert.equal(port.stations.filter(s=>s.service==='venue').length,port.structures.length,'each public building has a physical venue interaction');
-assert.ok(port.stations.some(s=>s.service==='firewall_dealer')&&port.stations.some(s=>s.service==='dossier'),'every port has physical hacking hardware and personal dossier services');
+assert.deepEqual(port.structures.filter(s=>!s.service).map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains social venues as walk-in buildings');
+assert.equal(port.stations.filter(s=>s.service==='venue').length,5,'each public venue has a physical social interaction');
+for(const service of ['trade','bank','contracts','upgrades','firewall_dealer','careers']){
+  const building=port.structures.find(s=>s.service===service),entry=port.stations.find(s=>s.building===building?.id);
+  assert.ok(building&&entry,`${service} is a named service building with a door interaction`);
+}
+assert.ok(port.stations.some(s=>s.service==='dossier'),'the personal dossier remains an in-world interaction');
 const hiddenTerminals=port.stations.filter(s=>s.hidden);
 assert.ok(hiddenTerminals.length>=4&&hiddenTerminals.length<=7,'each arrival conceals a variable number of extra access nodes');
 assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidden access nodes start undiscovered but remain hackable terminals');

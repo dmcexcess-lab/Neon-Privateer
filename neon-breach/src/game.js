@@ -58,7 +58,7 @@ let SW=innerWidth,SH=innerHeight,DPR=1,zoom=1;
 const camera={x:0,y:0};
 const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false,stealthHeld:false},move:{x:0,y:0},aim:{x:0,y:0},map:false,sneakTouch:false,shotgunTriggerHeld:false,shotgunPendingPresses:0};
 let lastFrame=0,now=0,audio=null,gamepadPauseDown=false,toastTimeout=0;
-let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0};
+let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0,caseTask:'',caseSubject:null,caseProgress:0,caseTargetCleared:false};
 let privateerContext=null;
 try{
   if(typeof URLSearchParams!=='undefined'&&typeof location!=='undefined'){
@@ -153,7 +153,8 @@ function enterPrivateerPort(context){
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
 function startPrivateerMission(spec){
-  privateerContext={...privateerContext,...spec,mode:'mission'};
+  privateerContext={...privateerContext,...spec,caseTask:String(spec.caseTask||''),mode:'mission'};
+  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;
   game.loadout={...emptyLoadout(),...(privateerContext.loadout||{})};
   resetRun(Math.max(1,Number(privateerContext.difficulty)||1),(Number(privateerContext.seed)>>>0)||null);
   if(privateerContext.style==='hot'){
@@ -165,6 +166,13 @@ function startPrivateerMission(spec){
 }
 function finishPrivateerMission(outcome){
   if(privateerContext?.mode!=='mission')return false;
+  const task=game.caseTask;
+  if(outcome==='completed'&&['target','lieutenant','mastermind'].includes(task)&&!game.caseTargetCleared){
+    announce(`CASE OBJECTIVE OPEN · LOCATE AND NEUTRALIZE ${String(privateerContext.contact||'THE SUBJECT').toUpperCase()} BEFORE EXFIL`,4);game.exitClock=0;return true;
+  }
+  if(outcome==='completed'&&['tail','stakeout'].includes(task)&&game.caseProgress<(task==='tail'?10:8)){
+    announce(task==='tail'?'TAIL INCOMPLETE · KEEP THE SUBJECT IN RANGE, UNDETECTED':'STAKEOUT INCOMPLETE · HOLD A SNEAKING OBSERVATION POSITION',4);game.exitClock=0;return true;
+  }
   const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
   const clean=style!=='stealth'||!game.detectedThisFloor;
   const base=completed?40+Math.max(1,Number(privateerContext.difficulty)||1)*25:0;
@@ -225,7 +233,7 @@ function interactPort(){
         announce(`ACCIDENTAL DISCOVERY · ${found.name} · TARGET DOSSIER UPDATED`,5);
       }
       else if(task==='rumor')announce('THIS LEAD STARTS IN THE PORT · TALK TO LOCALS WITH YOUR WEAPON HOLSTERED',4);
-      else if(task==='wiretap')privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
+      else if(['wiretap','eavesdrop'].includes(task))privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
       else{
         privateerMessage('dmc-privateer-loading',{mode:'case-site',task,site:site.name});
         startPrivateerMission({style:['tail','stakeout','eavesdrop'].includes(task)?'stealth':task==='breach'?'choice':'hot',difficulty:lead.difficulty||1,
@@ -447,6 +455,13 @@ function beginFloor(){
   for(const room of game.world.rooms){room.spawned=true;room.enemies=[];}
   spawnFloorEnemies();
   finalizeGuardRoster();
+  const task=String(privateerContext?.caseTask||'');
+  if(game.caseSubject&&['target','lieutenant','mastermind'].includes(task)){
+    const subject=game.caseSubject,def=TYPE.trapezoid;
+    subject.type='trapezoid';subject.r=def.r;subject.weapon=chooseGuardWeapon(game.world.rng,game.floor);
+    subject.hp=subject.maxHp=def.hp*(1+(game.floor-1)*.058+game.world.rooms[subject.homeRoom].depth*.012)*2.5;
+    subject.spd=def.spd;initializeBehavior(subject);
+  }
   camera.x=game.player.x;camera.y=game.player.y;game.shake=0;
   updateUI();
 }
@@ -476,6 +491,13 @@ function spawnFloorEnemies(){
       anchor:{x:pos.x,y:pos.y},patrol:{x:pos.x,y:pos.y},patrolClock:0,lastKnown:null,
       route:[],routeIndex:0,stareClock:0,stareAngle:0,lookIndex:0,lookClock:0,searchNodes:[],searchIndex:0,hadSight:false};
     game.enemies.push(e);room.enemies.push(e);
+  }
+  const task=String(privateerContext?.caseTask||'');
+  if(['target','lieutenant','mastermind','tail','stakeout'].includes(task)&&game.enemies.length){
+    const subject=game.enemies.reduce((best,e)=>e.maxHp>best.maxHp?e:best,game.enemies[0]);
+    subject.caseSubject=true;subject.caseName=String(privateerContext.contact||'CASE SUBJECT');
+    if(['target','lieutenant','mastermind'].includes(task)){subject.hp*=2.5;subject.maxHp=subject.hp;game.caseSubject=subject;}
+    else game.caseSubject=subject;
   }
 }
 function recordAlert(e){
@@ -1175,6 +1197,9 @@ function updateBullets(dt){
 }
 function killEnemy(e){
   const i=game.enemies.indexOf(e);if(i<0)return;
+  if(e.caseSubject&&['target','lieutenant','mastermind'].includes(game.caseTask)){
+    game.caseTargetCleared=true;announce(`${String(game.caseTask).toUpperCase()} LOCATED AND NEUTRALIZED · EXFIL IS CLEAR`,3.5);
+  }
   recordAlert(e);
   game.enemies.splice(i,1);
   const room=game.world.rooms[e.homeRoom];
@@ -1291,7 +1316,7 @@ function update(dt){
   const room=roomAt(game.world,p.x,p.y);
   if(room&&room.id!==game.activeRoom)enterRoom(room);
   if(updateExtraction(dt))return;
-  updateEnemies(dt);updateBullets(dt);updatePickups(dt);updateParticles(dt);
+  updateEnemies(dt);updateBullets(dt);updatePickups(dt);updateParticles(dt);updateCaseObjective(dt);
   if(game.mode!=='PLAY')return;
   game.monsterSoundClock-=dt;
   if(game.monsterSoundClock<=0){
@@ -1301,9 +1326,23 @@ function update(dt){
   }
   const exit=game.world.rooms[game.world.exit];
   if(!game.extraction&&Math.hypot(p.x-exit.cx,p.y-exit.cy)<56){
-    game.exitClock+=dt;if(game.exitClock>.75)nextFloor();
+    const observationReady=!['tail','stakeout'].includes(game.caseTask)||game.caseProgress>=(game.caseTask==='tail'?10:8);
+    if(!observationReady){if(game.exitClock===0)announce(game.caseTask==='tail'?'KEEP CLOSE TO THE SUBJECT WHILE SNEAKING':'HOLD A DISTANT, SNEAKING STAKEOUT POSITION',3);game.exitClock=0;}
+    else{game.exitClock+=dt;if(game.exitClock>.75)nextFloor();}
   }else game.exitClock=0;
   const smooth=Math.min(1,dt*8);camera.x+=(p.x-camera.x)*smooth;camera.y+=(p.y-camera.y)*smooth;
+}
+function updateCaseObjective(dt){
+  if(game.mode!=='PLAY'||!['tail','stakeout'].includes(game.caseTask)||!game.caseSubject)return;
+  const p=game.player,distance=Math.hypot(p.x-game.caseSubject.x,p.y-game.caseSubject.y);
+  const valid=game.caseTask==='tail'
+    ?distance>=110&&distance<=340&&p.sneaking&&!game.detectedThisFloor
+    :distance>=300&&distance<=620&&p.sneaking&&!p.moving&&!game.detectedThisFloor;
+  const required=game.caseTask==='tail'?10:8;
+  game.caseProgress=valid?Math.min(required,game.caseProgress+dt):Math.max(0,game.caseProgress-dt*1.8);
+  if(game.caseProgress>=required&&!game.caseReadyAnnounced){
+    game.caseReadyAnnounced=true;announce(game.caseTask==='tail'?'TAIL COMPLETE · SUBJECT ROUTINE CONFIRMED · EXFIL':'STAKEOUT COMPLETE · WINDOW RECORDED · EXFIL',4);
+  }
 }
 
 function resetDrawing(){ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,SW,SH);}
@@ -1434,11 +1473,13 @@ function drawRoom(room){
 }
 function drawPortStructureFloors(){
   if(!game.world?.isSpaceport)return;
-  for(const venue of game.world.structures||[]){
-    ctx.save();ctx.fillStyle='#07141dcc';ctx.fillRect(venue.x+12,venue.y+12,venue.w-24,venue.h-24);
-    ctx.strokeStyle=venue.color;ctx.lineWidth=1.5;ctx.setLineDash([8,7]);ctx.globalAlpha=.5;ctx.strokeRect(venue.x+14,venue.y+14,venue.w-28,venue.h-28);ctx.setLineDash([]);
-    ctx.globalAlpha=1;ctx.fillStyle=venue.color;ctx.textAlign='center';ctx.font='900 14px ui-monospace,monospace';ctx.fillText(venue.name,venue.x+venue.w/2,venue.y+38);
-    ctx.font='700 10px ui-monospace,monospace';ctx.fillText(`${venue.kind.toUpperCase()} · PUBLIC INTERIOR`,venue.x+venue.w/2,venue.y+56);ctx.restore();
+  for(const building of game.world.structures||[]){
+    const service=!!building.service;
+    ctx.save();ctx.fillStyle=service?'#081522e8':'#07141dcc';ctx.fillRect(building.x+12,building.y+12,building.w-24,building.h-24);
+    ctx.strokeStyle=building.color;ctx.lineWidth=service?4:2;ctx.setLineDash(service?[]:[8,7]);ctx.globalAlpha=service?.94:.58;ctx.strokeRect(building.x+14,building.y+14,building.w-28,building.h-28);ctx.setLineDash([]);
+    if(service){ctx.strokeStyle='#d9eff8';ctx.globalAlpha=.55;ctx.lineWidth=2;ctx.strokeRect(building.x+24,building.y+24,building.w-48,building.h-48);}
+    ctx.globalAlpha=1;ctx.fillStyle=building.color;ctx.textAlign='center';ctx.font=`900 ${service?15:14}px ui-monospace,monospace`;ctx.fillText(building.name,building.x+building.w/2,building.y+38);
+    ctx.font='700 10px ui-monospace,monospace';ctx.fillText(service?'PUBLIC SERVICE · WALK TO THE DOOR':'PUBLIC VENUE · WALK INSIDE',building.x+building.w/2,building.y+56);ctx.restore();
   }
 }
 function drawHQStations(){
@@ -1454,12 +1495,19 @@ function drawHQStations(){
     const pulse=2*Math.sin(now*2.9+station.y);
     ctx.strokeStyle=station.color;ctx.lineWidth=near?4:2.5;
     ctx.shadowColor=station.color;ctx.shadowBlur=near?22:9;
-    ctx.strokeRect(-45-pulse/2,-32-pulse/2,90+pulse,64+pulse);ctx.shadowBlur=0;
-    ctx.fillStyle='#0b2731';ctx.fillRect(-36,-24,72,48);
-    ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 15px ui-monospace,monospace';
-    ctx.fillText(station.short||({shop:'BUY',storage:'STASH',deploy:'DEPLOY',medical:'MED'})[station.id]||station.id.toUpperCase(),0,5);
-    ctx.font='700 11px ui-monospace,monospace';ctx.fillText(station.label,0,64);
-    if(near){ctx.fillStyle='#f0ffff';ctx.fillText('PRESS E / INTERACT',0,85);}
+    if(station.building){
+      ctx.strokeRect(-24-pulse/3,-20-pulse/3,48+pulse/1.5,40+pulse/1.5);ctx.shadowBlur=0;
+      ctx.fillStyle='#0b2731';ctx.fillRect(-17,-13,34,26);ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 11px ui-monospace,monospace';ctx.fillText('DOOR',0,4);
+      ctx.font='700 10px ui-monospace,monospace';ctx.fillText(station.label,0,36);
+      if(near){ctx.fillStyle='#f0ffff';ctx.fillText('PRESS E · OPEN SERVICE',0,52);}
+    }else{
+      ctx.strokeRect(-45-pulse/2,-32-pulse/2,90+pulse,64+pulse);ctx.shadowBlur=0;
+      ctx.fillStyle='#0b2731';ctx.fillRect(-36,-24,72,48);
+      ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 15px ui-monospace,monospace';
+      ctx.fillText(station.short||({shop:'BUY',storage:'STASH',deploy:'DEPLOY',medical:'MED'})[station.id]||station.id.toUpperCase(),0,5);
+      ctx.font='700 11px ui-monospace,monospace';ctx.fillText(station.label,0,64);
+      if(near){ctx.fillStyle='#f0ffff';ctx.fillText('PRESS E / INTERACT',0,85);}
+    }
     ctx.restore();
   }
   if(game.world.isSpaceport)return;
@@ -1548,6 +1596,11 @@ function drawEnemy(e){
     ctx.textAlign='center';ctx.font='bold 17px ui-monospace,monospace';
     ctx.fillStyle=e.state==='alert'?C.red:C.gold;
     ctx.fillText(e.state==='alert'?'!':'?',e.x,e.y-e.r-23);
+  }
+  if(e.caseSubject){
+    glowCircle(e.x,e.y,e.r+13,C.purple,'#11152a',2.5,12);
+    ctx.textAlign='center';ctx.font='900 11px ui-monospace,monospace';ctx.fillStyle='#e5d7ff';
+    ctx.fillText(`CASE SUBJECT · ${e.caseName||'UNKNOWN'}`,e.x,e.y-e.r-31);
   }
   if(e.hp<e.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(e.x-25,e.y-e.r-16,50,4);ctx.fillStyle=t.color;ctx.fillRect(e.x-25,e.y-e.r-16,50*clamp(e.hp/e.maxHp,0,1),4);}
 }
@@ -1682,12 +1735,27 @@ function render(){
   for(const e of visibleEnemies)drawEnemy(e);
   drawBullets();drawPlayer();drawParticles();
   ctx.restore();
+  drawCaseObjectiveHUD();
   if(game.world.isHQ)drawHQDirectory();
   else if(game.player?.map)drawMap(inputs.map);
   if(game.flashed>0){ctx.fillStyle=`rgba(255,43,107,${game.flashed*.42})`;ctx.fillRect(0,0,SW,SH);}
   if(inputs.map&&game.player?.map&&game.mode==='PLAY'){ctx.font='800 12px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle='#90dce5';ctx.fillText('PRESS M TO CLOSE · FIELD RADAR ACTIVE',SW/2,SH*.87);}
   // Low health atmospheric warning, without hiding gameplay.
   if(game.player.hp/game.player.maxHp<=.3){ctx.strokeStyle=`rgba(250,70,105,${.12+Math.sin(now*5)*.08})`;ctx.lineWidth=18;ctx.strokeRect(0,0,SW,SH);}
+}
+function drawCaseObjectiveHUD(){
+  if(game.mode!=='PLAY'||!game.caseTask)return;
+  const width=Math.min(440,SW-32),x=(SW-width)/2,y=SH-66;
+  let label='',progress=null;
+  if(game.caseTask==='tail'){label='TAIL · FOLLOW THE MARKED SUBJECT UNDETECTED';progress=game.caseProgress/10;}
+  else if(game.caseTask==='stakeout'){label='STAKEOUT · HOLD POSITION, SNEAKING AND STILL';progress=game.caseProgress/8;}
+  else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · REACH EXFIL':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
+  else if(game.caseTask==='breach')label='BREACH SITE · COMPLETE THE OPERATION AND EXFIL';
+  else return;
+  ctx.save();ctx.fillStyle='rgba(5,15,25,.92)';ctx.fillRect(x,y,width,36);ctx.strokeStyle='#b999ff';ctx.lineWidth=1.5;ctx.strokeRect(x,y,width,36);
+  ctx.textAlign='center';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#e8dcff';ctx.fillText(label,x+width/2,y+15);
+  if(progress!==null){ctx.fillStyle='#35294b';ctx.fillRect(x+14,y+23,width-28,5);ctx.fillStyle='#b999ff';ctx.fillRect(x+14,y+23,(width-28)*clamp(progress,0,1),5);}
+  ctx.restore();
 }
 function frame(ts){
   const dt=Math.min((ts-lastFrame)/1000||0,.034);lastFrame=ts;now=ts/1000;

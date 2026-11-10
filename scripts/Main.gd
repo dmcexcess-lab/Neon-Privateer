@@ -556,7 +556,7 @@ func _on_breach_web_message(args: Array) -> void:
             _close_breach_spaceport_request();pending_case_hack_task=String(detail.get("task","wiretap"))
             if _open_firewall():
                 firewall.start_challenge(firewall_profile,int(detail.get("seed",world_seed)),int(detail.get("difficulty",1)),String(detail.get("site","case-wiretap")),true)
-                firewall.notice="CASE WIRETAP // BEAT THE TRACE TO INSTALL THE TAP";firewall.notice_clock=5
+                firewall.notice="CASE %s // BEAT THE TRACE TO RECORD THE CHANNEL" % ("AUDIO TAP" if pending_case_hack_task=="eavesdrop" else "WIRETAP");firewall.notice_clock=5
         "dmc-privateer-case-discovery":
             if CovertCareer.accidental_discovery(covert_profile,String(detail.get("site","")),String(detail.get("person",""))):
                 last_trip_summary="ACCIDENTAL DISCOVERY · TARGET LOCATION FOUND · DOSSIER JUMPED AHEAD"
@@ -769,7 +769,7 @@ func _terminal_hack_finished(success: bool) -> void:
         research_credits += reward
         firewall.balance = research_credits
         last_trip_summary = "TERMINAL D%d BYPASSED · %d CR · TRACE %.0f%%" % [difficulty, reward, 100.0 * float(result.get("trace", 0.0)) / maxf(1.0, float(result.get("trace_limit", 1.0)))]
-        if not pending_case_hack_task.is_empty():_advance_active_case(pending_case_hack_task,"Wiretap analysis")
+        if not pending_case_hack_task.is_empty():_advance_active_case(pending_case_hack_task,"Eavesdrop analysis" if pending_case_hack_task=="eavesdrop" else "Wiretap analysis")
     elif bool(result.get("detected", false)):
         breach_port_security_alert = true
         var faction_id := _planet_primary_faction(current_planet)
@@ -4331,20 +4331,14 @@ func _handle_contracts_tap(pos: Vector2) -> void:
             return
 
 func _tutorial_target_rect() -> Rect2:
-    match tutorial_step:
-        1: return HUB_OPERATIONS_RECT
-        2: return HUB_TRAVEL_RECT
-        3: return HUB_TRADE_RECT
-        4: return HUB_MARKET_RECT
-        5: return HUB_CONTRACTS_RECT
-        6: return HUB_UPGRADES_RECT
-        7: return HUB_CAREERS_RECT
-    return Rect2()
+    return HUB_OPERATIONS_RECT if tutorial_step == 1 else Rect2()
 
 func _tutorial_panel_rect() -> Rect2:
     if tutorial_step == 0:
         return Rect2(28.0, 112.0, 334.0, 520.0)
     var target := _tutorial_target_rect()
+    if not target.has_area():
+        return Rect2(28.0, 190.0, 334.0, 454.0)
     return Rect2(28.0, 400.0, 334.0, 286.0) if target.position.y < 350.0 else Rect2(28.0, 66.0, 334.0, 286.0)
 
 func _tutorial_back_rect() -> Rect2:
@@ -4358,78 +4352,79 @@ func _tutorial_next_rect() -> Rect2:
 func _tutorial_title() -> String:
     match tutorial_step:
         0: return "WELCOME TO NEON PRIVATEER"
-        1: return "PORT / OPERATIONS"
-        2: return "TRAVEL & FLIGHT"
-        3: return "COMMODITY TRADE"
-        4: return "BANK & MARKETS"
-        5: return "CONTRACTS & CASES"
-        6: return "UPGRADES & HACKING"
-        7: return "CAREERS & CONSEQUENCES"
+        1: return "OPEN THE WALKABLE SPACEPORT"
+        2: return "BUILDINGS, DOORS & SERVICES"
+        3: return "PEOPLE, RUMORS & HIDDEN LEADS"
+        4: return "CASES & FIELD OBJECTIVES"
+        5: return "TRADE, GUILDS & TRAVEL"
+        6: return "FLIGHT, GEAR & HACKING"
+        7: return "YOUR CAREER, YOUR RULES"
     return "FIELD GUIDE"
 
 func _tutorial_lines() -> Array:
     match tutorial_step:
         0:
             return [
-                "This is a living sandbox, not a fixed campaign.",
-                "Earn your way through trade, contracts, piracy,",
-                "mining, investigation, or people you meet.",
+                "Neon Privateer is a living sandbox, not a fixed",
+                "campaign. Trade, investigate, fight, smuggle,",
+                "mine, or build a life among the people here.",
                 "",
-                "Markets, factions, laws and relationships",
-                "keep moving around your choices."
+                "This guide covers the walkable Breach spaceport",
+                "and how its services connect to the full game."
             ]
         1:
             return [
-                "Your starport is home between flights.",
-                "Marked stations provide services. Locals",
-                "share jobs; venues restore personal needs.",
-                "Hidden terminals can be hacked. Theft, witnesses,",
-                "guards and drawn weapons make crime matter."
+                "Tap OPERATIONS to land in the walkable port.",
+                "Move with the on-screen controls or keyboard.",
+                "The map shows districts, doors and your position.",
+                "Return to the pad when you are ready to depart."
             ]
         2:
             return [
-                "Pick a reachable planet; check your fuel",
-                "and jump range before you launch.",
-                "In flight use LEFT / RIGHT and DASH.",
-                "Toggle weapons on screen or with H.",
-                "Routes bring cargo, police or combat."
+                "Major services are buildings: Exchange, Bank,",
+                "Guild Hall, Shipyard, Hardware Dealer and Records.",
+                "Walk to a marked doorway and interact to open",
+                "its full menu. Cafes, bars and clubs are places",
+                "to enter, socialize and tend to personal needs."
             ]
         3:
             return [
-                "Buy low and sell high across worlds.",
-                "Green goods are legal. Grey goods may break",
-                "local law. Cargo uses space and is lost",
-                "when the ship is destroyed."
+                "Talk to locals with your weapon holstered for",
+                "rumors, contacts and spontaneous job offers.",
+                "Unmarked terminals change on each arrival.",
+                "Guards patrol; robbery or violence can trigger",
+                "witnesses, pursuit, arrest or faction trouble."
             ]
         4:
             return [
-                "Deposit cash here to protect it from ship loss.",
-                "Trade market indices and faction money.",
-                "Banked funds survive ship destruction."
+                "Cases are investigations, not just menu missions.",
+                "Follow rumors, install wiretaps, tail a subject,",
+                "hold a stakeout, breach a site and identify targets.",
+                "Some leads are hacked; field objectives must be",
+                "completed cleanly before a case advances."
             ]
         5:
             return [
-                "Guild and faction jobs become cases.",
-                "Follow clues through rumors and wiretaps,",
-                "tailing, stakeouts and Breach sites.",
-                "Ignore the board: NPC stories can still",
-                "grow into major investigations."
+                "Use the Exchange and Bank as full service menus.",
+                "Guild and faction contracts can launch case chains.",
+                "Buy low, sell high, haul passengers or cargo,",
+                "then choose a reachable destination on the map."
             ]
         6:
             return [
-                "Improve range, speed, dash and defenses,",
-                "then unlock ship weapons.",
-                "Hacking gear comes from a starport dealer.",
-                "Harder breaches bring greater rewards",
-                "but also greater risk."
+                "Travel with LEFT / RIGHT and DASH; check range",
+                "and fuel before launch. The Shipyard sells ship",
+                "gear; the Hardware Dealer sells Firewall upgrades.",
+                "Find a physical terminal in-port to start a hack.",
+                "Draw/holster your weapon with H or the HUD button."
             ]
         7:
             return [
-                "Careers are separate slots and autosave.",
-                "Cash, cargo and ship gear are at risk.",
-                "Banked money, contacts and reputation",
-                "survive with the living world.",
-                "No required path. Make your own story."
+                "Your career autosaves across separate slots.",
+                "Cash, cargo, reputation, contacts and needs all",
+                "shape what happens next. Banking protects funds;",
+                "ship loss still has consequences.",
+                "No required guild or faction path. Make your own story."
             ]
     return []
 

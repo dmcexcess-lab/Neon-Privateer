@@ -47,7 +47,7 @@ vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,alertEnemy,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
   initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
-  updateExtraction,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
+  updateExtraction,updateCaseObjective,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
@@ -102,6 +102,9 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-contact'&&message.detail.id===known.contactId),'talking exchanges persistent contact information');
   const dealer=b.game.world.stations.find(station=>station.service==='firewall_dealer');b.game.player.x=dealer.x;b.game.player.y=dealer.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='firewall_dealer'),'hacking hardware is bought through a physical dealer');
+  const guildhall=b.game.world.structures.find(building=>building.service==='contracts');
+  const guildDoor=b.game.world.stations.find(station=>station.building===guildhall.id);b.game.player.x=guildDoor.x;b.game.player.y=guildDoor.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='contracts'),'the guild menu opens from its building entrance');
   const venue=b.game.world.stations.find(station=>station.service==='venue'&&station.venueKind==='club');b.game.player.x=venue.x;b.game.player.y=venue.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-venue'&&message.detail.kind==='club'),`clubs feed the needs and relationship layer: ${JSON.stringify(privateerMessages.slice(-4))}`);
   const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
@@ -120,6 +123,11 @@ test('active cases expose named off-port landings and tailored wiretap or field 
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-case-hack'&&message.detail.site===site.id&&message.detail.difficulty===4),'wiretap landing launches the contextual Privateer Firewall');
   const unknown=b.game.world.stations.find(station=>station.accidental);b.game.player.x=unknown.x;b.game.player.y=unknown.y;b.interactPort();
   assert.ok(privateerMessages.some(item=>item.type==='dmc-privateer-case-discovery'&&item.detail.site===accidentalSite.id),'exploration can uncover the real target before the planned clue chain');
+  const audioSite={...site,id:'site:44:2',task:'eavesdrop'};
+  const audioContext={...context,caseContext:{...context.caseContext,task:'eavesdrop',site:audioSite}};
+  b.enterPrivateerPort(audioContext);const audioLanding=b.game.world.stations.find(station=>station.service==='case_site'&&!station.accidental);
+  b.game.player.x=audioLanding.x;b.game.player.y=audioLanding.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-case-hack'&&message.detail.task==='eavesdrop'),'eavesdropping uses the contextual Firewall audio tap rather than a generic shooter level');
   b.setPrivateerContext(null);
 });
 
@@ -137,6 +145,29 @@ test('Privateer mission approaches have distinct rules and contract rewards',()=
   assert.equal(b.game.detectedThisFloor,false,'stealth missions begin quiet');
   b.finishPrivateerMission('completed');result=privateerMessages.at(-1).detail;
   assert.equal(result.approachSucceeded,true);assert.equal(result.contractReward,114,'clean stealth completion earns a bonus');
+  b.setPrivateerContext(null);
+});
+
+test('case field objectives require actual tailing, stakeout, and target completion',()=>{
+  b.setPrivateerContext({mode:'spaceport',requestId:'case-objective-test',planetId:'p-case',loadout:{weapon:'hands'}});
+  b.startPrivateerMission({style:'stealth',caseTask:'tail',contact:'Mara Voss',difficulty:2,seed:912});
+  assert.ok(b.game.caseSubject?.caseSubject,'tail mission marks a moving subject in the Breach map');
+  const beforeTail=privateerMessages.length;b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.length,beforeTail,'tail cannot complete before observing the moving subject');
+  b.game.player.x=b.game.caseSubject.x+200;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  b.updateCaseObjective(10);assert.equal(b.game.caseProgress,10,'tailing accrues only while close, sneaking, and undetected');
+  b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'tail','completed tail reports its correct dossier step');
+
+  b.startPrivateerMission({style:'stealth',caseTask:'stakeout',contact:'Ivo Slate',difficulty:2,seed:914});
+  b.game.player.x=b.game.caseSubject.x+400;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.player.moving=false;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  b.updateCaseObjective(8);assert.equal(b.game.caseProgress,8,'stakeout requires a still, distant, concealed observation window');
+  b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'stakeout','stakeout advances only after the observation window');
+
+  b.startPrivateerMission({style:'hot',caseTask:'mastermind',contact:'Sera Quill',difficulty:3,seed:913});
+  const before=privateerMessages.length;b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.length,before,'exfil cannot complete a mastermind task before locating its marked subject');
+  b.killEnemy(b.game.caseSubject);b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.at(-1).detail.caseTask,'mastermind','defeating the named case subject unlocks completion');
   b.setPrivateerContext(null);
 });
 
