@@ -90,7 +90,7 @@ const PROFILE_NEW_RECT := Rect2(54.0, 434.0, 282.0, 64.0)
 const PROFILE_LOAD_RECT := Rect2(54.0, 516.0, 282.0, 64.0)
 const PROFILE_SLOT_BACK_RECT := Rect2(54.0, 672.0, 282.0, 58.0)
 const HUB_CAREERS_RECT := Rect2(35.0, 710.0, 320.0, 54.0)
-const TUTORIAL_STEP_COUNT := 8
+const TUTORIAL_STEP_COUNT := 0
 const TUTORIAL_SKIP_RECT := Rect2(286.0, 16.0, 84.0, 38.0)
 const HUB_TRAVEL_RECT := Rect2(35.0, 390.0, 320.0, 54.0)
 const HUB_TRADE_RECT := Rect2(35.0, 454.0, 320.0, 54.0)
@@ -277,6 +277,7 @@ var pending_overwrite_slot := 0
 var tutorial_open := false
 var tutorial_complete := true
 var tutorial_step := 0
+var first_adventure_state := "READY"
 var active_career_slot := 0
 var last_career_slot := 0
 var hub_open := false
@@ -505,6 +506,7 @@ func _open_breach_spaceport() -> bool:
             "needs": covert_profile.get("needs",{}),
             "story": covert_profile.get("story",{}),
             "caseContext": _active_case_context(),
+            "firstAdventure": {"active": first_adventure_state != "COMPLETE", "step": first_adventure_state, "contactName": "Mara Voss"},
             "loadout": {"weapon": "auto_pistol" if bool(covert_profile.get("gear", {}).get("pistol", false)) else "hands", "armor": int(covert_profile.get("gear", {}).get("armor", 0)), "cash": research_credits}
         }
     }
@@ -531,6 +533,11 @@ func _on_breach_web_message(args: Array) -> void:
             _close_breach_spaceport_request()
             var service := String(detail.get("service", "return"))
             if service == "return" or service == "travel":
+                if first_adventure_state in ["CONTACTED","OBSERVED","INTRUDED"]:
+                    first_adventure_state="COMPLETE"
+                    if last_trip_summary.begins_with("FIRST CONTRACT") or last_trip_summary.begins_with("MANIFEST ROUTE") or last_trip_summary.begins_with("CONTRACT SHORTCUT"):
+                        last_trip_summary="FIRST CONTRACT RESOLVED · OPEN WORLD CAREERS AVAILABLE"
+                    _save_meta()
                 travel_selected_planet = _default_travel_selection()
                 _reset_system_map_view()
                 travel_open = true; hub_open = false
@@ -564,6 +571,23 @@ func _on_breach_web_message(args: Array) -> void:
         "dmc-privateer-rumor":
             var dossier:=Storyteller.observe_rumor(covert_profile,detail,_personal_story_style())
             last_trip_summary = "%s · %s" % [String(dossier.get("title","PERSONAL LEAD")),String(dossier.get("status","OPEN"))]
+            if bool(detail.get("openingAdventure",false)) and first_adventure_state=="READY":
+                first_adventure_state="CONTACTED"
+                last_trip_summary="FIRST CONTRACT · FOLLOW THE RUNNER AND VERIFY THE MANIFEST"
+                if covert_profile.active.is_empty():
+                    var opening:=CovertCareer.offer(current_planet,"track",-791,1)
+                    opening.target="Kest Arden"
+                    opening.steps=["rumor","tail","wiretap","evidence"]
+                    opening.sites.resize(4)
+                    for i in opening.sites.size():
+                        opening.sites[i]={"id":"opening:%s:%d"%[current_planet,i],"planet":current_planet,"name":["DOCKSIDE RUNNER ROUTE","FREIGHT CONTROL OBSERVATION","UNREGISTERED MANIFEST TAP","COURIER SEAL CACHE"][i],"type":"opening_adventure","task":opening.steps[i],"discovered":true,"visited":false,"seed":abs(world_seed+7919+i*101),"station":true}
+                    covert_profile.active=opening
+                _save_meta()
+                _save_all_state()
+            if bool(detail.get("subjectObserved",false)) and first_adventure_state=="CONTACTED":
+                first_adventure_state="OBSERVED"
+                last_trip_summary="MANIFEST ROUTE VERIFIED · CHOOSE CLEAN PAPERWORK OR UNAUTHORIZED ACCESS"
+                _save_meta()
             if CovertCareer.next_task(covert_profile.get("active",{}))=="rumor":_advance_active_case("rumor",String(detail.get("speaker","Dock contact")))
             _save_all_state()
         "dmc-privateer-contact":
@@ -585,7 +609,12 @@ func _on_breach_web_message(args: Array) -> void:
             var crime_faction_id := _planet_primary_faction(current_planet)
             if not crime_faction_id.is_empty():
                 _record_faction_crime(crime_faction_id, severity * 4, severity * 10, String(detail.get("offense", "spaceport_crime")), false)
-            last_trip_summary = "Spaceport crime witnessed" if bool(detail.get("witnessed", false)) else "Unreported spaceport robbery"
+            if String(detail.get("offense",""))=="unauthorized_terminal_access" and first_adventure_state in ["READY","CONTACTED","OBSERVED"]:
+                first_adventure_state="INTRUDED"
+                last_trip_summary="CONTRACT SHORTCUT · ILLEGAL TERMINAL INTRUSION · SECURITY AND FACTION HEAT RAISED"
+                _save_meta()
+            elif String(detail.get("offense",""))!="unauthorized_terminal_access":
+                last_trip_summary = "Spaceport crime witnessed" if bool(detail.get("witnessed", false)) else "Unreported spaceport robbery"
             _save_all_state()
         "dmc-privateer-mission-result":
             _close_breach_spaceport_request()
@@ -996,6 +1025,7 @@ func _reset_career_state() -> void:
     tutorial_open = false
     tutorial_complete = false
     tutorial_step = 0
+    first_adventure_state = "READY"
 
     political_world.clear()
     world_seed = 0
@@ -1088,7 +1118,8 @@ func _create_new_career(slot: int) -> bool:
     career_new_mode = false
     pending_overwrite_slot = 0
     hub_open = true
-    tutorial_open = true
+    tutorial_open = false
+    tutorial_complete = true
     tutorial_step = 0
     queue_redraw()
     return true
@@ -1100,7 +1131,7 @@ func _load_career(slot: int) -> bool:
     _reset_career_state()
     _load_meta()
     _load_privateer_state()
-    tutorial_open = not tutorial_complete
+    tutorial_open = false
     tutorial_step = 0
     profile_menu_open = false
     career_slots_open = false
@@ -5069,6 +5100,7 @@ func _save_meta() -> void:
     cfg.set_value("meta", "start_seeker", research_start_seeker)
     cfg.set_value("meta", "starting_weapon", starting_weapon)
     cfg.set_value("meta", "tutorial_complete", tutorial_complete)
+    cfg.set_value("meta", "first_adventure_state", first_adventure_state)
     var path := _active_meta_path()
     if path.is_empty():
         return
@@ -5100,6 +5132,8 @@ func _load_meta() -> void:
     starting_weapon = String(cfg.get_value("meta", "starting_weapon", "none"))
     # Careers created before the guided tour existed remain uninterrupted.
     tutorial_complete = bool(cfg.get_value("meta", "tutorial_complete", true))
+    first_adventure_state = String(cfg.get_value("meta", "first_adventure_state", "READY"))
+    if first_adventure_state not in ["READY","CONTACTED","OBSERVED","INTRUDED","COMPLETE"]:first_adventure_state="READY"
     if not _weapon_start_unlocked(starting_weapon):
         starting_weapon = "none"
 

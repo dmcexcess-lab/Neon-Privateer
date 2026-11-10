@@ -128,6 +128,12 @@ assert.equal(port.actors.filter(a=>a.kind==='civilian').length,18);assert.equal(
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
+const silhouettes=port.actors.filter(a=>a.kind==='civilian').map(a=>a.appearance);
+assert.ok(silhouettes.every(a=>Number.isInteger(a.skin)&&Number.isInteger(a.top)&&Number.isInteger(a.hair)&&Number.isInteger(a.hat)),'each local has procedural skin, clothing, hair and hat identity');
+assert.ok(new Set(silhouettes.map(a=>[a.skin,a.top,a.coat,a.hair,a.hat].join(':'))).size>12,'arrival roster has visibly varied silhouettes');
+const repeatAppearance=createSpaceportWorld({seed:12,arrivalSeed:44,planetId:'p-a'}).actors.find(a=>a.kind==='civilian').appearance;
+const nextAppearance=createSpaceportWorld({seed:12,arrivalSeed:45,planetId:'p-a'}).actors.find(a=>a.kind==='civilian').appearance;
+assert.notDeepEqual(nextAppearance,repeatAppearance,'NPC looks reroll on each arrival and remain reproducible for that arrival');
 assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
 assert.deepEqual(port.structures.filter(s=>!s.service).map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains social venues as walk-in buildings');

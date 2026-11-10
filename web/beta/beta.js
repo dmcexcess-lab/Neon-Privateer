@@ -87,8 +87,8 @@ function coverBreachLayer(detail = {}) {
   clearInterval(breachLayer.loadingTimer);
   breachLayer.openedAt = performance.now();
   const transition = breachLayer.querySelector('.breach-transition');
-  transition.querySelector('h3').textContent = detail.mode === 'mission' ? `${String(detail.style || 'FIELD').toUpperCase()} OPERATION` : 'SPACEPORT TRANSIT';
-  transition.querySelector('.breach-loading-state').textContent = 'ASSEMBLING FIELD MAP · SYNCHRONIZING CONTACT';
+  transition.querySelector('h3').textContent = detail.mode === 'mission' ? `${String(detail.style || 'FIELD').toUpperCase()} OPERATION` : (detail.firstAdventure?.active ? 'FIRST CONTRACT · MISSING MANIFEST' : 'SPACEPORT TRANSIT');
+  transition.querySelector('.breach-loading-state').textContent = detail.firstAdventure?.active ? 'LOCATING MARA VOSS · PREPARING FIRST FIELD JOB' : 'ASSEMBLING FIELD MAP · SYNCHRONIZING CONTACT';
   transition.querySelector('.breach-loading-progress').style.width = '12%';
   breachLayer.classList.remove('is-ready');
   let progress = 12;
@@ -109,7 +109,8 @@ function openBreachLayer(context) {
   const transition = document.createElement('div');
   transition.className = 'breach-transition';
   transition.innerHTML = '<div class="breach-loading-mark">◈</div><p>NEON PRIVATEER // PORT TRANSIT</p><h3></h3><div class="breach-loading-track"><i class="breach-loading-progress"></i></div><small class="breach-loading-state">MAPPING CONCOURSE · LOCATING SERVICES</small>';
-  transition.querySelector('h3').textContent = context.mode === 'spaceport' ? `${context.planetName || 'LOCAL'} SPACEPORT` : `${String(context.style || 'FIELD').toUpperCase()} OPERATION`;
+  transition.querySelector('h3').textContent = context.mode === 'spaceport' ? (context.firstAdventure?.active ? 'FIRST CONTRACT · MISSING MANIFEST' : `${context.planetName || 'LOCAL'} SPACEPORT`) : `${String(context.style || 'FIELD').toUpperCase()} OPERATION`;
+  if(context.firstAdventure?.active)transition.querySelector('.breach-loading-state').textContent='LOCATING MARA VOSS · PREPARING FIRST FIELD JOB';
   const frame = document.createElement('iframe');
   frame.className = 'breach-mission-frame';
   frame.title = 'Privateer spaceport and ground operation';

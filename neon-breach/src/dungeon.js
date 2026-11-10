@@ -494,11 +494,23 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     const pos=saved&&walkable(world,localPos.x,localPos.y,18)?localPos:randomSpot(world,room,rng,18);
     const target=saved?{x:pos.x,y:pos.y}:randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
     const path=saved?.path||['friendship','business','romance'][i%3];
+    const appearanceSeed=(Math.imul((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x9e3779b9),i+0x45d9f3b)>>>0);
     actors.push({id,contactId,kind:'civilian',name:saved?.name||names[i%names.length],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
+      appearance:{seed:appearanceSeed,skin:appearanceSeed%6,top:(appearanceSeed>>>4)%8,coat:(appearanceSeed>>>9)%6,hair:(appearanceSeed>>>13)%8,hat:(appearanceSeed>>>17)%6,build:(appearanceSeed>>>21)%3},
+      facingX:(i%2===0?1:-1),
       connected:!!saved,trust:Number(saved?.trust)||0,bond:saved?.bond||'LOCAL',path,venue:venue.id,role:['regular','trader','fixer','artist','crew'][i%5],
       home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:saved?.last_rumor||portDialogue(world.seed,i,faction),mission:i<6?{
         style:['stealth','hot','choice'][i%3],kind:['evidence theft','raid','recovery'][i%3],difficulty:rng.int(1,4)
       }:null});
+  }
+  if(caseContext?.openingAdventure&&actors[0]){
+    const maraRoom=rooms[6],runnerRoom=rooms[7];
+    actors[0].x=actors[0].home.x=actors[0].target.x=620;actors[0].y=actors[0].home.y=actors[0].target.y=560;actors[0].venue='bar';
+    actors[0].name=String(caseContext.contactName||'Mara Voss');actors[0].openingContact=true;
+    actors[0].rumor='A legal courier contract has a missing seal. Customs says to file paperwork; the runner says an unregistered terminal has the manifest.';
+    const subject=actors[1];subject.x=subject.home.x=subject.target.x=1570;subject.y=subject.home.y=subject.target.y=280;
+    subject.name='Kest Arden';subject.openingSubject=true;subject.mission=null;subject.speed=24;
+    subject.rumor='I am on a sealed courier route. Nothing to see here.';
   }
   for(let i=0;i<6;i++){
     const room=rooms[(i*2+1)%rooms.length],pos=randomSpot(world,room,rng,18),target=randomSpot(world,rooms[(i*2+3)%rooms.length],rng,18);

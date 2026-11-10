@@ -140,7 +140,12 @@ function makeFieldPlayer(loadout={},needs={}){
     facing:-Math.PI/2,walkCycle:0,punchTimer:0,stepClock:0};
 }
 function enterPrivateerPort(context){
-  hiddenScreens();game.world=createSpaceportWorld(context);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
+  const portContext={...context};
+  if(portContext.firstAdventure){
+    portContext.caseContext={...(portContext.caseContext||{}),openingAdventure:true,contactName:portContext.firstAdventure.contactName||'Mara Voss'};
+    portContext.activeContract=true;
+  }
+  hiddenScreens();game.world=createSpaceportWorld(portContext);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
   game.player=makeFieldPlayer(context.loadout||{},context.needs||{});game.hqStation=null;game.portClock=0;
   camera.x=0;camera.y=0;show('hud',true);show('location',true);show('touchUI',true);show('aimTip',true);show('hqPrompt',false);show('hqMenuButton',false);
   // A port uses the field-combat HUD and phone aim/draw controls. HQ mode
@@ -149,7 +154,7 @@ function enterPrivateerPort(context){
   const needs=context.needs||{};
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction} // H${Math.round(needs.hunger??82)} E${Math.round(needs.energy??84)} M${Math.round(needs.morale??62)} S${Math.round(needs.social??55)}`;
   updateUI();
-  announce(game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',4);
+  announce(portContext.firstAdventure?'FIRST CONTRACT · FIND MARA VOSS AT THE DOCKSIDE BAR · FOLLOW THE MANIFEST LEAD':game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',6);
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
 function startPrivateerMission(spec){
@@ -189,12 +194,22 @@ function nearbyPortActor(){
     const distance=Math.hypot(game.player.x-actor.x,game.player.y-actor.y);
     if(distance<best){nearest=actor;best=distance;}
   }
+  if(nearest?.openingContact&&game.world.caseContext?.openingAdventure&&!game.world.caseContext.openingLeadHeard)return nearest;
+  if(game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
+    const subject=game.world.actors.find(actor=>actor.openingSubject&&!actor.down);
+    if(subject&&Math.hypot(game.player.x-subject.x,game.player.y-subject.y)<92)return subject;
+  }
   return nearest;
 }
 function reportPortCrime(offense,severity,cash=0,witnessed=true){
   game.world.crime.heat+=severity*4;game.world.crime.witnessed ||= witnessed;
   for(const guard of game.world.actors.filter(a=>a.kind==='guard'&&!a.down))guard.alert=true;
   privateerMessage('dmc-privateer-crime',{offense,severity,cash,witnessed});updateUI();
+}
+function reportContractCrime(offense,severity=2){
+  if(!game.world?.crime)return;
+  reportPortCrime(offense,severity,0,true);
+  announce(`CONTRACT RISK · ${offense.toUpperCase()} · LEGAL JOB / ILLEGAL SHORTCUT`,4);
 }
 function damagePortActor(actor,damage){
   if(!actor||actor.down)return false;
@@ -212,6 +227,7 @@ function interactPort(){
   if(station&&actor&&Math.hypot(game.player.x-actor.x,game.player.y-actor.y)<=Math.hypot(game.player.x-station.x,game.player.y-station.y))station=null;
   if(station){
     if(station.service==='terminal'){
+      if(game.world.activeContract&&!station.caseContext&&!game.world.crime.intrusionReported){reportContractCrime('unauthorized_terminal_access',Math.max(1,station.difficulty||1));game.world.crime.intrusionReported=true;game.world.caseContext.shortcutTaken=true;}
       const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
       privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,difficulty:station.difficulty||1,seed:terminalSeed});
     }
@@ -257,6 +273,21 @@ function interactPort(){
     privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor});
     announce(`${actor.name} SHARES CONTACT INFO · ${actor.bond||'NEW CONTACT'} · ${actor.venue.toUpperCase()}`,2.8);
   }
+  if(actor.openingContact&&game.world.caseContext?.openingAdventure){
+    actor.metThisArrival=true;game.world.activeContract=true;game.world.caseContext.openingLeadHeard=true;
+    privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor,openingAdventure:true});
+    announce('LEGAL COURIER CONTRACT · THE MANIFEST IS MISSING. FOLLOW THE RUNNER; THE UNREGISTERED TERMINAL IS A RISKY SHORTCUT.',6);return true;
+  }
+  if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard){
+    if(!game.player.sneaking&&Math.hypot(game.player.x-actor.x,game.player.y-actor.y)<115){
+      if(!game.world.crime.tailingReported){reportPortCrime('tailing_suspect',1,0,true);game.world.crime.tailingReported=true;}
+      announce('KEST NOTICED YOU · THE RUNNER CHANGES ROUTE',3);actor.target={x:970,y:1050};return true;
+    }
+    game.world.caseContext.subjectObserved=true;game.world.caseContext.subjectName=actor.name;
+    privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
+    if(!game.world.caseContext.shortcutTaken){game.world.caseContext.openingResolved='CLEAN';}
+    announce('EAVESDROP LOGGED · MANIFEST ROUTE IDENTIFIED · FREIGHT CONTROL',4);return true;
+  }
   if(actor.mission&&!actor.offered){
     actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId});
     announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
@@ -284,10 +315,15 @@ function updatePort(dt){
   for(const actor of game.world.actors){
     if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
     if(actor.kind==='guard'&&actor.alert)actor.target={x:p.x,y:p.y};
+    else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
+      actor.target={x:1900,y:500};
+      if(!actor.routeAnnounced&&Math.hypot(p.x-actor.x,p.y-actor.y)<440){actor.routeAnnounced=true;announce('KEST IS MOVING TO FREIGHT CONTROL · SNEAK AND KEEP A GAP TO TAIL HIM',4);}
+    }
     const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
     if(d<18){
       const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};
     }else{
+      actor.facingX=Math.abs(dx)>3?Math.sign(dx):(actor.facingX||1);
       const beforeX=actor.x,beforeY=actor.y;moveWithCollisions(actor,dx/d*actor.speed*dt,dy/d*actor.speed*dt,13);
       actor.stall=Math.hypot(actor.x-beforeX,actor.y-beforeY)<.05?(actor.stall||0)+dt:0;
       if(actor.stall>1.4){const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)],spot=randomSpot(game.world,room,game.world.rng,18);actor.target=spot;actor.stall=0;}
@@ -1520,12 +1556,27 @@ function drawPortActors(){
   if(!game.world?.isSpaceport)return;
   for(const actor of game.world.actors){
     if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
-    const guard=actor.kind==='guard',color=actor.flash>0?'#ffffff':guard?(actor.alert?C.red:C.cyan):C.green;actor.flash=Math.max(0,(actor.flash||0)-.025);
-    ctx.save();ctx.translate(actor.x,actor.y);ctx.fillStyle=guard?'#17384c':'#163c34';ctx.strokeStyle=color;ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.arc(0,0,guard?16:13,0,TAU);ctx.fill();ctx.stroke();ctx.fillStyle=color;ctx.font='800 10px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText(guard?'SEC':actor.connected?'LINK':'NPC',0,4);
-    if(actor.connected){ctx.strokeStyle=C.gold;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,20+Math.sin(now*3+actor.x)*2,0,TAU);ctx.stroke();}
-    if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.fillText('!',0,-24);}
-    if(actor.hp<actor.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(-18,-25,36,3);ctx.fillStyle=color;ctx.fillRect(-18,-25,36*clamp(actor.hp/actor.maxHp,0,1),3);}ctx.restore();
+    const guard=actor.kind==='guard',color=actor.flash>0?'#ffffff':guard?(actor.alert?C.red:C.cyan):C.green,ap=actor.appearance||{};actor.flash=Math.max(0,(actor.flash||0)-.025);
+    ctx.save();ctx.translate(actor.x,actor.y);if(actor.facingX<0)ctx.scale(-1,1);
+    if(actor.caseSubject){ctx.strokeStyle=C.purple;ctx.lineWidth=2.5;ctx.setLineDash([5,4]);ctx.beginPath();ctx.ellipse(0,0,22,27,0,0,TAU);ctx.stroke();ctx.setLineDash([]);}
+    const skin=['#f2c9a5','#c99170','#8e604b','#f0d8bd','#704936','#dca886'][ap.skin||0],top=['#35a9a2','#db7653','#8b76c8','#d5b54e','#587ca7','#bb6688','#78a85d','#b7c5cc'][ap.top||0],coat=['#243747','#4d293b','#3d405a','#564632','#23514e','#313743'][ap.coat||0],hair=['#211c23','#654332','#bc8a42','#d4c5a2','#525a68','#a93f5b','#211122','#e77c46'][ap.hair||0];
+    ctx.fillStyle='rgba(0,0,0,.32)';ctx.beginPath();ctx.ellipse(0,5,13,8,0,0,TAU);ctx.fill();
+    if(guard){ctx.fillStyle=actor.alert?'#592d3c':'#174458';ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.rect(-12,-10,24,26);ctx.fill();ctx.stroke();ctx.fillStyle='#7fc4d2';ctx.fillRect(-7,-18,14,10);ctx.fillStyle=actor.alert?C.red:C.cyan;ctx.fillRect(-7,1,14,4);}
+    else{
+      const width=9+(ap.build||0)*2;
+      ctx.fillStyle=coat;ctx.beginPath();ctx.rect(-width,-11,width*2,23);ctx.fill();ctx.fillStyle=top;ctx.fillRect(-width+2,-7,width*2-4,12);
+      ctx.fillStyle=skin;ctx.beginPath();ctx.ellipse(0,-15,7,8,0,0,TAU);ctx.fill();
+      ctx.fillStyle=hair;ctx.beginPath();ctx.arc(0,-17,7.5,Math.PI,TAU);ctx.fill();
+      const style=ap.hair||0;if(style%3===1){ctx.fillRect(-9,-18,4,13);ctx.fillRect(5,-18,4,12);}else if(style%3===2){ctx.beginPath();ctx.arc(0,-20,9,Math.PI,TAU);ctx.fill();}
+      const hat=ap.hat||0;if(hat===1){ctx.fillStyle='#f4c45f';ctx.fillRect(-9,-23,18,4);ctx.fillRect(-6,-28,12,6);}else if(hat===2){ctx.fillStyle='#b999ff';ctx.beginPath();ctx.moveTo(-8,-23);ctx.lineTo(0,-33);ctx.lineTo(8,-23);ctx.closePath();ctx.fill();}else if(hat===3){ctx.fillStyle='#d6e0e4';ctx.beginPath();ctx.arc(0,-22,9,Math.PI,TAU);ctx.fill();ctx.fillRect(-11,-22,22,3);}
+      if(ap.coat>1){ctx.fillStyle='#dbeaf0';ctx.fillRect(-2,-7,4,13);}
+    }
+    if(actor.connected){ctx.strokeStyle=C.gold;ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(0,0,18,24+Math.sin(now*3+actor.x)*2,0,0,TAU);ctx.stroke();}
+    ctx.restore();
+    const label=actor.caseSubject?`FOLLOW · ${actor.name}`:actor.openingContact?'CONTRACT CONTACT · MARA VOSS':actor.openingSubject&&game.world.caseContext?.openingLeadHeard?`FOLLOW · ${actor.name}`:'';
+    if(label){ctx.save();ctx.fillStyle='rgba(5,15,25,.88)';ctx.fillRect(actor.x-82,actor.y-48,164,18);ctx.strokeStyle=actor.caseSubject?C.purple:C.gold;ctx.strokeRect(actor.x-82,actor.y-48,164,18);ctx.fillStyle='#f4f8ff';ctx.textAlign='center';ctx.font='800 9px ui-monospace,monospace';ctx.fillText(label,actor.x,actor.y-35);ctx.restore();}
+    if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText('!',actor.x,actor.y-27);}
+    if(actor.hp<actor.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(actor.x-18,actor.y-25,36,3);ctx.fillStyle=color;ctx.fillRect(actor.x-18,actor.y-25,36*clamp(actor.hp/actor.maxHp,0,1),3);}
   }
 }
 function drawHQDirectory(){

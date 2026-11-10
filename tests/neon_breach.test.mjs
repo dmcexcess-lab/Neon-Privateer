@@ -25,6 +25,7 @@ const makeElement=()=>({
 });
 const elements=new Map(),storage=new Map();
 const privateerMessages=[];
+const testFailures=[];
 let musicInstances=0;
 // Reproducible headings, pauses and spawn offsets for traversal regressions.
 let randomSeed=0x1234abcd;
@@ -52,7 +53,7 @@ vm.runInNewContext(source+`
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
   startPrivateerMission,finishPrivateerMission,enterPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
-  discoverPortStations,nearbyStation,interactPort,
+  discoverPortStations,nearbyStation,nearbyPortActor,interactPort,
   setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
@@ -68,6 +69,23 @@ test('full spaceports support armed play and guards react to gunfire',()=>{
   assert.ok(civilian.hp<2,'player bullet damages a civilian inside the persistent port');
   assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'a witnessed shooting alerts every living patrol');
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='assault_civilian'),'the full game receives the port crime');
+  b.setPrivateerContext(null);
+});
+
+test('first adventure begins in the port and links named contact, courier, and risky legal-contract shortcut',()=>{
+  const context={mode:'spaceport',requestId:'opening-adventure',seed:73,arrivalSeed:1901,planetId:'opening-port',planetName:'New Dawn',faction:'Port Authority',firstAdventure:{active:true,step:'READY',contactName:'Mara Voss'},loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const mara=b.game.world.actors.find(actor=>actor.openingContact),kest=b.game.world.actors.find(actor=>actor.openingSubject);
+  assert.ok(mara&&kest);assert.equal(mara.name,'Mara Voss');assert.equal(kest.name,'Kest Arden');
+  b.game.player.x=mara.x;b.game.player.y=mara.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.openingAdventure),'opening contact delivers the authored job');
+  b.game.player.x=kest.x+70;b.game.player.y=kest.y;b.game.player.sneaking=true;
+  assert.equal(b.nearbyPortActor(),kest,'opening lead makes the named runner the interactable subject');b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.subjectObserved),'sneaking observation yields the manifest lead');
+  b.game.world.activeContract=true;const terminal=b.game.world.stations.find(station=>station.service==='terminal');
+  b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='unauthorized_terminal_access'&&message.detail.witnessed),'illegal shortcut during the legal contract raises witnessed law response');
+  assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'terminal intrusion alerts port guards');
   b.setPrivateerContext(null);
 });
 
