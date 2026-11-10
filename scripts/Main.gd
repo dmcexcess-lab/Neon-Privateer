@@ -577,10 +577,10 @@ func _on_breach_web_message(args: Array) -> void:
                 if covert_profile.active.is_empty():
                     var opening:=CovertCareer.offer(current_planet,"track",-791,1)
                     opening.target="Kest Arden"
-                    opening.steps=["rumor","tail","wiretap","evidence"]
-                    opening.sites.resize(4)
+                    opening.steps=["tail","wiretap","evidence"]
+                    opening.sites.resize(3)
                     for i in opening.sites.size():
-                        opening.sites[i]={"id":"opening:%s:%d"%[current_planet,i],"planet":current_planet,"name":["DOCKSIDE RUNNER ROUTE","FREIGHT CONTROL OBSERVATION","UNREGISTERED MANIFEST TAP","COURIER SEAL CACHE"][i],"type":"opening_adventure","task":opening.steps[i],"discovered":true,"visited":false,"seed":abs(world_seed+7919+i*101),"station":true}
+                        opening.sites[i]={"id":"opening:%s:%d"%[current_planet,i],"planet":current_planet,"name":["FREIGHT CONTROL OBSERVATION","UNREGISTERED MANIFEST TAP","COURIER SEAL CACHE"][i],"type":"opening_adventure","task":opening.steps[i],"discovered":true,"visited":false,"seed":abs(world_seed+7919+i*101),"station":true}
                     covert_profile.active=opening
                 _save_meta()
                 _save_all_state()

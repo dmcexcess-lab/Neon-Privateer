@@ -1217,7 +1217,7 @@ function makeFieldPlayer(loadout={},needs={}){
 }
 function enterPrivateerPort(context){
   const portContext={...context};
-  if(portContext.firstAdventure){
+  if(portContext.firstAdventure?.active){
     portContext.caseContext={...(portContext.caseContext||{}),openingAdventure:true,contactName:portContext.firstAdventure.contactName||'Mara Voss'};
     portContext.activeContract=true;
   }
@@ -1359,10 +1359,7 @@ function interactPort(){
       if(!game.world.crime.tailingReported){reportPortCrime('tailing_suspect',1,0,true);game.world.crime.tailingReported=true;}
       announce('KEST NOTICED YOU · THE RUNNER CHANGES ROUTE',3);actor.target={x:970,y:1050};return true;
     }
-    game.world.caseContext.subjectObserved=true;game.world.caseContext.subjectName=actor.name;
-    privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
-    if(!game.world.caseContext.shortcutTaken){game.world.caseContext.openingResolved='CLEAN';}
-    announce('EAVESDROP LOGGED · MANIFEST ROUTE IDENTIFIED · FREIGHT CONTROL',4);return true;
+    announce('KEST IS WORKING · STAY SNEAKING NEARBY TO EAVESDROP, OR FOLLOW HIM TO FREIGHT CONTROL',4);return true;
   }
   if(actor.mission&&!actor.offered){
     actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId});
@@ -1394,6 +1391,15 @@ function updatePort(dt){
     else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
       actor.target={x:1900,y:500};
       if(!actor.routeAnnounced&&Math.hypot(p.x-actor.x,p.y-actor.y)<440){actor.routeAnnounced=true;announce('KEST IS MOVING TO FREIGHT CONTROL · SNEAK AND KEEP A GAP TO TAIL HIM',4);}
+    }
+    if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
+      const dist=Math.hypot(p.x-actor.x,p.y-actor.y),listening=p.sneaking&&dist>=45&&dist<=190&&!actor.alert;
+      actor.listenProgress=listening?Math.min(5,(actor.listenProgress||0)+dt):Math.max(0,(actor.listenProgress||0)-dt*.6);
+      if(actor.listenProgress>=5){
+        game.world.caseContext.subjectObserved=true;game.world.caseContext.subjectName=actor.name;
+        privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
+        announce('EAVESDROP COMPLETE · MANIFEST ROUTE IDENTIFIED · FREIGHT CONTROL',4);
+      }
     }
     const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
     if(d<18){
@@ -2649,7 +2655,7 @@ function drawPortActors(){
     }
     if(actor.connected){ctx.strokeStyle=C.gold;ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(0,0,18,24+Math.sin(now*3+actor.x)*2,0,0,TAU);ctx.stroke();}
     ctx.restore();
-    const label=actor.caseSubject?`FOLLOW · ${actor.name}`:actor.openingContact?'CONTRACT CONTACT · MARA VOSS':actor.openingSubject&&game.world.caseContext?.openingLeadHeard?`FOLLOW · ${actor.name}`:'';
+    const label=actor.caseSubject?`FOLLOW · ${actor.name}`:actor.openingContact?'CONTRACT CONTACT · MARA VOSS':actor.openingSubject&&game.world.caseContext?.openingLeadHeard?`FOLLOW / EAVESDROP · ${actor.name}`:'';
     if(label){ctx.save();ctx.fillStyle='rgba(5,15,25,.88)';ctx.fillRect(actor.x-82,actor.y-48,164,18);ctx.strokeStyle=actor.caseSubject?C.purple:C.gold;ctx.strokeRect(actor.x-82,actor.y-48,164,18);ctx.fillStyle='#f4f8ff';ctx.textAlign='center';ctx.font='800 9px ui-monospace,monospace';ctx.fillText(label,actor.x,actor.y-35);ctx.restore();}
     if(actor.alert){ctx.fillStyle=C.red;ctx.font='900 18px ui-monospace,monospace';ctx.textAlign='center';ctx.fillText('!',actor.x,actor.y-27);}
     if(actor.hp<actor.maxHp){ctx.fillStyle='#241c2b';ctx.fillRect(actor.x-18,actor.y-25,36,3);ctx.fillStyle=color;ctx.fillRect(actor.x-18,actor.y-25,36*clamp(actor.hp/actor.maxHp,0,1),3);}

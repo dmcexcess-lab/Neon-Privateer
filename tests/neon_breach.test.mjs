@@ -79,9 +79,14 @@ test('first adventure begins in the port and links named contact, courier, and r
   assert.ok(mara&&kest);assert.equal(mara.name,'Mara Voss');assert.equal(kest.name,'Kest Arden');
   b.game.player.x=mara.x;b.game.player.y=mara.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.openingAdventure),'opening contact delivers the authored job');
-  b.game.player.x=kest.x+70;b.game.player.y=kest.y;b.game.player.sneaking=true;
+  kest.target={x:kest.x,y:kest.y};kest.speed=0;
+  b.game.player.x=kest.x+70;b.game.player.y=kest.y;
+  b.inputs.sneakTouch=true;
   assert.equal(b.nearbyPortActor(),kest,'opening lead makes the named runner the interactable subject');b.interactPort();
-  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.subjectObserved),'sneaking observation yields the manifest lead');
+  assert.equal(kest.listenProgress||0,0,'dialogue alone cannot fabricate an eavesdrop clue');
+  b.game.player.x=kest.x+150;
+  for(let i=0;i<170;i++)b.updatePort(.034);
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.subjectObserved),'a sustained sneaking listen yields the manifest lead');
   b.game.world.activeContract=true;const terminal=b.game.world.stations.find(station=>station.service==='terminal');
   b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='unauthorized_terminal_access'&&message.detail.witnessed),'illegal shortcut during the legal contract raises witnessed law response');
