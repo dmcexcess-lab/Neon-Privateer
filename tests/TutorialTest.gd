@@ -31,6 +31,7 @@ func run() -> void:
     meta = ConfigFile.new()
     check(meta.load(scene._active_meta_path()) == OK, "legacy fixture loaded")
     meta.erase_section_key("meta", "tutorial_complete")
+    meta.erase_section_key("meta", "first_adventure_state")
     meta.save(scene._active_meta_path())
     check(scene._load_career(2) and scene.tutorial_complete and not scene.tutorial_open and scene.first_adventure_state == "READY", "legacy career defaults to no modal and can try the new adventure")
 
