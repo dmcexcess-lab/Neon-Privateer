@@ -93,13 +93,17 @@ func _run() -> void:
     check(not scene._contract_blocker(hard_contract).is_empty(),"ship contracts obey rank gates")
     check(not scene._player_can_damage_hazard({"kind":1,"owner_faction":"f00"}),"owned crates ignored by default")
     scene.raid_owned_crates=true;check(scene._player_can_damage_hazard({"kind":1,"owner_faction":"f00"}),"explicit raid enables theft targeting")
-    var faction:=String(scene.political_world.factions[0].id)
+    var faction:=""
+    var illegal:=""
+    for candidate in scene.political_world.factions:
+        for good in scene.PoliticalWorld.RESTRICTED_COMMODITIES:
+            if not scene.PoliticalWorld.faction_commodity_legal(scene.political_world,String(candidate.id),good):
+                faction=String(candidate.id);illegal=String(good);break
+        if not faction.is_empty():break
+    check(not faction.is_empty() and not illegal.is_empty(),"fixture chooses a faction that actually bans a restricted good")
     scene._record_faction_crime(faction,12,0,"container_theft",false)
     check(Justice.assessment(scene.covert_profile.justice,faction).days==30,"real crate-theft hook creates legal case")
     scene.research_credits=10000;scene.bank_balance=333
-    var illegal:=""
-    for good in scene.PoliticalWorld.RESTRICTED_COMMODITIES:
-        if not scene.PoliticalWorld.faction_commodity_legal(scene.political_world,faction,good):illegal=good;break
     scene.cargo[illegal]=1;scene.police_scan_active=true;scene.police_scan_faction_id=faction
     scene.playing=true;scene.encounter_active=true;scene.encounter_mode="police";scene.encounter_faction_id=faction
     var scan:Dictionary=scene._complete_police_scan()
