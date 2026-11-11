@@ -60,6 +60,13 @@ const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false,stea
 let lastFrame=0,now=0,audio=null,gamepadPauseDown=false,toastTimeout=0;
 let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0,caseTask:'',caseSubject:null,caseProgress:0,caseTargetCleared:false};
 let privateerContext=null;
+let openingCall={active:false,beat:0};
+const OPENING_CALL_BEATS=[
+  'Mara Voss here. Your ship just cleared customs, so I am putting a live bounty on your ledger. Kest Arden was last seen at this port.',
+  'Contract is accepted. Start at the Dockside Bar and ask around. Keep your weapon holstered; a rumor is not worth a security incident.',
+  'Find Kest, keep your distance, and tail or eavesdrop without being noticed. He is moving a sealed shipment through freight control.',
+  'A visible illegal terminal may expose his next location. Hacking it can bring guards down on you. The clue will lead to an off-port hideout. Your call is logged.'
+];
 try{
   if(typeof URLSearchParams!=='undefined'&&typeof location!=='undefined'){
     const params=new URLSearchParams(location.search),raw=params.get('privateer');
@@ -141,8 +148,10 @@ function makeFieldPlayer(loadout={},needs={}){
 }
 function enterPrivateerPort(context){
   const portContext={...context};
+  const firstStep=String(portContext.firstAdventure?.step||'');
   if(portContext.firstAdventure?.active){
-    portContext.caseContext={...(portContext.caseContext||{}),openingAdventure:true,contactName:portContext.firstAdventure.contactName||'Mara Voss'};
+    const openingPhase=['READY','CALLING','ACCEPTED','CONTACTED','OBSERVED','INTRUDED'].includes(firstStep);
+    portContext.caseContext={...(portContext.caseContext||{}),openingAdventure:openingPhase,openingLeadHeard:['CONTACTED','OBSERVED','INTRUDED'].includes(firstStep),contactName:portContext.firstAdventure.contactName||'Mara Voss'};
     portContext.activeContract=true;
   }
   hiddenScreens();game.world=createSpaceportWorld(portContext);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
@@ -154,9 +163,32 @@ function enterPrivateerPort(context){
   const needs=context.needs||{};
   $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction} // H${Math.round(needs.hunger??82)} E${Math.round(needs.energy??84)} M${Math.round(needs.morale??62)} S${Math.round(needs.social??55)}`;
   updateUI();
-  announce(portContext.firstAdventure?'FIRST CONTRACT · FIND MARA VOSS AT THE DOCKSIDE BAR · FOLLOW THE MANIFEST LEAD':game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',6);
+  if(portContext.firstAdventure?.active&&['READY','CALLING'].includes(firstStep))beginOpeningCall();
+  else announce(portContext.firstAdventure?.active?'ACTIVE BOUNTY · CHECK THE DOSSIER FOR YOUR NEXT LEAD':game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',6);
   requestAnimationFrame(()=>privateerMessage('dmc-privateer-ready',{mode:'spaceport',planetName:game.world.planetName}));
 }
+function beginOpeningCall(){
+  openingCall={active:true,beat:0};inputs.move={x:0,y:0};inputs.mouse.down=false;inputs.sneakTouch=false;
+  $('openingCall').classList.remove('hidden');$('openingCallContinue').textContent='ANSWER';
+  $('openingCallBeat').textContent=OPENING_CALL_BEATS[0];
+  privateerMessage('dmc-privateer-opening-call-started',{step:'CALLING'});
+}
+function advanceOpeningCall(){
+  if(!openingCall.active)return false;
+  if(openingCall.beat<OPENING_CALL_BEATS.length-1){
+    openingCall.beat++;$('openingCallBeat').textContent=OPENING_CALL_BEATS[openingCall.beat];
+    $('openingCallContinue').textContent=openingCall.beat===OPENING_CALL_BEATS.length-1?'LOG & ACCEPT BOUNTY':'CONTINUE';
+    return true;
+  }
+  openingCall.active=false;$('openingCall').classList.add('hidden');
+  game.world.caseContext.callAccepted=true;
+  game.world.caseContext.task='rumor';
+  if(privateerContext.firstAdventure)privateerContext.firstAdventure.step='ACCEPTED';
+  privateerMessage('dmc-privateer-opening-call',{accepted:true,contact:'Mara Voss',target:'Kest Arden'});
+  announce('BOUNTY ACCEPTED · MARA VOSS IS AT THE DOCKSIDE BAR · ASK AROUND FOR KEST ARDEN',6);
+  return true;
+}
+$('openingCallContinue').addEventListener('click',advanceOpeningCall);
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,caseTask:String(spec.caseTask||''),mode:'mission'};
   game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;
@@ -175,8 +207,8 @@ function finishPrivateerMission(outcome){
   if(outcome==='completed'&&['target','lieutenant','mastermind'].includes(task)&&!game.caseTargetCleared){
     announce(`CASE OBJECTIVE OPEN · LOCATE AND NEUTRALIZE ${String(privateerContext.contact||'THE SUBJECT').toUpperCase()} BEFORE EXFIL`,4);game.exitClock=0;return true;
   }
-  if(outcome==='completed'&&['tail','stakeout'].includes(task)&&game.caseProgress<(task==='tail'?10:8)){
-    announce(task==='tail'?'TAIL INCOMPLETE · KEEP THE SUBJECT IN RANGE, UNDETECTED':'STAKEOUT INCOMPLETE · HOLD A SNEAKING OBSERVATION POSITION',4);game.exitClock=0;return true;
+  if(outcome==='completed'&&['tail','stakeout','eavesdrop'].includes(task)&&game.caseProgress<(task==='tail'?10:task==='stakeout'?8:6)){
+    announce(task==='tail'?'TAIL INCOMPLETE · KEEP THE SUBJECT IN RANGE, UNDETECTED':task==='stakeout'?'STAKEOUT INCOMPLETE · HOLD A SNEAKING OBSERVATION POSITION':'EAVESDROP INCOMPLETE · STAY CLOSE, SNEAKING AND UNDETECTED',4);game.exitClock=0;return true;
   }
   const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
   const clean=style!=='stealth'||!game.detectedThisFloor;
@@ -221,6 +253,7 @@ function damagePortActor(actor,damage){
 }
 function interactPort(){
   if(game.mode!=='PORT')return false;
+  if(openingCall.active)return true;
   let station=nearbyStation(),actor=nearbyPortActor();
   // Venue-bound contacts may stand exactly on their venue marker. At equal
   // distance, speaking to the person is more specific than using the venue.
@@ -249,7 +282,7 @@ function interactPort(){
         announce(`ACCIDENTAL DISCOVERY · ${found.name} · TARGET DOSSIER UPDATED`,5);
       }
       else if(task==='rumor')announce('THIS LEAD STARTS IN THE PORT · TALK TO LOCALS WITH YOUR WEAPON HOLSTERED',4);
-      else if(['wiretap','eavesdrop'].includes(task))privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
+      else if(task==='wiretap')privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
       else{
         privateerMessage('dmc-privateer-loading',{mode:'case-site',task,site:site.name});
         startPrivateerMission({style:['tail','stakeout','eavesdrop'].includes(task)?'stealth':task==='breach'?'choice':'hot',difficulty:lead.difficulty||1,
@@ -275,6 +308,7 @@ function interactPort(){
   }
   if(actor.openingContact&&game.world.caseContext?.openingAdventure){
     actor.metThisArrival=true;game.world.activeContract=true;game.world.caseContext.openingLeadHeard=true;
+    game.world.caseContext.task='tail';
     privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor,openingAdventure:true});
     announce('LEGAL COURIER CONTRACT · THE MANIFEST IS MISSING. FOLLOW THE RUNNER; THE UNREGISTERED TERMINAL IS A RISKY SHORTCUT.',6);return true;
   }
@@ -296,6 +330,7 @@ function interactPort(){
   privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;
 }
 function updatePort(dt){
+  if(openingCall.active)return;
   const p=game.player,control=captureInputs();
   game.portClock=(game.portClock||0)+dt;
   p.invuln=Math.max(0,p.invuln-dt);p.cool=Math.max(0,p.cool-dt);p.punchTimer=Math.max(0,p.punchTimer-dt);updateWeaponTimers(dt);
@@ -321,6 +356,7 @@ function updatePort(dt){
       actor.listenProgress=listening?Math.min(5,(actor.listenProgress||0)+dt):Math.max(0,(actor.listenProgress||0)-dt*.6);
       if(actor.listenProgress>=5){
         game.world.caseContext.subjectObserved=true;game.world.caseContext.subjectName=actor.name;
+        game.world.caseContext.task='wiretap';
         privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
         announce('EAVESDROP COMPLETE · MANIFEST ROUTE IDENTIFIED · FREIGHT CONTROL',4);
       }
@@ -538,7 +574,7 @@ function spawnFloorEnemies(){
     game.enemies.push(e);room.enemies.push(e);
   }
   const task=String(privateerContext?.caseTask||'');
-  if(['target','lieutenant','mastermind','tail','stakeout'].includes(task)&&game.enemies.length){
+  if(['target','lieutenant','mastermind','tail','stakeout','eavesdrop'].includes(task)&&game.enemies.length){
     const subject=game.enemies.reduce((best,e)=>e.maxHp>best.maxHp?e:best,game.enemies[0]);
     subject.caseSubject=true;subject.caseName=String(privateerContext.contact||'CASE SUBJECT');
     if(['target','lieutenant','mastermind'].includes(task)){subject.hp*=2.5;subject.maxHp=subject.hp;game.caseSubject=subject;}
@@ -1371,22 +1407,24 @@ function update(dt){
   }
   const exit=game.world.rooms[game.world.exit];
   if(!game.extraction&&Math.hypot(p.x-exit.cx,p.y-exit.cy)<56){
-    const observationReady=!['tail','stakeout'].includes(game.caseTask)||game.caseProgress>=(game.caseTask==='tail'?10:8);
-    if(!observationReady){if(game.exitClock===0)announce(game.caseTask==='tail'?'KEEP CLOSE TO THE SUBJECT WHILE SNEAKING':'HOLD A DISTANT, SNEAKING STAKEOUT POSITION',3);game.exitClock=0;}
+    const observationReady=!['tail','stakeout','eavesdrop'].includes(game.caseTask)||game.caseProgress>=(game.caseTask==='tail'?10:game.caseTask==='stakeout'?8:6);
+    if(!observationReady){if(game.exitClock===0)announce(game.caseTask==='tail'?'KEEP CLOSE TO THE SUBJECT WHILE SNEAKING':game.caseTask==='stakeout'?'HOLD A DISTANT, SNEAKING STAKEOUT POSITION':'STAY NEAR THE MARKED SUBJECT, SNEAKING AND UNDETECTED',3);game.exitClock=0;}
     else{game.exitClock+=dt;if(game.exitClock>.75)nextFloor();}
   }else game.exitClock=0;
   const smooth=Math.min(1,dt*8);camera.x+=(p.x-camera.x)*smooth;camera.y+=(p.y-camera.y)*smooth;
 }
 function updateCaseObjective(dt){
-  if(game.mode!=='PLAY'||!['tail','stakeout'].includes(game.caseTask)||!game.caseSubject)return;
+  if(game.mode!=='PLAY'||!['tail','stakeout','eavesdrop'].includes(game.caseTask)||!game.caseSubject)return;
   const p=game.player,distance=Math.hypot(p.x-game.caseSubject.x,p.y-game.caseSubject.y);
   const valid=game.caseTask==='tail'
     ?distance>=110&&distance<=340&&p.sneaking&&!game.detectedThisFloor
-    :distance>=300&&distance<=620&&p.sneaking&&!p.moving&&!game.detectedThisFloor;
-  const required=game.caseTask==='tail'?10:8;
+    :game.caseTask==='stakeout'
+      ?distance>=300&&distance<=620&&p.sneaking&&!p.moving&&!game.detectedThisFloor
+      :distance>=45&&distance<=190&&p.sneaking&&!game.detectedThisFloor;
+  const required=game.caseTask==='tail'?10:game.caseTask==='stakeout'?8:6;
   game.caseProgress=valid?Math.min(required,game.caseProgress+dt):Math.max(0,game.caseProgress-dt*1.8);
   if(game.caseProgress>=required&&!game.caseReadyAnnounced){
-    game.caseReadyAnnounced=true;announce(game.caseTask==='tail'?'TAIL COMPLETE · SUBJECT ROUTINE CONFIRMED · EXFIL':'STAKEOUT COMPLETE · WINDOW RECORDED · EXFIL',4);
+    game.caseReadyAnnounced=true;announce(game.caseTask==='tail'?'TAIL COMPLETE · SUBJECT ROUTINE CONFIRMED · EXFIL':game.caseTask==='stakeout'?'STAKEOUT COMPLETE · WINDOW RECORDED · EXFIL':'EAVESDROP COMPLETE · CONVERSATION RECORDED · EXFIL',4);
   }
 }
 
@@ -1873,6 +1911,7 @@ function render(){
   drawBullets();drawPlayer();drawParticles();
   ctx.restore();
   drawCaseObjectiveHUD();
+  drawPortObjectiveHUD();
   if(game.world.isHQ)drawHQDirectory();
   else if(game.player?.map)drawMap(inputs.map);
   if(game.flashed>0){ctx.fillStyle=`rgba(255,43,107,${game.flashed*.42})`;ctx.fillRect(0,0,SW,SH);}
@@ -1880,11 +1919,21 @@ function render(){
   // Low health atmospheric warning, without hiding gameplay.
   if(game.player.hp/game.player.maxHp<=.3){ctx.strokeStyle=`rgba(250,70,105,${.12+Math.sin(now*5)*.08})`;ctx.lineWidth=18;ctx.strokeRect(0,0,SW,SH);}
 }
+function drawPortObjectiveHUD(){
+  if(game.mode!=='PORT'||openingCall.active)return;
+  const first=privateerContext?.firstAdventure,lead=game.world?.caseContext||{};
+  if(!first?.active&&!lead.task)return;
+  const task=String(lead.task||''),label=task==='tail'?'TAIL KEST ARDEN · SNEAK AND EAVESDROP WITHOUT ALERTING HIM':task==='wiretap'?'HACK A VISIBLE ILLEGAL TERMINAL · SECURITY MAY RESPOND':task==='target'?'NEW CLUE · LAND AT THE OFF-PORT HIDEOUT AND APPREHEND KEST':task==='rumor'?'LAST KNOWN LOCATION · ASK MARA VOSS AT THE DOCKSIDE BAR':'BOUNTY ACCEPTED · FOLLOW YOUR NEXT LEAD IN THE DOSSIER';
+  const width=Math.min(520,SW-24),x=(SW-width)/2,y=SH-115;
+  ctx.save();ctx.fillStyle='rgba(5,15,25,.93)';ctx.fillRect(x,y,width,42);ctx.strokeStyle='#f9ca68';ctx.lineWidth=1.5;ctx.strokeRect(x,y,width,42);
+  ctx.textAlign='center';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#fff0c4';ctx.fillText(label,x+width/2,y+17);ctx.font='700 9px ui-monospace,monospace';ctx.fillStyle='#a9bdc7';ctx.fillText(lead.openingAdventure?'PRIVATEER CAREER · OPENING BOUNTY':'PRIVATEER CAREER · ACTIVE CASE',x+width/2,y+33);ctx.restore();
+}
 function drawCaseObjectiveHUD(){
   if(game.mode!=='PLAY'||!game.caseTask)return;
   const width=Math.min(440,SW-32),x=(SW-width)/2,y=SH-66;
   let label='',progress=null;
   if(game.caseTask==='tail'){label='TAIL · FOLLOW THE MARKED SUBJECT UNDETECTED';progress=game.caseProgress/10;}
+  else if(game.caseTask==='eavesdrop'){label='EAVESDROP · STAY CLOSE, SNEAKING AND UNDETECTED';progress=game.caseProgress/6;}
   else if(game.caseTask==='stakeout'){label='STAKEOUT · HOLD POSITION, SNEAKING AND STILL';progress=game.caseProgress/8;}
   else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · REACH EXFIL':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
   else if(game.caseTask==='breach')label='BREACH SITE · COMPLETE THE OPERATION AND EXFIL';
@@ -1934,6 +1983,7 @@ addEventListener('blur',()=>{inputs.keys.clear();inputs.mouse.down=false;inputs.
 document.addEventListener('visibilitychange',()=>{if(document.hidden){inputs.mouse.down=false;inputs.mouse.stealthHeld=false;if(game.mode==='PLAY')togglePause();if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();}});
 addEventListener('pagehide',()=>{if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();});
 addEventListener('keydown',e=>{
+  if(openingCall.active&&(e.code==='Enter'||e.code==='Space')){e.preventDefault();advanceOpeningCall();return;}
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if(!e.repeat&&game.mode==='HQ_PANEL'&&(e.code==='Escape'||e.code==='KeyE')){closeHQPanel();return;}
   if(!e.repeat&&['HQ','PORT'].includes(game.mode)&&e.code==='KeyE'){interactHQ();return;}

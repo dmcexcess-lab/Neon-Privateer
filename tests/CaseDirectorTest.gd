@@ -10,7 +10,8 @@ func _initialize()->void:call_deferred("_run")
 func _run()->void:
     var base:={"id":"gov-17","origin":"p1","destination":"p2","difficulty":1,"guild":"merc","required_rank":0,"issuer_faction":"f1","issuer_name":"HELIX AUTHORITY","reward":900}
     var easy:=Cases.create(base,0)
-    check(easy.steps==["rumor","tail","breach","target"] and easy.people.size()==1,"entry case is a readable find-the-person chain")
+    check(easy.steps==["rumor","tail","wiretap","target"] and easy.people.size()==1,"entry bounty asks around, tails, hacks for a clue, then resolves a target")
+    check(easy.target_approach in ["space","breach"],"the final target is assigned a real space or breach encounter")
     check(easy.sites.size()==easy.steps.size() and easy.sites[0].discovered and not easy.sites[1].discovered,"case locations reveal one lead at a time")
     var hard_base:=base.duplicate(true);hard_base.id="gov-mastermind";hard_base.difficulty=5
     var hard:=Cases.create(hard_base,5)

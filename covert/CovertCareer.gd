@@ -43,14 +43,16 @@ static func objective(job: Dictionary) -> String:
     if job.is_empty():return "Choose work or crime. Start with courier work from ship CONTRACTS if you have no equipment."
     var who:=String(job.target)
     match next_task(job):
-        "rumor":return "Ask a dock contact about %s. Approach an NPC and interact with your weapon holstered."%who
+        "rumor":return "Last known location: this port. Ask around at the Dockside Bar about %s with your weapon holstered."%who
         "tail":return "Listen at the northeast meeting for 6 seconds, unseen and holstered. Extract with the lead."
         "stakeout":return "Land at the marked site and watch the location without approaching or drawing a weapon."
         "eavesdrop":return "Shadow the meeting and remain close enough to hear it without being made."
-        "wiretap":return "Land at the marked relay and defeat its contextual Firewall to install the wiretap."
+        "wiretap":return "Hack a visible illegal terminal at the marked port. Beat its Firewall to reveal the next location; security may respond."
         "breach":return "Land away from the main starport, enter the named safehouse and recover its records."
         "lieutenant":return "Find the identified lieutenant at the marked hideout and secure the next link."
-        "target":return "The dossier has located %s. Land at the marked site and apprehend or eliminate the target."%who
+        "target":
+            if String(job.get("target_approach","space"))=="space":return "The dossier has located %s. Intercept the marked system in space."%who
+            return "The dossier has located %s. Land at the named off-port hideout and apprehend or eliminate the target."%who
         "mastermind":return "The organization points to %s. Breach the final site and resolve the mastermind."%who
         "intel","evidence":return "Reach the northeast terminal on foot, defeat its Firewall, then extract the records."
         "bounty":return "The manifest identifies %s in the southeast room. Dead or alive. Secure the target and extract."%who

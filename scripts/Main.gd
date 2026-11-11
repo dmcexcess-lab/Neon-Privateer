@@ -533,15 +533,17 @@ func _on_breach_web_message(args: Array) -> void:
             var soundtrack := get_node_or_null("/root/PrivateerSoundtrack")
             if soundtrack != null:
                 soundtrack.set_embedded_game_suspended(bool(detail.get("suspended", false)))
+        "dmc-privateer-opening-call-started":
+            if first_adventure_state=="READY":
+                first_adventure_state="CALLING"
+                _save_meta()
+        "dmc-privateer-opening-call":
+            if bool(detail.get("accepted",false)) and first_adventure_state in ["READY","CALLING"]:
+                _start_first_bounty()
         "dmc-privateer-service":
             _close_breach_spaceport_request()
             var service := String(detail.get("service", "return"))
             if service == "return" or service == "travel":
-                if first_adventure_state in ["CONTACTED","OBSERVED","INTRUDED"]:
-                    first_adventure_state="COMPLETE"
-                    if last_trip_summary.begins_with("FIRST CONTRACT") or last_trip_summary.begins_with("MANIFEST ROUTE") or last_trip_summary.begins_with("CONTRACT SHORTCUT"):
-                        last_trip_summary="FIRST CONTRACT RESOLVED · OPEN WORLD CAREERS AVAILABLE"
-                    _save_meta()
                 travel_selected_planet = _default_travel_selection()
                 _reset_system_map_view()
                 travel_open = true; hub_open = false
@@ -559,6 +561,9 @@ func _on_breach_web_message(args: Array) -> void:
                 _open_profile_menu()
         "dmc-privateer-terminal":
             _close_breach_spaceport_request()
+            var active_case:Dictionary=covert_profile.get("active",{})
+            if not active_case.is_empty() and CovertCareer.next_task(active_case)=="wiretap" and bool(detail.get("illegal",false)):
+                pending_case_hack_task="wiretap"
             if _open_firewall():
                 firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)), int(detail.get("difficulty", 1)), String(detail.get("terminal", "spaceport")), bool(detail.get("hidden", false)))
                 firewall.notice = "PHYSICAL TERMINAL // BREACH BEFORE THE TRACE COMPLETES"
@@ -575,22 +580,15 @@ func _on_breach_web_message(args: Array) -> void:
         "dmc-privateer-rumor":
             var dossier:=Storyteller.observe_rumor(covert_profile,detail,_personal_story_style())
             last_trip_summary = "%s · %s" % [String(dossier.get("title","PERSONAL LEAD")),String(dossier.get("status","OPEN"))]
-            if bool(detail.get("openingAdventure",false)) and first_adventure_state=="READY":
+            if bool(detail.get("openingAdventure",false)) and first_adventure_state=="ACCEPTED":
                 first_adventure_state="CONTACTED"
                 last_trip_summary="FIRST CONTRACT · FOLLOW THE RUNNER AND VERIFY THE MANIFEST"
-                if covert_profile.active.is_empty():
-                    var opening:=CovertCareer.offer(current_planet,"track",-791,1)
-                    opening.target="Kest Arden"
-                    opening.steps=["tail","wiretap","evidence"]
-                    opening.sites.resize(3)
-                    for i in opening.sites.size():
-                        opening.sites[i]={"id":"opening:%s:%d"%[current_planet,i],"planet":current_planet,"name":["FREIGHT CONTROL OBSERVATION","UNREGISTERED MANIFEST TAP","COURIER SEAL CACHE"][i],"type":"opening_adventure","task":opening.steps[i],"discovered":true,"visited":false,"seed":abs(world_seed+7919+i*101),"station":true}
-                    covert_profile.active=opening
                 _save_meta()
                 _save_all_state()
             if bool(detail.get("subjectObserved",false)) and first_adventure_state=="CONTACTED":
                 first_adventure_state="OBSERVED"
-                last_trip_summary="MANIFEST ROUTE VERIFIED · CHOOSE CLEAN PAPERWORK OR UNAUTHORIZED ACCESS"
+                last_trip_summary="TAIL COMPLETE · KEST'S FREIGHT ROUTE IDENTIFIED · HACK AN ILLEGAL TERMINAL FOR HIS LOCATION"
+                if CovertCareer.next_task(covert_profile.get("active",{}))=="tail":_advance_active_case("tail",String(detail.get("speaker","Field surveillance")))
                 _save_meta()
             if CovertCareer.next_task(covert_profile.get("active",{}))=="rumor":_advance_active_case("rumor",String(detail.get("speaker","Dock contact")))
             _save_all_state()
@@ -613,7 +611,7 @@ func _on_breach_web_message(args: Array) -> void:
             var crime_faction_id := _planet_primary_faction(current_planet)
             if not crime_faction_id.is_empty():
                 _record_faction_crime(crime_faction_id, severity * 4, severity * 10, String(detail.get("offense", "spaceport_crime")), false)
-            if String(detail.get("offense",""))=="unauthorized_terminal_access" and first_adventure_state in ["READY","CONTACTED","OBSERVED"]:
+            if String(detail.get("offense",""))=="unauthorized_terminal_access" and first_adventure_state in ["READY","ACCEPTED","CONTACTED","OBSERVED"]:
                 first_adventure_state="INTRUDED"
                 last_trip_summary="CONTRACT SHORTCUT · ILLEGAL TERMINAL INTRUSION · SECURITY AND FACTION HEAT RAISED"
                 _save_meta()
@@ -670,7 +668,31 @@ func _active_case_context() -> Dictionary:
         if String(steps[i]) in ["target","mastermind"] and i<sites.size():accidental_site=sites[i];break
     var people:Array=job.get("people",[])
     if not people.is_empty():accidental_person=String(people[-1].get("id",""))
-    return {"id":String(job.get("id","")),"task":CovertCareer.next_task(job),"difficulty":int(job.get("difficulty",1)),"target":String(job.get("target","")),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person}
+    var task:=CovertCareer.next_task(job)
+    if task in ["rumor","wiretap"] or (bool(job.get("opening_adventure",false)) and task=="tail"):site={}
+    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(job.get("target","")),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":CovertCareer.objective(job)}
+
+func _start_first_bounty() -> bool:
+    if first_adventure_state not in ["READY","CALLING"] or not active_contract.is_empty() or not covert_profile.get("active",{}).is_empty():return false
+    var issuer:=_planet_primary_faction(current_planet)
+    var contract_id:=791000+absi(hash("%s:%d:first-bounty"%[current_planet,world_seed]))%100000
+    var contract:Dictionary={"id":contract_id,"schema":CONTRACT_SCHEMA_VERSION,"type":"bounty","origin":current_planet,"destination":current_planet,
+        "difficulty":1,"guild":"merc","required_rank":0,"reward":900,"base_reward":900,"risk_premium":0,"cargo_premium":0,"political_premium":0,"pirate_exposure":0.0,
+        "issuer_faction":issuer,"issuer_name":_contract_issuer_name(issuer),"relation_reward":3,"role":"OPENING BOUNTY","commodity":"","smuggling":false,"special_delivery":false,
+        "elapsed_seconds":0.0,"planned_hops":0,"planned_distance":0,"boss_archetype":"trapezoid","opening_adventure":true}
+    active_contract=contract
+    var opening:=CaseDirector.create(contract,1)
+    opening.id="first-bounty:%s:%d"%[current_planet,world_seed];opening.target="Kest Arden";opening.steps=["rumor","tail","wiretap","target"]
+    opening.opening_adventure=true;opening.reward=0;opening.target_approach="breach"
+    opening.sites.resize(opening.steps.size())
+    var site_names:Array[String]=["DOCKSIDE BAR LAST-KNOWN SIGHTING","FREIGHT CONTROL TAIL","UNREGISTERED ROUTE TERMINAL","OFF-PORT FREIGHT RING HIDEOUT"]
+    for i in opening.sites.size():
+        opening.sites[i]={"id":"first-bounty:%s:%d"%[current_planet,i],"planet":current_planet,"name":site_names[i],"type":"opening_bounty","task":opening.steps[i],"discovered":i==0,"visited":false,"seed":abs(world_seed+7919+i*101),"station":i==3}
+    covert_profile.active=opening
+    CovertCareer.add_entry(covert_profile,"MARA VOSS CALLED · OPENING BOUNTY AUTO-ACCEPTED: KEST ARDEN · ASK AROUND, TAIL, HACK, THEN BREACH THE HIDEOUT")
+    first_adventure_state="ACCEPTED";contract_notice="FIRST BOUNTY ACCEPTED · FOLLOW THE DOSSIER"
+    last_trip_summary="FIRST BOUNTY ACCEPTED · LAST KNOWN LOCATION: THIS STARPORT · ASK AROUND AT THE DOCKSIDE BAR"
+    _save_meta();_save_all_state();queue_redraw();return true
 
 func _advance_active_case(task: String,speaker: String="Field contact") -> bool:
     var job:Dictionary=covert_profile.get("active",{})
@@ -695,8 +717,10 @@ func _resolve_active_case() -> void:
             PoliticalWorld._replace_faction(political_world,issuer,faction)
     covert_profile.completed=int(covert_profile.get("completed",0))+1
     CovertCareer.add_entry(covert_profile,"CASE CLOSED: %s. Political and faction consequences applied."%String(job.get("target","organization")))
+    var opening_adventure:=bool(job.get("opening_adventure",false))
     covert_profile.active={};bounty_completed_this_route=true
     var payment:=_complete_contract_if_ready();research_credits+=payment
+    if opening_adventure:first_adventure_state="COMPLETE"
     last_trip_summary="CASE CLOSED · %s · %d CR · WORLD STATE CHANGED"%[String(job.get("target","TARGET")),payment]
 
 func _notification(what: int) -> void:
@@ -802,7 +826,11 @@ func _terminal_hack_finished(success: bool) -> void:
         research_credits += reward
         firewall.balance = research_credits
         last_trip_summary = "TERMINAL D%d BYPASSED · %d CR · TRACE %.0f%%" % [difficulty, reward, 100.0 * float(result.get("trace", 0.0)) / maxf(1.0, float(result.get("trace_limit", 1.0)))]
-        if not pending_case_hack_task.is_empty():_advance_active_case(pending_case_hack_task,"Eavesdrop analysis" if pending_case_hack_task=="eavesdrop" else "Wiretap analysis")
+        if not pending_case_hack_task.is_empty():
+            if bool(covert_profile.get("active",{}).get("opening_adventure",false)) and pending_case_hack_task=="wiretap":
+                first_adventure_state="LOCATED"
+                last_trip_summary="ILLEGAL TERMINAL DECRYPTED · KEST'S LAST KNOWN LOCATION: OFF-PORT FREIGHT RING HIDEOUT"
+            _advance_active_case(pending_case_hack_task,"Eavesdrop analysis" if pending_case_hack_task=="eavesdrop" else "Wiretap analysis")
     elif bool(result.get("detected", false)):
         breach_port_security_alert = true
         var faction_id := _planet_primary_faction(current_planet)
@@ -3227,7 +3255,9 @@ func _begin_bounty_boss() -> void:
 func _handle_route_end() -> void:
     if not route_active:
         return
-    var bounty_due: bool = _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty" and covert_profile.get("active",{}).is_empty()
+    var active_case:Dictionary=covert_profile.get("active",{})
+    var target_is_space:bool=not active_case.is_empty() and CovertCareer.next_task(active_case)=="target" and String(active_case.get("target_approach","space"))=="space"
+    var bounty_due: bool = _contract_target_matches(destination_planet) and String(active_contract.get("type", "")) == "bounty" and (active_case.is_empty() or target_is_space)
     if bounty_due and not bounty_completed_this_route:
         _begin_bounty_boss()
         return
@@ -3267,6 +3297,9 @@ func _arrive_at_destination() -> void:
     boss_defeated_pending = false
     current_planet = destination_planet
     destination_planet = ""
+    var target_case:Dictionary=covert_profile.get("active",{})
+    if bounty_completed_this_route and not target_case.is_empty() and CovertCareer.next_task(target_case)=="target" and String(target_case.get("target_approach","space"))=="space" and String(target_case.get("planet",""))==current_planet:
+        _advance_active_case("target","Space interception")
     var flight_bonus := maxi(0, score)
     research_credits += flight_bonus
     score = 0
@@ -5137,7 +5170,7 @@ func _load_meta() -> void:
     # Careers created before the guided tour existed remain uninterrupted.
     tutorial_complete = bool(cfg.get_value("meta", "tutorial_complete", true))
     first_adventure_state = String(cfg.get_value("meta", "first_adventure_state", "READY"))
-    if first_adventure_state not in ["READY","CONTACTED","OBSERVED","INTRUDED","COMPLETE"]:first_adventure_state="READY"
+    if first_adventure_state not in ["READY","CALLING","ACCEPTED","CONTACTED","OBSERVED","INTRUDED","LOCATED","COMPLETE"]:first_adventure_state="READY"
     if not _weapon_start_unlocked(starting_weapon):
         starting_weapon = "none"
 

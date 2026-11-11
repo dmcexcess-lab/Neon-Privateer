@@ -54,6 +54,7 @@ vm.runInNewContext(source+`
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
   startPrivateerMission,finishPrivateerMission,enterPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
   discoverPortStations,nearbyStation,nearbyPortActor,interactPort,
+  advanceOpeningCall,openingCallActive(){return openingCall.active;},
   setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
@@ -72,11 +73,17 @@ test('full spaceports support armed play and guards react to gunfire',()=>{
   b.setPrivateerContext(null);
 });
 
-test('first adventure begins in the port and links named contact, courier, and risky legal-contract shortcut',()=>{
+test('first bounty opens with a one-shot call, auto-accepts, and teaches ask-around, tail, hack, and hideout clues',()=>{
   const context={mode:'spaceport',requestId:'opening-adventure',seed:73,arrivalSeed:1901,planetId:'opening-port',planetName:'New Dawn',faction:'Port Authority',firstAdventure:{active:true,step:'READY',contactName:'Mara Voss'},loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
   const mara=b.game.world.actors.find(actor=>actor.openingContact),kest=b.game.world.actors.find(actor=>actor.openingSubject);
   assert.ok(mara&&kest);assert.equal(mara.name,'Mara Voss');assert.equal(kest.name,'Kest Arden');
+  assert.equal(b.openingCallActive(),true,'first normal port landing plays the authored phone call');
+  b.game.player.x=mara.x;b.game.player.y=mara.y;b.interactPort();
+  assert.equal(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'),false,'the cinematic blocks port actions until answered');
+  const clock=b.game.portClock;b.updatePort(.4);assert.equal(b.game.portClock,clock,'the port scene waits under the dialogue');
+  for(let i=0;i<4;i++)b.advanceOpeningCall();
+  assert.equal(b.openingCallActive(),false);assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-opening-call'&&message.detail.accepted),'the call ends with an automatic bounty acceptance');
   b.game.player.x=mara.x;b.game.player.y=mara.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.openingAdventure),'opening contact delivers the authored job');
   kest.target={x:kest.x,y:kest.y};kest.speed=0;
@@ -87,6 +94,7 @@ test('first adventure begins in the port and links named contact, courier, and r
   b.game.player.x=kest.x+150;
   for(let i=0;i<170;i++)b.updatePort(.034);
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.subjectObserved),'a sustained sneaking listen yields the manifest lead');
+  assert.equal(b.game.world.caseContext.task,'wiretap','eavesdropping advances the live objective toward an illegal terminal');
   b.game.world.activeContract=true;const terminal=b.game.world.stations.find(station=>station.service==='terminal');
   b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='unauthorized_terminal_access'&&message.detail.witnessed),'illegal shortcut during the legal contract raises witnessed law response');
@@ -133,22 +141,26 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   b.setPrivateerContext(null);
 });
 
-test('active cases expose named off-port landings and tailored wiretap or field operations',()=>{
-  const site={id:'site:44:1',name:'ORBITAL ANNEX 44',type:'orbital_annex',task:'wiretap',seed:9981,station:true,discovered:true};
+test('active cases use illegal port terminals for wiretaps and named off-port landings for field operations',()=>{
+  const site={id:'site:44:1',name:'ORBITAL ANNEX 44',type:'orbital_annex',task:'tail',seed:9981,station:true,discovered:true};
   const accidentalSite={id:'site:44:8',name:'SAFEHOUSE 91',type:'safehouse',task:'mastermind',seed:771,discovered:false};
-  const context={mode:'spaceport',requestId:'case-site-test',seed:885,arrivalSeed:2001,planetId:'p-case',planetName:'Case Port',faction:'Case Authority',caseContext:{id:'case:44',task:'wiretap',difficulty:4,target:'Sera Quill',site,accidentalSite,accidentalPerson:'suspect:44:3'},loadout:{weapon:'hands'}};
+  const context={mode:'spaceport',requestId:'case-site-test',seed:885,arrivalSeed:2001,planetId:'p-case',planetName:'Case Port',faction:'Case Authority',caseContext:{id:'case:44',task:'tail',difficulty:4,target:'Sera Quill',site,accidentalSite,accidentalPerson:'suspect:44:3'},loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
   const landing=b.game.world.stations.find(station=>station.service==='case_site');
   assert.ok(landing&&landing.label.includes('ORBITAL ANNEX 44'),'case creates an actual landing distinct from the main starport');
-  b.game.player.x=landing.x;b.game.player.y=landing.y;b.interactPort();
-  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-case-hack'&&message.detail.site===site.id&&message.detail.difficulty===4),'wiretap landing launches the contextual Privateer Firewall');
   const unknown=b.game.world.stations.find(station=>station.accidental);b.game.player.x=unknown.x;b.game.player.y=unknown.y;b.interactPort();
   assert.ok(privateerMessages.some(item=>item.type==='dmc-privateer-case-discovery'&&item.detail.site===accidentalSite.id),'exploration can uncover the real target before the planned clue chain');
+  b.game.player.x=landing.x;b.game.player.y=landing.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-loading'&&message.detail.mode==='case-site'),'tail landing launches a tailored field operation in the larger career');
+  const wiretapContext={...context,caseContext:{...context.caseContext,task:'wiretap',site:{},difficulty:4}};
+  b.enterPrivateerPort(wiretapContext);assert.equal(b.game.world.stations.some(station=>station.service==='case_site'&&!station.accidental),false,'wiretaps are done at the visible terminals in the regular port');
+  const terminal=b.game.world.stations.find(station=>station.service==='terminal');b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
+  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-terminal'&&message.detail.illegal),'the clue uses a visible illegal terminal rather than a detached hack node');
   const audioSite={...site,id:'site:44:2',task:'eavesdrop'};
   const audioContext={...context,caseContext:{...context.caseContext,task:'eavesdrop',site:audioSite}};
   b.enterPrivateerPort(audioContext);const audioLanding=b.game.world.stations.find(station=>station.service==='case_site'&&!station.accidental);
   b.game.player.x=audioLanding.x;b.game.player.y=audioLanding.y;b.interactPort();
-  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-case-hack'&&message.detail.task==='eavesdrop'),'eavesdropping uses the contextual Firewall audio tap rather than a generic shooter level');
+  assert.equal(b.game.caseTask,'eavesdrop','eavesdropping is a real surveillance operation, not another hack');
   b.setPrivateerContext(null);
 });
 
@@ -183,6 +195,13 @@ test('case field objectives require actual tailing, stakeout, and target complet
   b.game.player.x=b.game.caseSubject.x+400;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.player.moving=false;b.game.detectedThisFloor=false;b.game.mode='PLAY';
   b.updateCaseObjective(8);assert.equal(b.game.caseProgress,8,'stakeout requires a still, distant, concealed observation window');
   b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'stakeout','stakeout advances only after the observation window');
+
+  b.startPrivateerMission({style:'stealth',caseTask:'eavesdrop',contact:'Kest Arden',difficulty:2,seed:915});
+  const beforeEavesdrop=privateerMessages.length;b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.length,beforeEavesdrop,'eavesdropping cannot complete before listening in the field');
+  b.game.player.x=b.game.caseSubject.x+100;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  b.updateCaseObjective(6);assert.equal(b.game.caseProgress,6,'eavesdropping requires close, concealed listening');
+  b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'eavesdrop','the overheard lead advances the dossier');
 
   b.startPrivateerMission({style:'hot',caseTask:'mastermind',contact:'Sera Quill',difficulty:3,seed:913});
   const before=privateerMessages.length;b.finishPrivateerMission('completed');

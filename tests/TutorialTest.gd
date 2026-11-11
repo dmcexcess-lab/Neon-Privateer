@@ -1,4 +1,5 @@
 extends SceneTree
+const CovertCareer=preload("res://covert/CovertCareer.gd")
 
 var failures: Array[String] = []
 var checks := 0
@@ -19,6 +20,21 @@ func run() -> void:
     check(scene._create_new_career(1), "new career created")
     check(not scene.tutorial_open and scene.tutorial_complete, "new career skips modal field guide")
     check(scene.first_adventure_state == "READY", "new career begins authored first adventure")
+    scene.first_adventure_state="CALLING"
+    check(scene._start_first_bounty(),"answering the opening cinematic auto-accepts the first bounty")
+    check(scene.active_contract.type=="bounty" and scene.active_contract.destination==scene.current_planet,"opening bounty belongs to the full Privateer contract ledger")
+    check(scene.covert_profile.active.steps==["rumor","tail","wiretap","target"] and scene.covert_profile.active.target=="Kest Arden","opening case preserves the ask-around, tail, terminal clue and target sequence")
+    check(not scene._start_first_bounty(),"the opening contract cannot be duplicated")
+    check(scene._advance_active_case("rumor","Mara Voss") and CovertCareer.next_task(scene.covert_profile.active)=="tail","asking around advances the persistent career dossier")
+    scene.first_adventure_state="CONTACTED"
+    check(scene._advance_active_case("tail","Field surveillance") and CovertCareer.next_task(scene.covert_profile.active)=="wiretap","tailing reveals the illegal terminal objective")
+    scene.first_adventure_state="OBSERVED"
+    check(scene._advance_active_case("wiretap","Terminal intercept") and CovertCareer.next_task(scene.covert_profile.active)=="target","the hack reveals the hideout clue")
+    scene.first_adventure_state="LOCATED"
+    check(scene._advance_active_case("target","Hideout breach"),"the target encounter resolves through the Privateer case system")
+    check(scene.first_adventure_state=="COMPLETE" and scene.active_contract.is_empty() and scene.covert_profile.active.is_empty(),"closing the authored mission clears and pays the full-game bounty")
+    check(scene.research_credits>=900,"opening bounty rewards the career wallet")
+    scene._create_new_career(1)
     var meta := ConfigFile.new()
     check(meta.load(scene._active_meta_path()) == OK and meta.get_value("meta", "first_adventure_state", "") == "READY", "opening adventure state persists")
 

@@ -11,11 +11,11 @@ static func _person(seed_number: int,index: int,role: String) -> Dictionary:
 
 static func _steps(tier: int) -> Array[String]:
     match clampi(tier,1,5):
-        1:return ["rumor","tail","breach","target"]
-        2:return ["rumor","wiretap","tail","breach","target"]
-        3:return ["stakeout","wiretap","eavesdrop","breach","target"]
+        1:return ["rumor","tail","wiretap","target"]
+        2:return ["rumor","tail","wiretap","breach","target"]
+        3:return ["rumor","tail","wiretap","eavesdrop","breach","target"]
         4:return ["rumor","stakeout","wiretap","tail","breach","lieutenant","eavesdrop","mastermind"]
-        _:return ["stakeout","wiretap","tail","breach","lieutenant","wiretap","eavesdrop","breach","mastermind"]
+        _:return ["rumor","stakeout","wiretap","tail","breach","lieutenant","wiretap","eavesdrop","breach","mastermind"]
     return []
 
 static func create(contract: Dictionary,merc_rank: int=0) -> Dictionary:
@@ -39,7 +39,7 @@ static func create(contract: Dictionary,merc_rank: int=0) -> Dictionary:
             "discovered":i==0,"visited":false,"seed":seed_number+i*7919,"station":site_type in ["orbital_annex","freighter","relay_station"]})
     return {"id":"case:%s"%str(contract.get("id",seed_number)),"planet":case_planet,
         "type":"criminal_merc" if criminal else "faction_case","target":str(people[-1].name),"people":people,"steps":steps,"sites":sites,"stage":0,
-        "difficulty":tier,"guild":str(contract.get("guild","")),"required_rank":int(contract.get("required_rank",0)),"criminal":criminal,
+        "difficulty":tier,"guild":str(contract.get("guild","")),"required_rank":int(contract.get("required_rank",0)),"criminal":criminal,"target_approach":"space" if seed_number%2==0 else "breach",
         "reward":0,"seed":seed_number,"issuer_faction":str(contract.get("issuer_faction","")),"issuer_name":str(contract.get("issuer_name","INDEPENDENT CLIENT")),
         "mastermind":people[-1] if tier>=4 else {},"world_effect":{"strength":.015*tier,"relation":2+tier,"destabilize":.01*maxi(0,tier-2)},
         "journal_origin":"Contract converted to a multi-stage Privateer case."}
