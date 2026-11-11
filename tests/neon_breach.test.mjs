@@ -82,12 +82,38 @@ test('full spaceports support armed play and guards react to gunfire',()=>{
   assert.equal(b.game.mode,'PORT');assert.equal(b.game.player.weapon,'auto_pistol');
   const civilian=b.game.world.actors.find(actor=>actor.kind==='civilian');
   civilian.x=b.game.player.x+50;civilian.y=b.game.player.y;civilian.hp=2;
+  const guards=b.game.world.actors.filter(actor=>actor.kind==='guard');
+  guards.forEach((guard,index)=>{guard.alert=false;guard.x=b.game.player.x+(index===0?220:2500+index*500);guard.y=b.game.player.y;guard.facing=Math.PI;});
   b.makeBullet(b.game.player.x,b.game.player.y,0,'player',.75,440,'#fff',4);
   b.updateBullets(.05);
   assert.ok(civilian.hp<2,'player bullet damages a civilian inside the persistent port');
-  assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'a witnessed shooting alerts every living patrol');
+  assert.ok(guards[0].alert,'a nearby patrol hears the shot and responds');
+  assert.ok(guards.slice(1).every(guard=>!guard.alert),'distant patrols do not receive a map-wide alert: '+JSON.stringify(guards.map(guard=>({x:guard.x,alert:guard.alert}))));
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='assault_civilian'),'the full game receives the port crime');
   b.setPrivateerContext(null);
+});
+
+test('port crime detection checks line of sight and lets nearby civilians report locally',()=>{
+  const guard=(id,x,y,facing=0)=>({id,kind:'guard',x,y,facing,target:{x:x+100,y},alert:false,down:false});
+  const civilian=(id,x,y)=>({id,kind:'civilian',x,y,down:false,robbed:false});
+  b.game.player={x:0,y:0,hp:10,maxHp:10,weapon:'hands'};
+  b.game.world={...openWorld(),isSpaceport:true,planetName:'TEST',actors:[guard('visible',200,0,Math.PI),guard('distant',1700,0,Math.PI)],crime:{heat:0,witnessed:false}};
+  let response=b.reportPortCrime('test_visible',1);
+  assert.equal(response.respondingGuards,1,'only the officer with nearby unobstructed sight reacts');
+  assert.equal(b.game.world.actors[0].alert,true);assert.equal(b.game.world.actors[1].alert,false);
+
+  const blocked={...openWorld(),isSpaceport:true,planetName:'TEST',actors:[guard('blocked',200,0,Math.PI)],crime:{heat:0,witnessed:false}};
+  blocked.rooms[0].cover.push({x:100,y:0,w:70,h:90,hp:999,maxHp:999});
+  b.game.world=blocked;response=b.reportPortCrime('test_occluded',1);
+  assert.equal(response.witnessed,false,'a solid interior wall blocks the guard sightline');
+  assert.equal(blocked.actors[0].alert,false,'an occluded nearby patrol stays on its routine');
+
+  const local=guard('local_radio',720,0),remote=guard('remote_radio',1900,0);
+  b.game.world={...openWorld(),isSpaceport:true,planetName:'TEST',actors:[civilian('witness',60,0),local,remote],crime:{heat:0,witnessed:false}};
+  response=b.reportPortCrime('test_crowd_witness',1);
+  assert.equal(response.witnessCount,1,'a nearby unobstructed civilian witnesses the offense');
+  assert.equal(local.alert,true,'a local officer receives the witness report');
+  assert.equal(remote.alert,false,'a distant patrol remains unaware');
 });
 
 test('first bounty opens with a one-shot call, auto-accepts, and teaches ask-around, tail, hack, and hideout clues',()=>{
@@ -113,9 +139,12 @@ test('first bounty opens with a one-shot call, auto-accepts, and teaches ask-aro
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.subjectObserved),'a sustained sneaking listen yields the manifest lead');
   assert.equal(b.game.world.caseContext.task,'wiretap','eavesdropping advances the live objective toward an illegal terminal');
   b.game.world.activeContract=true;const terminal=b.game.world.stations.find(station=>station.service==='terminal');
+  const guards=b.game.world.actors.filter(actor=>actor.kind==='guard');
+  guards.forEach((guard,index)=>{guard.alert=false;guard.x=index===0?terminal.x+60:terminal.x+2500+index*400;guard.y=terminal.y;guard.facing=Math.PI;});
   b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='unauthorized_terminal_access'&&message.detail.witnessed),'illegal shortcut during the legal contract raises witnessed law response');
-  assert.ok(b.game.world.actors.filter(actor=>actor.kind==='guard').every(guard=>guard.alert),'terminal intrusion alerts port guards');
+  assert.equal(guards[0].alert,true,'the nearby officer at the terminal responds');
+  assert.ok(guards.slice(1).every(guard=>!guard.alert),'distant officers do not teleport into the response');
   b.setPrivateerContext(null);
 });
 

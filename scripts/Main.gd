@@ -613,14 +613,15 @@ func _on_breach_web_message(args: Array) -> void:
             var severity := maxi(1, int(detail.get("severity", 1)))
             research_credits += maxi(0, int(detail.get("cash", 0)))
             var crime_faction_id := _planet_primary_faction(current_planet)
-            if not crime_faction_id.is_empty():
+            var witnessed:=bool(detail.get("witnessed",false))
+            if witnessed and not crime_faction_id.is_empty():
                 _record_faction_crime(crime_faction_id, severity * 4, severity * 10, String(detail.get("offense", "spaceport_crime")), false)
             if String(detail.get("offense",""))=="unauthorized_terminal_access" and first_adventure_state in ["READY","ACCEPTED","CONTACTED","OBSERVED"]:
                 first_adventure_state="INTRUDED"
-                last_trip_summary="CONTRACT SHORTCUT · ILLEGAL TERMINAL INTRUSION · SECURITY AND FACTION HEAT RAISED"
+                last_trip_summary="CONTRACT SHORTCUT · ILLEGAL TERMINAL INTRUSION · %s"%["WITNESSED / SECURITY AND FACTION HEAT RAISED" if witnessed else "UNWITNESSED / SECURITY HAS NO LEAD"]
                 _save_meta()
             elif String(detail.get("offense",""))!="unauthorized_terminal_access":
-                last_trip_summary = "Spaceport crime witnessed" if bool(detail.get("witnessed", false)) else "Unreported spaceport robbery"
+                last_trip_summary = "Spaceport crime witnessed" if witnessed else "Unreported spaceport crime"
             _save_all_state()
         "dmc-privateer-mission-result":
             _close_breach_spaceport_request()
