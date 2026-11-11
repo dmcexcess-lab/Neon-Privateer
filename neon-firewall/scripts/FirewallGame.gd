@@ -8,6 +8,8 @@ var challenge_settled := false
 var challenge_terminal := "spaceport"
 var challenge_hidden := false
 var challenge_result: Dictionary = {}
+var case_puzzle: Dictionary = {}
+var case_answer_entry: LineEdit
 var dealer_mode := false
 signal exit_requested
 const Simulation = preload("FirewallSimulation.gd")
@@ -58,6 +60,13 @@ func _ready() -> void:
         if embedded:configure(default_profile(),0)
         else:_load_last_slot()
     _setup_audio()
+    case_answer_entry=LineEdit.new();case_answer_entry.position=Vector2(38,410);case_answer_entry.size=Vector2(314,48);case_answer_entry.max_length=24
+    case_answer_entry.placeholder_text="TYPE PASSWORD OR CODE"
+    case_answer_entry.add_theme_color_override("font_color",GREEN);case_answer_entry.add_theme_color_override("font_placeholder_color",MUTED)
+    var answer_style:=StyleBoxFlat.new();answer_style.bg_color=Color("0e1c2b");answer_style.border_color=CYAN;answer_style.set_border_width_all(1);answer_style.set_corner_radius_all(4)
+    case_answer_entry.add_theme_stylebox_override("normal",answer_style);case_answer_entry.add_theme_stylebox_override("focus",answer_style)
+    case_answer_entry.text_submitted.connect(_submit_case_puzzle)
+    add_child(case_answer_entry);case_answer_entry.hide()
     queue_redraw()
 
 func configure(data: Dictionary, cash: int) -> void:
@@ -109,11 +118,11 @@ func persist() -> void:
         else:notice="SAVE FAILED // KEEP THIS TAB OPEN";notice_clock=5
     save_clock=0.0
 
-func start_challenge(data: Dictionary, seed_number: int, difficulty: int = 1, terminal: String = "spaceport", hidden: bool = false) -> void:
+func start_challenge(data: Dictionary, seed_number: int, difficulty: int = 1, terminal: String = "spaceport", hidden: bool = false, encrypted_clue: Dictionary = {}) -> void:
     var linked_balance:=balance
     configure(data,linked_balance)
     challenge_mode=true;challenge_settled=false;dealer_mode=false
-    challenge_terminal=terminal;challenge_hidden=hidden;challenge_result={}
+    challenge_terminal=terminal;challenge_hidden=hidden;challenge_result={};case_puzzle=encrypted_clue.duplicate(true)
     sim.new_challenge(profile.research,seed_number if seed_number>0 else int(Time.get_ticks_usec()%2147483646)+1,difficulty)
     credited_earned=0;credited_destroyed=0;cleared_stage=0;death_recorded=false
     profile.run=sim.snapshot();phase="PLAY";confirm_new=false;particles.clear();floats.clear()
@@ -219,7 +228,10 @@ func _settle_events() -> void:
         if challenge_mode and not challenge_settled:
             challenge_settled=true
             challenge_result={"success":true,"detected":false,"aborted":false,"difficulty":sim.security_difficulty,"reward":challenge_reward(),"trace":sim.stage_time,"trace_limit":sim.trace_limit,"terminal":challenge_terminal,"hidden":challenge_hidden}
-            challenge_finished.emit(true)
+            if not case_puzzle.is_empty():
+                phase="DECRYPT";case_answer_entry.text="";case_answer_entry.show();case_answer_entry.grab_focus()
+                notice="FIREWALL CLEARED // ENCRYPTED CLUE RECOVERED";notice_clock=0;persist()
+            else:challenge_finished.emit(true)
     elif sim.state=="dead":
         if not death_recorded:profile.deaths=int(profile.deaths)+1;death_recorded=true
         phase="DEAD";persist()
@@ -233,6 +245,9 @@ func _move_paddle(x: float) -> void:
 
 func _input(event: InputEvent) -> void:
     if not is_visible_in_tree() or event.device==InputEvent.DEVICE_ID_EMULATION:return
+    if phase=="DECRYPT":
+        if event is InputEventKey and event.pressed and event.keycode==KEY_ESCAPE:_cancel_case_puzzle()
+        return
     if event is InputEventKey:
         if event.keycode in [KEY_A,KEY_LEFT]:left_held=event.pressed
         if event.keycode in [KEY_D,KEY_RIGHT]:right_held=event.pressed
@@ -251,6 +266,10 @@ func _input(event: InputEvent) -> void:
     elif event is InputEventScreenDrag and phase=="PLAY" and event.index==touch_index:_move_paddle(event.position.x)
 
 func _tap(pos: Vector2) -> void:
+    if phase=="DECRYPT":
+        if Rect2(24,490,342,62).has_point(pos):_submit_case_puzzle(case_answer_entry.text)
+        elif Rect2(24,570,342,62).has_point(pos):_cancel_case_puzzle()
+        return
     if challenge_mode and phase=="PAUSE":
         if Rect2(28,310,334,58).has_point(pos):phase="PLAY"
         elif Rect2(28,390,334,58).has_point(pos):persist()
@@ -349,6 +368,7 @@ func _draw() -> void:
     draw_rect(Rect2(0,0,W,H),Color("080b14"))
     for x in range(0,391,26):draw_line(Vector2(x,0),Vector2(x,H),Color("102131"),1)
     for y in range(-26,870,26):draw_line(Vector2(0,y+fmod(ui_time*8,26)),Vector2(W,y+fmod(ui_time*8,26)),Color("102131"),1)
+    if phase=="DECRYPT":_draw_case_puzzle();return
     if phase in ["PLAY","PAUSE"]:
         _draw_board()
         if phase=="PAUSE":
@@ -380,6 +400,41 @@ func _draw() -> void:
     _center("CLICK / SPACE LAUNCHES. SPACE ALSO FIRES LASERS.",747,9,MUTED)
     _center("P / ESC PAUSES. AUTOSAVE + MANUAL SAVE.",769,9,MUTED)
     if notice_clock>0:_center(notice,808,9,GREEN)
+
+func _draw_case_puzzle() -> void:
+    _center("FIREWALL BYPASSED // ENCRYPTED EVIDENCE",56,15,GOLD)
+    _center(String(case_puzzle.get("type","CODE")).replace("_"," ").to_upper()+" · SECURITY D%d"%int(case_puzzle.get("difficulty",1)),88,12,CYAN)
+    _panel(Rect2(22,112,346,350),CYAN,Color("0b1520"))
+    var lines:Array=case_puzzle.get("prompt",[])
+    var y:=145.0
+    var line_step:=minf(22.0,270.0/maxf(1.0,float(lines.size())))
+    for line in lines:
+        _text(String(line),Vector2(34,y),11,GOLD if String(line).begins_with("WORD BANK") else CYAN)
+        y+=line_step
+    _center("DECODE THE PASSWORD TO REVEAL THE CASE LEAD",476,10,MUTED)
+    _button(Rect2(24,490,342,62),"DECRYPT CLUE / SUBMIT CODE",true,GREEN)
+    _button(Rect2(24,570,342,62),"LEAVE CLUE ENCRYPTED / ABORT",true,RED)
+    _center("TAP INPUT · ENTER ANSWER · SUBMIT",676,10,MUTED)
+    _center("Correct codes add decoded evidence to your dossier.",706,10,CYAN)
+    if notice_clock>0:_center(notice,758,12,RED)
+
+func _submit_case_puzzle(_submitted: String="") -> void:
+    if phase!="DECRYPT" or case_puzzle.is_empty():return
+    var guess:=case_answer_entry.text.to_upper().strip_edges().replace(" ","").replace(",","")
+    var answer:=String(case_puzzle.get("answer","")).to_upper().strip_edges().replace(" ","").replace(",","")
+    if guess!=answer:
+        notice="CODE REJECTED // CLUE REMAINS ENCRYPTED";notice_clock=3;case_answer_entry.text="";queue_redraw();return
+    challenge_result["decrypted"]=true
+    challenge_result["puzzle_type"]=String(case_puzzle.get("type",""))
+    challenge_result["ciphertext"]=String(case_puzzle.get("ciphertext",""))
+    challenge_result["decoded_clue"]=String(case_puzzle.get("decoded_clue",""))
+    challenge_result["answer"]=String(case_puzzle.get("answer",""))
+    case_answer_entry.hide();case_answer_entry.release_focus();case_puzzle={};challenge_finished.emit(true)
+
+func _cancel_case_puzzle() -> void:
+    if phase!="DECRYPT":return
+    challenge_result["success"]=false;challenge_result["aborted"]=true;challenge_result["puzzle_aborted"]=true;challenge_result["reward"]=0
+    case_answer_entry.hide();case_answer_entry.release_focus();case_puzzle={};challenge_finished.emit(false)
 
 func _draw_profiles() -> void:
     _center("SAVE / LOAD PROFILES",105,26)

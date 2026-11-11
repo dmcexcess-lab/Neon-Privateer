@@ -13,7 +13,6 @@ var case_answer_entry: LineEdit
 var dealer_mode := false
 signal exit_requested
 const Simulation = preload("FirewallSimulation.gd")
-const CasePuzzle = preload("res://covert/CasePuzzle.gd")
 const W := 390.0
 const H := 844.0
 const CYAN := Color("5af0ff")
@@ -421,7 +420,9 @@ func _draw_case_puzzle() -> void:
 
 func _submit_case_puzzle(_submitted: String="") -> void:
     if phase!="DECRYPT" or case_puzzle.is_empty():return
-    if not CasePuzzle.is_correct(case_puzzle,case_answer_entry.text):
+    var guess:=case_answer_entry.text.to_upper().strip_edges().replace(" ","").replace(",","")
+    var answer:=String(case_puzzle.get("answer","")).to_upper().strip_edges().replace(" ","").replace(",","")
+    if guess!=answer:
         notice="CODE REJECTED // CLUE REMAINS ENCRYPTED";notice_clock=3;case_answer_entry.text="";queue_redraw();return
     challenge_result["decrypted"]=true
     challenge_result["puzzle_type"]=String(case_puzzle.get("type",""))
