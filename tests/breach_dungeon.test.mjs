@@ -152,7 +152,7 @@ for(const service of ['trade','bank','contracts','upgrades','firewall_dealer','c
   assert.ok(building&&entry,`${service} is a named service building with an interior menu counter`);
   assert.ok(entry.x>building.x&&entry.x<building.x+building.w&&entry.y>building.y&&entry.y<building.y+building.h,`${service} menu is inside the building, not on a door`);
 }
-assert.ok(port.stations.some(s=>s.service==='dossier'),'the personal dossier remains an in-world interaction');
+assert.ok(!port.stations.some(s=>s.service==='dossier'),'the personal journal is not a physical port location');
 const illegalTerminals=port.stations.filter(s=>s.service==='terminal');
 const randomTerminals=illegalTerminals.filter(s=>s.id!=='terminal');
 assert.ok(randomTerminals.length>=4&&randomTerminals.length<=7,'each arrival places several illegal terminals around the port');

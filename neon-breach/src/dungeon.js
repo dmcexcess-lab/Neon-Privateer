@@ -399,7 +399,6 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     cleared:true,opened:true,spawned:true,depth:0,exit:false,exfil:false,cover:[],caches:[],enemies:[],ornaments:[]}));
   const stations=[
     {id:'return',service:'return',x:0,y:-930,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
-    {id:'dossier',service:'dossier',x:-560,y:-160,label:'PERSONAL DOSSIER · CLUES & OPEN THREADS',short:'DOSSIER',color:'#b999ff'},
     {id:'terminal',service:'terminal',x:1700,y:420,label:'ILLEGAL TERMINAL · SECURITY D1',short:'HACK',color:'#ff60bd',difficulty:1,illegal:true,hidden:false,discovered:true},
     {id:'alley',service:'alley',x:-1080,y:850,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];

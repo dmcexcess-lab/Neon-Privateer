@@ -155,8 +155,10 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='contracts'),'the guild menu opens from its building entrance');
   const venue=b.game.world.stations.find(station=>station.service==='venue'&&station.venueKind==='club');b.game.player.x=venue.x;b.game.player.y=venue.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-venue'&&message.detail.kind==='club'),`clubs feed the needs and relationship layer: ${JSON.stringify(privateerMessages.slice(-4))}`);
-  const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
-  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-dossier'),'personal clue dossiers are available in the port world');
+  assert.equal(b.game.world.stations.some(station=>station.service==='dossier'),false,'the journal is not a physical port location');
+  elements.get('dossierButton').dispatch('click');
+  assert.ok(b.game.dossierOpen&&privateerMessages.some(message=>message.type==='dmc-privateer-dossier'),'the player HUD button opens personal clue dossiers');
+  elements.get('dossierDone').dispatch('click');
   b.enterPrivateerPort({...context,arrivalSeed:9082,contacts:{...contact,[known.contactId]:{...contact[known.contactId],appearance:contactMessage.detail.appearance}}});
   assert.deepEqual(b.game.world.actors.find(actor=>actor.contactId===known.contactId).appearance,known.appearance,'revisited known contact retains their original appearance');
   b.setPrivateerContext(null);
@@ -176,8 +178,9 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-loading'&&message.detail.mode==='case-site'),'tail landing launches a tailored field operation in the larger career');
   const wiretapContext={...context,caseContext:{...context.caseContext,task:'wiretap',site:{},difficulty:4,clues:[{kind:'wiretap',status:'VERIFIED',text:'Terminal traffic captured',encrypted:true,puzzle_type:'word_find',ciphertext:'R E L A Y',decoded:'NEXT LEAD: RELAY STATION 44 / Vesper'}]}};
   b.enterPrivateerPort(wiretapContext);assert.equal(b.game.world.stations.some(station=>station.service==='case_site'&&!station.accidental),false,'wiretaps are done at the visible terminals in the regular port');
-  const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
-  assert.match(elements.get('dossierContent').innerHTML,/DECRYPTED VIA WORD FIND · NEXT LEAD: RELAY STATION 44 \/ Vesper/,'decoded clue and puzzle type appear in the full in-world dossier');
+  elements.get('dossierButton').dispatch('click');
+  assert.match(elements.get('dossierContent').innerHTML,/DECRYPTED VIA WORD FIND · NEXT LEAD: RELAY STATION 44 \/ Vesper/,'decoded clue and puzzle type appear in the full dossier opened from the player HUD');
+  elements.get('dossierDone').dispatch('click');
   const terminal=b.game.world.stations.find(station=>station.service==='terminal');b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-terminal'&&message.detail.illegal),'the clue uses a visible illegal terminal rather than a detached hack node');
   const audioSite={...site,id:'site:44:2',task:'eavesdrop'};
@@ -193,9 +196,11 @@ test('Privateer dossier browses every clue with source, confidence, location and
   const evidence=clues.slice(1).map((clue,index)=>({id:`evidence-${index+1}`,kind:'wiretap',site_id:clue.site_id,source:clue.source,verified:true}));
   const context={mode:'spaceport',requestId:'dossier-browser',seed:601,arrivalSeed:601,planetId:'p-dossier',planetName:'Dossier Port',caseContext:{id:'case-dossier',target:'Sera Quill',task:'wiretap',difficulty:4,dossierSummary:'6 clues · 2 suspects · next wiretap',objective:'Visit Relay Station',leadPlanetName:'Vesper',clues,suspects:[{id:'suspect-a',name:'Sera Quill',role:'Target',status:'SUSPECTED'}],evidence},loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
-  const station=b.game.world.stations.find(item=>item.service==='dossier');b.game.player.x=station.x;b.game.player.y=station.y;b.interactPort();
+  assert.equal(b.game.world.stations.some(item=>item.service==='dossier'),false,'there is no physical dossier station');
+  assert.match(html,/id="dossierButton"[^>]*>JOURNAL</,'the HUD contains a labeled, player-clickable journal button');
+  elements.get('dossierButton').dispatch('click');
   const panel=elements.get('caseDossier'),content=elements.get('dossierContent').innerHTML;
-  assert.equal(b.game.dossierOpen,true,'opening the physical dossier pauses port simulation');
+  assert.equal(b.game.dossierOpen,true,'opening the HUD journal pauses port simulation');
   assert.equal((content.match(/id="dossier-clue-/g)||[]).length,6,'the entire clue history is shown rather than only the latest four');
   assert.match(content,/SOURCE · Contact 1 · LOCATION · Planet 1/);
   assert.match(content,/CONFIDENCE · 95%/);

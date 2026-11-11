@@ -115,6 +115,7 @@ function updateUI(){
  $('location').textContent=game.world.isSpaceport?
    `${game.world.planetName} SPACEPORT · ${game.world.actors.filter(a=>!a.down).length} LOCALS · HEAT ${game.world.crime.heat}`:
    `${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`;
+ show('dossierButton',!!privateerContext&&['PORT','PLAY'].includes(game.mode));
 }
 function enterHQ(message='FIELD LOADOUT READY'){
   if(game.profile.unlockedFloor>1)saveProfile();
@@ -269,10 +270,6 @@ function interactPort(){
       privateerMessage('dmc-privateer-venue',{kind:station.venueKind,venue:station.venue});
       announce(`${station.venue} · REST, SOCIALIZE, AND MEET CONTACTS`,3);
     }
-    else if(station.service==='dossier'){
-      openCaseDossier();
-      privateerMessage('dmc-privateer-dossier',{});
-    }
     else if(station.service==='case_site'){
       const lead=station.caseContext||{},site=lead.site||{},task=String(lead.task||'breach');
       if(station.accidental){
@@ -332,7 +329,7 @@ function dossierEscape(value){return String(value??'').replace(/[&<>"']/g,char=>
 function dossierSlug(value){return String(value??'record').replace(/[^a-zA-Z0-9_-]/g,'-');}
 function closeCaseDossier(){game.dossierOpen=false;show('caseDossier',false);}
 function openCaseDossier(){
-  const lead=game.world?.caseContext||{},personal=game.world?.story?.active_dossier||{},active=!!lead.id;
+  const lead=game.world?.caseContext||privateerContext?.caseContext||{},personal=game.world?.story?.active_dossier||privateerContext?.story?.active_dossier||{},active=!!lead.id;
   const clues=active?(Array.isArray(lead.clues)?lead.clues:[]):(Array.isArray(personal.clues)?personal.clues:[]);
   const people=active?(Array.isArray(lead.suspects)?lead.suspects:[]):(Array.isArray(personal.people)?personal.people:[]);
   const evidence=active?(Array.isArray(lead.evidence)?lead.evidence:[]):(Array.isArray(personal.evidence)?personal.evidence:[]);
@@ -2057,6 +2054,10 @@ addEventListener('keyup',e=>inputs.keys.delete(e.code));
 $('startButton').addEventListener('click',()=>{if(hasSave())loadGame();else enterHQ();});
 $('dossierClose').addEventListener('click',closeCaseDossier);
 $('dossierDone').addEventListener('click',closeCaseDossier);
+$('dossierButton').addEventListener('click',()=>{
+  if(!privateerContext||!['PORT','PLAY'].includes(game.mode))return;
+  openCaseDossier();privateerMessage('dmc-privateer-dossier',{});
+});
 $('caseDossier').addEventListener('click',event=>{if(event.target===$('caseDossier'))closeCaseDossier();});
 $('newButton').addEventListener('click',newGame);
 $('loadButton').disabled=!hasSave();
