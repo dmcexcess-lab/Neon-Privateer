@@ -11,6 +11,7 @@ const CovertGame = preload("res://covert/CovertGame.gd")
 const CovertCareer = preload("res://covert/CovertCareer.gd")
 const Storyteller = preload("res://covert/Storyteller.gd")
 const CaseDirector = preload("res://covert/CaseDirector.gd")
+const CasePuzzle = preload("res://covert/CasePuzzle.gd")
 const HUB_OPERATIONS_RECT := Rect2(105,174,180,48)
 const FirewallGame = preload("res://hacking/FirewallGame.gd")
 const POLITICAL_WORLD_SCHEMA := 2
@@ -562,16 +563,17 @@ func _on_breach_web_message(args: Array) -> void:
         "dmc-privateer-terminal":
             _close_breach_spaceport_request()
             var active_case:Dictionary=covert_profile.get("active",{})
-            if not active_case.is_empty() and CovertCareer.next_task(active_case)=="wiretap" and bool(detail.get("illegal",false)):
+            var active_site:Dictionary=CaseDirector.current_site(active_case)
+            if not active_case.is_empty() and CovertCareer.next_task(active_case)=="wiretap" and String(active_site.get("planet",active_case.get("planet","")))==current_planet and bool(detail.get("illegal",false)):
                 pending_case_hack_task="wiretap"
             if _open_firewall():
-                firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)), int(detail.get("difficulty", 1)), String(detail.get("terminal", "spaceport")), bool(detail.get("hidden", false)))
+                firewall.start_challenge(firewall_profile, int(detail.get("seed", world_seed)), int(detail.get("difficulty", 1)), String(detail.get("terminal", "spaceport")), bool(detail.get("hidden", false)), _active_case_puzzle())
                 firewall.notice = "PHYSICAL TERMINAL // BREACH BEFORE THE TRACE COMPLETES"
                 firewall.notice_clock = 5
         "dmc-privateer-case-hack":
             _close_breach_spaceport_request();pending_case_hack_task=String(detail.get("task","wiretap"))
             if _open_firewall():
-                firewall.start_challenge(firewall_profile,int(detail.get("seed",world_seed)),int(detail.get("difficulty",1)),String(detail.get("site","case-wiretap")),true)
+                firewall.start_challenge(firewall_profile,int(detail.get("seed",world_seed)),int(detail.get("difficulty",1)),String(detail.get("site","case-wiretap")),true,_active_case_puzzle())
                 firewall.notice="CASE %s // BEAT THE TRACE TO RECORD THE CHANNEL" % ("AUDIO TAP" if pending_case_hack_task=="eavesdrop" else "WIRETAP");firewall.notice_clock=5
         "dmc-privateer-case-discovery":
             if CovertCareer.accidental_discovery(covert_profile,String(detail.get("site","")),String(detail.get("person",""))):
@@ -841,8 +843,17 @@ func _terminal_hack_finished(success: bool) -> void:
         if not pending_case_hack_task.is_empty():
             if bool(covert_profile.get("active",{}).get("opening_adventure",false)) and pending_case_hack_task=="wiretap":
                 first_adventure_state="LOCATED"
-                last_trip_summary="ILLEGAL TERMINAL DECRYPTED · KEST'S LAST KNOWN LOCATION: OFF-PORT FREIGHT RING HIDEOUT"
-            _advance_active_case(pending_case_hack_task,"Eavesdrop analysis" if pending_case_hack_task=="eavesdrop" else "Wiretap analysis")
+            var advanced:=_advance_active_case(pending_case_hack_task,"Eavesdrop analysis" if pending_case_hack_task=="eavesdrop" else "Wiretap analysis")
+            if advanced and bool(result.get("decrypted",false)):
+                var active_after:Dictionary=covert_profile.get("active",{})
+                var clues:Array=active_after.get("clues",[])
+                if not clues.is_empty():
+                    var decoded_clue:Dictionary=clues[-1]
+                    decoded_clue["encrypted"]=true;decoded_clue["puzzle_type"]=String(result.get("puzzle_type",""))
+                    decoded_clue["ciphertext"]=String(result.get("ciphertext",""));decoded_clue["decoded"]=String(result.get("decoded_clue",""))
+                    clues[-1]=decoded_clue;active_after["clues"]=clues;covert_profile.active=active_after
+                    last_trip_summary="CLUE DECRYPTED · %s · NEXT: %s"%[String(result.get("decoded_clue","")),CovertCareer.next_task(active_after).to_upper()]
+                    _save_all_state()
     elif bool(result.get("detected", false)):
         breach_port_security_alert = true
         var faction_id := _planet_primary_faction(current_planet)
@@ -850,11 +861,21 @@ func _terminal_hack_finished(success: bool) -> void:
             _record_faction_crime(faction_id, difficulty + 2, difficulty * 5, "terminal_intrusion_detected", false)
         last_trip_summary = "TERMINAL D%d TRACE COMPLETE · INTRUSION ATTRIBUTED" % difficulty
     elif bool(result.get("aborted", false)):
-        last_trip_summary = "TERMINAL D%d ABORTED BEFORE ATTRIBUTION" % difficulty
+        last_trip_summary = "ENCRYPTED CLUE LEFT LOCKED · CASE REMAINS OPEN" if bool(result.get("puzzle_aborted",false)) else "TERMINAL D%d ABORTED BEFORE ATTRIBUTION" % difficulty
     else:
         last_trip_summary = "TERMINAL D%d REJECTED ACCESS" % difficulty
     pending_case_hack_task=""
     _close_firewall()
+
+func _active_case_puzzle() -> Dictionary:
+    var active_case:Dictionary=covert_profile.get("active",{})
+    if active_case.is_empty() or pending_case_hack_task!="wiretap":return {}
+    var current_site:Dictionary=CaseDirector.current_site(active_case)
+    if String(current_site.get("planet",active_case.get("planet","")))!=current_planet:return {}
+    var sites:Array=active_case.get("sites",[]);var next_index:=int(active_case.get("stage",0))+1
+    var next_site:Dictionary=sites[next_index] if next_index>=0 and next_index<sites.size() else CaseDirector.current_site(active_case)
+    var planet_label:=_planet_display_name(String(next_site.get("planet",current_planet)))
+    return CasePuzzle.create(active_case,planet_label)
 
 func _open_firewall() -> bool:
     if active_career_slot <= 0 or playing or route_active or not hub_open:

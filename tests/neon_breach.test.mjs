@@ -174,8 +174,10 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   assert.ok(privateerMessages.some(item=>item.type==='dmc-privateer-case-discovery'&&item.detail.site===accidentalSite.id),'exploration can uncover the real target before the planned clue chain');
   b.game.player.x=landing.x;b.game.player.y=landing.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-loading'&&message.detail.mode==='case-site'),'tail landing launches a tailored field operation in the larger career');
-  const wiretapContext={...context,caseContext:{...context.caseContext,task:'wiretap',site:{},difficulty:4}};
+  const wiretapContext={...context,caseContext:{...context.caseContext,task:'wiretap',site:{},difficulty:4,clues:[{kind:'wiretap',status:'VERIFIED',text:'Terminal traffic captured',encrypted:true,puzzle_type:'word_find',ciphertext:'R E L A Y',decoded:'NEXT LEAD: RELAY STATION 44 / Vesper'}]}};
   b.enterPrivateerPort(wiretapContext);assert.equal(b.game.world.stations.some(station=>station.service==='case_site'&&!station.accidental),false,'wiretaps are done at the visible terminals in the regular port');
+  const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
+  assert.match(elements.get('toast').textContent,/DECRYPTED VIA WORD FIND: NEXT LEAD: RELAY STATION 44 \/ Vesper/,'decoded clue and puzzle type appear in the in-world dossier');
   const terminal=b.game.world.stations.find(station=>station.service==='terminal');b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-terminal'&&message.detail.illegal),'the clue uses a visible illegal terminal rather than a detached hack node');
   const audioSite={...site,id:'site:44:2',task:'eavesdrop'};

@@ -273,7 +273,7 @@ function interactPort(){
       const lead=game.world.caseContext||{},dossier=game.world.story?.active_dossier;
       if(lead.id){
         const clues=Array.isArray(lead.clues)?lead.clues:[],suspects=Array.isArray(lead.suspects)?lead.suspects:[];
-        const clueLines=clues.slice(-4).reverse().map((clue,index)=>`${index+1}. ${clue.kind?.toUpperCase()||'LEAD'} · ${clue.status||'OPEN'} · ${clue.text||clue.source||'New evidence recorded'}`);
+        const clueLines=clues.slice(-4).reverse().map((clue,index)=>`${index+1}. ${clue.kind?.toUpperCase()||'LEAD'} · ${clue.status||'OPEN'} · ${clue.text||clue.source||'New evidence recorded'}${clue.encrypted?`\n   DECRYPTED VIA ${String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase()}: ${clue.decoded||'CODE RECORDED'}`:''}`);
         const suspectLine=suspects.map(person=>`${person.name} [${person.status||'UNKNOWN'}]`).join(' / ');
         announce([lead.dossierSummary||'ACTIVE CASE DOSSIER',`SUSPECTS: ${suspectLine||lead.target||'UNKNOWN'}`,`NEXT: ${lead.objective||lead.task||'FOLLOW THE LEAD'}`,...clueLines].join('\n'),10);
       }else announce(dossier?.title?`${dossier.title} · ${dossier.status} · ${dossier.clues?.length||0} CLUES · ${dossier.objective}`:'NO PERSONAL DOSSIER · TALK TO PEOPLE AND FOLLOW RUMORS',8);
