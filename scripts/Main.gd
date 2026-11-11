@@ -4451,24 +4451,24 @@ func _tutorial_lines() -> Array:
             return [
                 "Tap OPERATIONS to land in the walkable port.",
                 "Move with the on-screen controls or keyboard.",
-                "The map shows districts, doors and your position.",
+                "Follow the district map and service signs.",
                 "Return to the pad when you are ready to depart."
             ]
         2:
             return [
                 "Major services are buildings: Exchange, Bank,",
                 "Guild Hall, Shipyard, Hardware Dealer and Records.",
-                "Walk to a marked doorway and interact to open",
-                "its full menu. Cafes, bars and clubs are places",
+                "Entrances stay open; use the marked counter inside",
+                "to open a service menu. Cafes, bars and clubs are",
                 "to enter, socialize and tend to personal needs."
             ]
         3:
             return [
                 "Talk to locals with your weapon holstered for",
-                "rumors, contacts and spontaneous job offers.",
-                "Unmarked terminals change on each arrival.",
-                "Guards patrol; robbery or violence can trigger",
-                "witnesses, pursuit, arrest or faction trouble."
+                "rumors, contacts and spontaneous jobs.",
+                "Visible illegal terminals reroll each arrival;",
+                "hacking can alert security; guards patrol.",
+                "Witnessed crime can bring pursuit or arrest."
             ]
         4:
             return [

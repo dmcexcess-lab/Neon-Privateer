@@ -20,6 +20,13 @@ func run() -> void:
     check(scene._create_new_career(1), "new career created")
     check(not scene.tutorial_open and scene.tutorial_complete, "new career skips modal field guide")
     check(scene.first_adventure_state == "READY", "new career begins authored first adventure")
+    scene.tutorial_step=2
+    var service_guide := str(scene._tutorial_lines())
+    check(service_guide.contains("marked counter inside") and not service_guide.contains("marked doorway"), "legacy guide describes open entrances and service counters, not door interaction")
+    scene.tutorial_step=3
+    var terminal_guide := str(scene._tutorial_lines())
+    check(terminal_guide.contains("Visible illegal terminals") and terminal_guide.contains("alert security") and not terminal_guide.contains("Unmarked terminals"), "legacy guide matches visible randomized illegal terminals")
+    scene.tutorial_step=0
     scene.first_adventure_state="CALLING"
     check(scene._start_first_bounty(),"answering the opening cinematic auto-accepts the first bounty")
     check(scene.active_contract.type=="bounty" and scene.active_contract.destination==scene.current_planet,"opening bounty belongs to the full Privateer contract ledger")
