@@ -107,11 +107,13 @@ static func advance(data: Dictionary,task: String,speaker: String="Dock contact"
         var people:Array=job.get("people",[])
         var subject:=CaseDirector.subject_for_task(job,task)
         if not subject.is_empty():
+            clues[-1]["subject_id"]=String(subject.get("id",""))
+            job.clues=clues
             subject.status="LOCATED" if task in ["target","mastermind"] else "VERIFIED" if task in ["wiretap","breach"] else "SUSPECTED" if task in ["tail","stakeout","eavesdrop"] else "IDENTIFIED"
             job.people=people
         if task in ["breach","wiretap","evidence"]:
             var evidence:Array=job.get("evidence",[])
-            evidence.append({"id":"evidence:%s:%d"%[String(job.get("id","case")),int(job.get("stage",0))],"kind":task,"site_id":String(site.get("id","")),"source":speaker,"verified":true})
+            evidence.append({"id":"evidence:%s:%d"%[String(job.get("id","case")),int(job.get("stage",0))],"kind":task,"site_id":String(site.get("id","")),"source":speaker,"verified":true,"clue_id":clue_id})
             job.evidence=evidence
     job.stage+=1;CaseDirector.reveal_current(job);return true
 static func accidental_discovery(data: Dictionary,site_id: String,person_id: String="") -> bool:

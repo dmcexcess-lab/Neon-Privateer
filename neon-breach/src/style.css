@@ -78,3 +78,28 @@ body.hq-mode #drawButton{display:none!important}
 @media(max-height:530px){#sneakButton{left:calc(max(10px,env(safe-area-inset-left,0px)) + 112px);bottom:max(35px,env(safe-area-inset-bottom,0px))}#drawButton{right:calc(max(10px,env(safe-area-inset-right,0px)) + 112px);bottom:max(35px,env(safe-area-inset-bottom,0px))}#medkitButton{bottom:34px;min-height:44px}}
 
 @media(max-width:510px) and (min-height:531px){#medkitButton{bottom:246px;min-height:44px}}
+
+/* Privateer investigation records are deliberately separate from the arcade HUD. */
+.dossier-overlay{position:fixed;inset:0;z-index:14;display:grid;place-items:center;padding:max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));background:rgba(2,7,15,.88);backdrop-filter:blur(8px)}
+.dossier-panel{width:min(900px,100%);height:min(900px,100%);display:flex;flex-direction:column;overflow:hidden;border:1px solid #3d7284;background:linear-gradient(145deg,#0a1d2b,#07101b);box-shadow:0 0 70px #000c,0 0 30px #27d8ed1c}
+.dossier-header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:clamp(16px,3vw,28px);border-bottom:1px solid #234255;background:#0a1926}
+.dossier-header h2{margin:7px 0;color:#e5fbff;font-size:clamp(22px,4vw,34px);line-height:1.1;letter-spacing:-.035em}
+.dossier-header p{margin:0;color:#a8c2cd;font-size:12px;line-height:1.5}
+.dossier-header .small-button{min-height:42px;padding:8px 12px;font-weight:900;letter-spacing:.08em}
+.dossier-content{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:clamp(14px,3vw,26px);scrollbar-color:#34758a #0a1722;scrollbar-width:thin}
+.dossier-section{margin:0 0 22px;padding:0 0 18px;border-bottom:1px solid #1d3b4e}
+.dossier-section h3{margin:0 0 12px;color:#67e8f5;font:900 11px ui-monospace,monospace;letter-spacing:.16em}
+.dossier-overview{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.dossier-fact,.dossier-record{min-width:0;padding:12px;border:1px solid #244457;background:#0a1927;color:#d9edf2;line-height:1.5;overflow-wrap:anywhere}
+.dossier-fact small,.dossier-meta{display:block;margin-bottom:5px;color:#83a4b2;font:800 9px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}
+.dossier-record{margin:8px 0}
+.dossier-record p{margin:8px 0;color:#d6e7ec;font-size:13px;line-height:1.6}
+.dossier-record .dossier-meta{display:flex;flex-wrap:wrap;gap:6px 14px}
+.dossier-badge{display:inline-block;padding:2px 6px;border:1px solid #477283;color:#aeeff3;border-radius:2px}
+.dossier-links{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+.dossier-links a{display:inline-block;padding:6px 8px;border:1px solid #3b7186;color:#8de8f3;background:#0c2635;font:800 9px ui-monospace,monospace;letter-spacing:.05em;text-decoration:none}
+.dossier-links a:hover,.dossier-links a:focus-visible{border-color:#f4ca72;color:#ffdf9c}
+.dossier-empty{padding:14px;border:1px dashed #315267;color:#8da9b7;font-size:12px;line-height:1.6}
+.dossier-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px clamp(14px,3vw,26px);border-top:1px solid #234255;background:#081622;color:#83a4b2;font:700 10px ui-monospace,monospace;letter-spacing:.05em}
+.dossier-footer button{min-height:40px;padding:8px 14px}
+@media(max-width:560px){.dossier-overlay{padding:0}.dossier-panel{width:100%;height:100%;border:0}.dossier-header{padding:calc(12px + env(safe-area-inset-top)) 14px 13px}.dossier-header p{font-size:11px}.dossier-content{padding:14px}.dossier-overview{grid-template-columns:1fr}.dossier-footer{padding:10px 14px calc(10px + env(safe-area-inset-bottom));align-items:flex-start;flex-direction:column}.dossier-footer button{width:100%}}

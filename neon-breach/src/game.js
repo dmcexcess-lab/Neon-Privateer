@@ -58,7 +58,7 @@ let SW=innerWidth,SH=innerHeight,DPR=1,zoom=1;
 const camera={x:0,y:0};
 const inputs={keys:new Set(),mouse:{x:SW*.65,y:SH*.5,down:false,valid:false,stealthHeld:false},move:{x:0,y:0},aim:{x:0,y:0},map:false,sneakTouch:false,shotgunTriggerHeld:false,shotgunPendingPresses:0};
 let lastFrame=0,now=0,audio=null,gamepadPauseDown=false,toastTimeout=0;
-let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0,caseTask:'',caseSubject:null,caseProgress:0,caseTargetCleared:false};
+let game={mode:'MENU',profile:null,loadout:null,world:null,floor:1,seed:0,player:null,activeRoom:0,enemies:[],bullets:[],pickups:[],particles:[],time:0,kills:0,runCash:0,shake:0,flashed:0,exitClock:0,upgradeLevels:{},hqStation:null,hqPanel:'shop',pausedFrom:'PLAY',monsterSoundClock:0,caseTask:'',caseSubject:null,caseProgress:0,caseTargetCleared:false,dossierOpen:false};
 let privateerContext=null;
 let openingCall={active:false,beat:0};
 const OPENING_CALL_BEATS=[
@@ -92,7 +92,7 @@ function playSound(kind){sound(kind);}
 addEventListener('pointerdown',unlockAudio,{passive:true});
 addEventListener('keydown',unlockAudio,{passive:true});
 function announce(text,seconds=2){$('toast').textContent=text;show('toast',true);toastTimeout=seconds;}
-function hiddenScreens(){for(const id of ['menu','hq','pause','death','travel','settings'])show(id,false)}
+function hiddenScreens(){for(const id of ['menu','hq','pause','death','travel','settings'])show(id,false);closeCaseDossier();}
 function updateUI(){
  if(!game.player)return;
  $('floorReadout').textContent=String(game.floor).padStart(2,'0');
@@ -270,13 +270,7 @@ function interactPort(){
       announce(`${station.venue} · REST, SOCIALIZE, AND MEET CONTACTS`,3);
     }
     else if(station.service==='dossier'){
-      const lead=game.world.caseContext||{},dossier=game.world.story?.active_dossier;
-      if(lead.id){
-        const clues=Array.isArray(lead.clues)?lead.clues:[],suspects=Array.isArray(lead.suspects)?lead.suspects:[];
-        const clueLines=clues.slice(-4).reverse().map((clue,index)=>`${index+1}. ${clue.kind?.toUpperCase()||'LEAD'} · ${clue.status||'OPEN'} · ${clue.text||clue.source||'New evidence recorded'}${clue.encrypted?`\n   DECRYPTED VIA ${String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase()}: ${clue.decoded||'CODE RECORDED'}`:''}`);
-        const suspectLine=suspects.map(person=>`${person.name} [${person.status||'UNKNOWN'}]`).join(' / ');
-        announce([lead.dossierSummary||'ACTIVE CASE DOSSIER',`SUSPECTS: ${suspectLine||lead.target||'UNKNOWN'}`,`NEXT: ${lead.objective||lead.task||'FOLLOW THE LEAD'}`,...clueLines].join('\n'),10);
-      }else announce(dossier?.title?`${dossier.title} · ${dossier.status} · ${dossier.clues?.length||0} CLUES · ${dossier.objective}`:'NO PERSONAL DOSSIER · TALK TO PEOPLE AND FOLLOW RUMORS',8);
+      openCaseDossier();
       privateerMessage('dmc-privateer-dossier',{});
     }
     else if(station.service==='case_site'){
@@ -334,8 +328,45 @@ function interactPort(){
   }else announce(`${actor.name}: ${actor.rumor}`,4);
   privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;
 }
+function dossierEscape(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
+function dossierSlug(value){return String(value??'record').replace(/[^a-zA-Z0-9_-]/g,'-');}
+function closeCaseDossier(){game.dossierOpen=false;show('caseDossier',false);}
+function openCaseDossier(){
+  const lead=game.world?.caseContext||{},personal=game.world?.story?.active_dossier||{},active=!!lead.id;
+  const clues=active?(Array.isArray(lead.clues)?lead.clues:[]):(Array.isArray(personal.clues)?personal.clues:[]);
+  const people=active?(Array.isArray(lead.suspects)?lead.suspects:[]):(Array.isArray(personal.people)?personal.people:[]);
+  const evidence=active?(Array.isArray(lead.evidence)?lead.evidence:[]):(Array.isArray(personal.evidence)?personal.evidence:[]);
+  const panelTitle=active?String(lead.target||'ACTIVE CASE'):String(personal.title||'PERSONAL DOSSIER');
+  $('dossierTitle').textContent=panelTitle.toUpperCase();
+  $('dossierSummary').textContent=active?(lead.dossierSummary||`${lead.task||'OPEN CASE'} · ${lead.difficulty?'D'+lead.difficulty:''}`):`${personal.status||'OPEN THREAD'} · ${personal.objective||'Follow rumors and preserve useful contacts.'}`;
+  const section=(title,body)=>`<section class="dossier-section"><h3>${title}</h3>${body||'<div class="dossier-empty">No records yet.</div>'}</section>`;
+  const facts=active?[
+    ['CASE STATUS',lead.objective||lead.task||'FOLLOW THE LEAD'],['CURRENT LEAD',lead.leadPlanetName||lead.leadPlanet||'UNCONFIRMED'],
+    ['PRIMARY SUBJECT',lead.target||'UNKNOWN'],['CONFIDENCE',clues.length?`${Math.round(Math.max(...clues.map(c=>Number(c?.confidence)||0))*100)}% HIGHEST LEAD CONFIDENCE`:'NO VERIFIED LEADS']
+  ]:[['STATUS',personal.status||'OPEN'],['OBJECTIVE',personal.objective||'Keep talking to contacts and verify rumors.'],['CLUES',`${clues.length} RECORDED`],['CONTACTS',`${people.length} CONNECTED`]];
+  const overview=facts.map(([label,value])=>`<div class="dossier-fact"><small>${dossierEscape(label)}</small>${dossierEscape(value)}</div>`).join('');
+  const personCards=people.map(person=>`<article class="dossier-record" id="dossier-person-${dossierSlug(person.id||person.name)}"><div class="dossier-meta"><span>${dossierEscape(person.role||'PERSON OF INTEREST')}</span><span class="dossier-badge">${dossierEscape(person.status||'UNKNOWN')}</span></div><p><strong>${dossierEscape(person.name||'Unidentified contact')}</strong></p>${person.last_seen||person.location?`<div class="dossier-meta">LOCATION · ${dossierEscape(person.last_seen||person.location)}</div>`:''}</article>`).join('');
+  const clueCards=clues.map((raw,index)=>{
+    const clue=typeof raw==='string'?{text:raw,kind:'rumor',status:'RECORDED'}:(raw||{});
+    const linkedEvidence=evidence.filter(item=>(clue.site_id&&item.site_id===clue.site_id)||(clue.evidence_ids||[]).includes?.(item.id));
+    const links=linkedEvidence.map(item=>`<a href="#dossier-evidence-${dossierSlug(item.id||index)}">EVIDENCE · ${dossierEscape(item.kind||'RECORD')}</a>`);
+    const personId=clue.subject_id||clue.person_id;
+    if(personId&&people.some(person=>person.id===personId))links.push(`<a href="#dossier-person-${dossierSlug(personId)}">PERSON · ${dossierEscape(people.find(person=>person.id===personId)?.name||'SUBJECT')}</a>`);
+    if(clue.site_id)links.push(`<a href="#dossier-location-${dossierSlug(clue.site_id)}">LOCATION · ${dossierEscape(clue.location||clue.site_id)}</a>`);
+    return `<article class="dossier-record" id="dossier-clue-${dossierSlug(clue.id||index)}"><div class="dossier-meta"><span>${String(index+1).padStart(2,'0')} · ${dossierEscape(clue.kind||'LEAD')}</span><span class="dossier-badge">${dossierEscape(clue.status||'OPEN')}</span><span>CONFIDENCE · ${Math.round(Math.max(0,Math.min(1,Number(clue.confidence)||0))*100)}%</span></div><p>${dossierEscape(clue.text||clue.source||'Evidence recorded.')}</p>${clue.encrypted?`<div class="dossier-meta">DECRYPTED VIA ${dossierEscape(String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase())} · ${dossierEscape(clue.decoded||'CODE RECORDED')}</div>`:''}<div class="dossier-meta">SOURCE · ${dossierEscape(clue.source||'CAREER RECORD')} · LOCATION · ${dossierEscape(clue.location||'UNCONFIRMED')}</div>${links.length?`<nav class="dossier-links" aria-label="Linked records">${links.join('')}</nav>`:''}</article>`;
+  }).reverse().join('');
+  const evidenceCards=evidence.map((item,index)=>{
+    const related=clues.find(clue=>clue&&typeof clue==='object'&&clue.site_id&&clue.site_id===item.site_id);
+    const relatedLink=related?`<nav class="dossier-links"><a href="#dossier-clue-${dossierSlug(related.id||clues.indexOf(related))}">RELATED CLUE · ${dossierEscape(related.kind||'LEAD')}</a></nav>`:'';
+    return `<article class="dossier-record" id="dossier-evidence-${dossierSlug(item.id||index)}"><div class="dossier-meta"><span>${dossierEscape(item.kind||'EVIDENCE')}</span><span class="dossier-badge">${item.verified?'VERIFIED':'UNVERIFIED'}</span></div><p>${dossierEscape(item.description||item.text||'Evidence retained in the case file.')}</p><div class="dossier-meta">SOURCE · ${dossierEscape(item.source||'FIELD RECOVERY')} · LOCATION · ${dossierEscape(related?.location||item.location||'UNCONFIRMED')}</div>${relatedLink}</article>`;
+  }).join('');
+  const locations=[...new Map(clues.filter(clue=>clue&&typeof clue==='object'&&clue.site_id).map(clue=>[clue.site_id,clue])).values()];
+  const locationCards=locations.map(clue=>`<article class="dossier-record" id="dossier-location-${dossierSlug(clue.site_id)}"><div class="dossier-meta"><span>${dossierEscape(clue.location||'UNCONFIRMED LOCATION')}</span><span class="dossier-badge">${dossierEscape(clue.status||'LEAD')}</span></div><p>${dossierEscape(clue.text||'Location linked to the investigation.')}</p><div class="dossier-links"><a href="#dossier-clue-${dossierSlug(clue.id||clues.indexOf(clue))}">CLUE · ${dossierEscape(clue.kind||'LEAD')}</a></div></article>`).join('');
+  $('dossierContent').innerHTML=section('CASE OVERVIEW',`<div class="dossier-overview">${overview}</div>`)+section('PEOPLE & SUSPECTS',personCards)+section(`CLUE HISTORY · ${clues.length} RECORD${clues.length===1?'':'S'}`,clueCards)+section(`PRESERVED EVIDENCE · ${evidence.length}`,evidenceCards)+section('KNOWN LOCATIONS',locationCards);
+  game.dossierOpen=true;toastTimeout=0;show('toast',false);show('caseDossier',true);$('dossierContent').scrollTop=0;$('dossierClose').focus();
+}
 function updatePort(dt){
-  if(openingCall.active)return;
+  if(openingCall.active||game.dossierOpen)return;
   const p=game.player,control=captureInputs();
   game.portClock=(game.portClock||0)+dt;
   p.invuln=Math.max(0,p.invuln-dt);p.cool=Math.max(0,p.cool-dt);p.punchTimer=Math.max(0,p.punchTimer-dt);updateWeaponTimers(dt);
@@ -2005,6 +2036,7 @@ addEventListener('blur',()=>{inputs.keys.clear();inputs.mouse.down=false;inputs.
 document.addEventListener('visibilitychange',()=>{if(document.hidden){inputs.mouse.down=false;inputs.mouse.stealthHeld=false;if(game.mode==='PLAY')togglePause();if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();}});
 addEventListener('pagehide',()=>{if(['HQ','PLAY','PAUSE','HQ_PANEL','TRAVEL','SETTINGS'].includes(game.mode))saveGame();});
 addEventListener('keydown',e=>{
+  if(game.dossierOpen&&e.code==='Escape'){e.preventDefault();closeCaseDossier();return;}
   if(openingCall.active&&(e.code==='Enter'||e.code==='Space')){e.preventDefault();advanceOpeningCall();return;}
   if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
   if(!e.repeat&&game.mode==='HQ_PANEL'&&(e.code==='Escape'||e.code==='KeyE')){closeHQPanel();return;}
@@ -2023,6 +2055,9 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>inputs.keys.delete(e.code));
 $('startButton').addEventListener('click',()=>{if(hasSave())loadGame();else enterHQ();});
+$('dossierClose').addEventListener('click',closeCaseDossier);
+$('dossierDone').addEventListener('click',closeCaseDossier);
+$('caseDossier').addEventListener('click',event=>{if(event.target===$('caseDossier'))closeCaseDossier();});
 $('newButton').addEventListener('click',newGame);
 $('loadButton').disabled=!hasSave();
 $('loadButton').addEventListener('click',loadGame);

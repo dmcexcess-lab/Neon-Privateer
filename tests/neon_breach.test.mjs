@@ -18,8 +18,8 @@ const eventTarget=()=>{
 };
 const makeElement=()=>({
   ...eventTarget(),
-  style:{},disabled:false,textContent:'',innerHTML:'',classList:{add(){},remove(){},toggle(){}},
-  setAttribute(){},setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},
+  style:{},disabled:false,textContent:'',innerHTML:'',scrollTop:0,classList:{add(){},remove(){},toggle(){}},
+  setAttribute(){},setPointerCapture(){},append(){},appendChild(){},replaceChildren(){},focus(){},
   getContext(){return new Proxy({}, {get:()=>()=>{}})},
   getBoundingClientRect(){return {left:0,top:0,width:120,height:120}},
   querySelector(){return makeElement()}
@@ -177,7 +177,7 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   const wiretapContext={...context,caseContext:{...context.caseContext,task:'wiretap',site:{},difficulty:4,clues:[{kind:'wiretap',status:'VERIFIED',text:'Terminal traffic captured',encrypted:true,puzzle_type:'word_find',ciphertext:'R E L A Y',decoded:'NEXT LEAD: RELAY STATION 44 / Vesper'}]}};
   b.enterPrivateerPort(wiretapContext);assert.equal(b.game.world.stations.some(station=>station.service==='case_site'&&!station.accidental),false,'wiretaps are done at the visible terminals in the regular port');
   const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
-  assert.match(elements.get('toast').textContent,/DECRYPTED VIA WORD FIND: NEXT LEAD: RELAY STATION 44 \/ Vesper/,'decoded clue and puzzle type appear in the in-world dossier');
+  assert.match(elements.get('dossierContent').innerHTML,/DECRYPTED VIA WORD FIND · NEXT LEAD: RELAY STATION 44 \/ Vesper/,'decoded clue and puzzle type appear in the full in-world dossier');
   const terminal=b.game.world.stations.find(station=>station.service==='terminal');b.game.player.x=terminal.x;b.game.player.y=terminal.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-terminal'&&message.detail.illegal),'the clue uses a visible illegal terminal rather than a detached hack node');
   const audioSite={...site,id:'site:44:2',task:'eavesdrop'};
@@ -186,6 +186,27 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   b.game.player.x=audioLanding.x;b.game.player.y=audioLanding.y;b.interactPort();
   assert.equal(b.game.caseTask,'eavesdrop','eavesdropping is a real surveillance operation, not another hack');
   b.setPrivateerContext(null);
+});
+
+test('Privateer dossier browses every clue with source, confidence, location and linked records',()=>{
+  const clues=Array.from({length:6},(_,index)=>({id:`clue-${index}`,kind:index?'wiretap':'rumor',status:index?'VERIFIED':'UNVERIFIED',text:`Lead record ${index+1}`,source:`Contact ${index+1}`,confidence:index?.95:.25,location:`Planet ${index+1}`,site_id:`site-${index+1}`,subject_id:'suspect-a',encrypted:index===5,puzzle_type:'word_find',decoded:'Relay Station'}));
+  const evidence=clues.slice(1).map((clue,index)=>({id:`evidence-${index+1}`,kind:'wiretap',site_id:clue.site_id,source:clue.source,verified:true}));
+  const context={mode:'spaceport',requestId:'dossier-browser',seed:601,arrivalSeed:601,planetId:'p-dossier',planetName:'Dossier Port',caseContext:{id:'case-dossier',target:'Sera Quill',task:'wiretap',difficulty:4,dossierSummary:'6 clues · 2 suspects · next wiretap',objective:'Visit Relay Station',leadPlanetName:'Vesper',clues,suspects:[{id:'suspect-a',name:'Sera Quill',role:'Target',status:'SUSPECTED'}],evidence},loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const station=b.game.world.stations.find(item=>item.service==='dossier');b.game.player.x=station.x;b.game.player.y=station.y;b.interactPort();
+  const panel=elements.get('caseDossier'),content=elements.get('dossierContent').innerHTML;
+  assert.equal(b.game.dossierOpen,true,'opening the physical dossier pauses port simulation');
+  assert.equal((content.match(/id="dossier-clue-/g)||[]).length,6,'the entire clue history is shown rather than only the latest four');
+  assert.match(content,/SOURCE · Contact 1 · LOCATION · Planet 1/);
+  assert.match(content,/CONFIDENCE · 95%/);
+  assert.match(content,/href="#dossier-person-suspect-a"/,'clues link to a persistent suspect record');
+  assert.match(content,/href="#dossier-evidence-evidence-1"/,'clues link to preserved evidence');
+  assert.match(content,/href="#dossier-location-site-6"/,'clue locations link to the known-location index');
+  assert.match(content,/DECRYPTED VIA WORD FIND · Relay Station/);
+  assert.match(css,/\.dossier-content\{[^}]*overflow:auto/,'dossier body has independent scrolling');
+  assert.match(html,/id="caseDossier"[^>]*role="dialog"/);
+  elements.get('dossierDone').dispatch('click');assert.equal(b.game.dossierOpen,false,'return control closes the dossier');
+  assert.equal(panel!==undefined,true);b.setPrivateerContext(null);
 });
 
 test('Privateer mission approaches have distinct rules and contract rewards',()=>{
