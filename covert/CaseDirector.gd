@@ -66,7 +66,7 @@ static func dossier_summary(job: Dictionary) -> String:
         String(job.get("target","ACTIVE CASE")),clues.size(),job.get("steps",[]).size(),people.size(),open_sites,
         next]
 
-static func create(contract: Dictionary,merc_rank: int=0) -> Dictionary:
+static func create(contract: Dictionary,merc_rank: int=0,reachable_planets: Array=[] ) -> Dictionary:
     var tier:=clampi(maxi(int(contract.get("difficulty",1)),merc_rank),1,5)
     var case_planet:=String(contract.get("destination",contract.get("planet",contract.get("origin",""))))
     # Contract IDs are integers in current saves but older fixtures may carry a
@@ -80,9 +80,16 @@ static func create(contract: Dictionary,merc_rank: int=0) -> Dictionary:
     var people:Array=[]
     for i in roles.size():people.append(_person(seed_number,i,roles[i]))
     var steps:=_steps(tier);var sites:Array=[]
+    var other_worlds:Array[String]=[]
+    for world in reachable_planets:
+        var world_id:=String(world)
+        if not world_id.is_empty() and world_id!=case_planet and not other_worlds.has(world_id):other_worlds.append(world_id)
+    # Keep the first lead at the contract destination, then seed a persistent
+    # itinerary across reachable worlds. Modulo cycling supports small systems.
     for i in steps.size():
         var task:=steps[i];var site_type:=str(SITE_TYPES[(seed_number+i*3)%SITE_TYPES.size()])
-        sites.append({"id":"site:%d:%d"%[seed_number,i],"planet":case_planet,
+        var site_planet:=case_planet if i==0 or other_worlds.is_empty() else other_worlds[posmod(seed_number+i-1,other_worlds.size())]
+        sites.append({"id":"site:%d:%d"%[seed_number,i],"planet":site_planet,
             "name":"%s %s"%[site_type.replace("_"," ").to_upper(),str(11+(seed_number+i*17)%88)],"type":site_type,"task":task,
             "discovered":i==0,"visited":false,"seed":seed_number+i*7919,"station":site_type in ["orbital_annex","freighter","relay_station"]})
     var result:Dictionary={"id":"case:%s"%str(contract.get("id",seed_number)),"planet":case_planet,

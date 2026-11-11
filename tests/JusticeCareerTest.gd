@@ -140,6 +140,9 @@ func _run() -> void:
     var wallet:int=view.cash;view._release_sentence();check(view.cash==wallet,"release cannot pay wages twice")
     scene._close_covert();scene.playing=false;scene.route_active=false;scene.run_paused=false;scene.hub_open=true
     scene._open_covert();view.set_process(false)
+    # Keep this legal-evidence regression local; cross-world travel is covered
+    # by the covert integration fixture.
+    view.reachable_planets=[]
     check(view.accept("investigate"),"investigation offered to novice merc")
     check(not view.file_charges(),"charges require actual evidence stages")
     var filing_steps:Array=view.data.active.steps.duplicate()

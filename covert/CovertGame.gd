@@ -23,6 +23,7 @@ const ACT=Rect2(145,718,100,54)
 var data:Dictionary=Career.default_profile()
 var cash:=0
 var planet:=""
+var reachable_planets:Array=[]
 var port_name:=""
 var phase:="BOARD"
 var sim=Ground.new()
@@ -51,9 +52,9 @@ func _ready() -> void:
     hack.challenge_finished.connect(_hack_finished)
     hack.career_changed.connect(_hack_checkpoint)
     add_child(hack)
-func configure(saved: Dictionary,balance: int,location: String,label: String,research: Dictionary,law_faction: String="",law_name: String="") -> void:
+func configure(saved: Dictionary,balance: int,location: String,label: String,research: Dictionary,law_faction: String="",law_name: String="",worlds: Array=[]) -> void:
     return_to_flight=false
-    data=Career.decode(saved);cash=balance;planet=location;port_name=label;phase="BOARD";page=0
+    data=Career.decode(saved);cash=balance;planet=location;port_name=label;reachable_planets=worlds.duplicate();phase="BOARD";page=0
     authority_label=law_name if not law_name.is_empty() else port_name+" authority"
     jurisdiction=law_faction if not law_faction.is_empty() else "port:"+planet
     if not String(data.justice.forced_faction).is_empty():jurisdiction=data.justice.forced_faction
@@ -93,19 +94,22 @@ func buy(item: String) -> bool:
     notice="FIELD GEAR PURCHASED";persist();return true
 func accept(kind: String) -> bool:
     if not Career.JOBS.has(kind):return false
-    var offer:Dictionary=Career.offer(planet,kind,data.sequence,job_tier);offer["port_label"]=port_name
+    var offer:Dictionary=Career.offer(planet,kind,data.sequence,job_tier,reachable_planets);offer["port_label"]=port_name
     var reason:=Career.blocker(data,offer)
     if not reason.is_empty():notice=reason;return false
     if not Career.accept(data,offer):return false
     notice="JOB ACCEPTED // OBJECTIVE LOG UPDATED";persist();return true
 func current_task() -> String:return Career.next_task(data.active)
+func active_site_planet() -> String:
+    var site:Dictionary=Career.CaseDirector.current_site(data.active)
+    return String(site.get("planet",data.active.get("planet",planet)))
 func begin_ground(kind: String) -> bool:
     if kind=="prison_escape" and not prison.data.get("escape_active",false):return false
     if kind=="mission_escape" and not data.captured:return false
     if data.incarcerated and kind!="prison_escape":return false
     if data.captured and kind!="mission_escape":return false
     if kind not in ["port","mission_escape","prison_escape"]:
-        if data.active.is_empty() or data.active.planet!=planet or kind!=current_task():return false
+        if data.active.is_empty() or active_site_planet()!=planet or kind!=current_task():return false
     var seed_number:int=int(data.active.get("seed",planet.hash()))+int(data.active.get("stage",0))*71
     var gear:Dictionary=data.gear
     if kind=="mission_escape":gear=data.get("impounded",gear)
@@ -119,7 +123,7 @@ func _rumor() -> void:
     var speaker:="Dock contact"
     for npc in sim.state.npcs:
         if sim.state.pos.distance_to(npc.pos)<65:speaker=String(npc.name).split(" · ")[0];break
-    if not data.active.is_empty() and data.active.planet==planet and Career.advance(data,"rumor",speaker):
+    if not data.active.is_empty() and active_site_planet()==planet and Career.advance(data,"rumor",speaker):
         notice="LEAD RECORDED // CHECK OBJECTIVES";persist()
     else:notice="ROOK: 'Buy your own drinks. The contract board is still hiring.'"
 func resolve_ground(result: String) -> void:
@@ -151,7 +155,7 @@ func resolve_ground(result: String) -> void:
         if sim.state.gear_recovered:data.gear=data.get("impounded",data.gear).duplicate(true)
         data.erase("impounded");Career.add_entry(data,"ESCAPED MISSION CAPTIVITY. "+("Equipment recovered." if sim.state.gear_recovered else "Field equipment left behind."))
         notice="ESCAPED // EXISTING LEGAL CHARGES UNCHANGED"
-    elif not data.active.is_empty() and data.active.planet==planet and Career.advance(data,kind):
+    elif not data.active.is_empty() and active_site_planet()==planet and Career.advance(data,kind):
         var illegal_job:bool=bool(data.active.get("criminal",false))
         var reward:=Career.settle(data);cash+=reward
         notice=("STOLEN PROCEEDS: %d CR" if illegal_job else "JOB PAID: %d CR")%reward if reward>0 else "LEAD SECURED // NEXT OBJECTIVE AVAILABLE"
@@ -193,7 +197,7 @@ func _crime(offense: String,severity: int) -> void:
     Career.add_entry(data,"CRIME RECORDED: %s. Legal fine or prison time may follow."%offense)
     crime_reported.emit(offense,severity);persist()
 func file_charges() -> bool:
-    if data.active.is_empty() or data.active.planet!=planet or current_task()!="file_charges":return false
+    if data.active.is_empty() or active_site_planet()!=planet or current_task()!="file_charges":return false
     var filed:Dictionary={"case_id":data.active.id,"target":data.active.target,"authority":jurisdiction,"evidence":["dock_contact","overheard_meeting","extracted_terminal_manifest"],"status":"charges_filed"}
     if not Career.advance(data,"file_charges"):return false
     data.prosecutions.append(filed)
@@ -380,9 +384,9 @@ func _draw() -> void:
     else:
         _label("%s / TIER %d"%[String(data.active.type).to_upper(),data.active.get("difficulty",1)],Vector2(20,250),17,GOLD)
         _wrap(Career.objective(data.active),Vector2(20,282),346,14,INK)
-        var local:bool=data.active.planet==planet
-        _button(Rect2(20,395,350,54),("FILE EVIDENCE / BRING CHARGES" if current_task()=="file_charges" else "FOLLOW LEAD: "+current_task().to_upper()) if local else "RETURN TO CONTRACT'S ORIGIN PORT",GREEN if local else DIM)
-        if not local:_wrap("Travel to %s using the ship map."%data.active.get("port_label",data.active.planet),Vector2(20,477),345,12)
+        var local:bool=active_site_planet()==planet
+        _button(Rect2(20,395,350,54),("FILE EVIDENCE / BRING CHARGES" if current_task()=="file_charges" else "FOLLOW LEAD: "+current_task().to_upper()) if local else "TRAVEL TO LEAD: "+active_site_planet(),GREEN if local else DIM)
+        if not local:_wrap("Travel to %s using the ship map."%active_site_planet(),Vector2(20,477),345,12)
     _button(Rect2(20,620,170,48),"PISTOL / "+("OWNED" if data.gear.pistol else "350 CR"),GOLD)
     _button(Rect2(200,620,170,48),"ARMOR %d / 250"%data.gear.armor,GOLD)
     _label("CASH %d / CLOSED %d / CAPTURES %d"%[cash,data.completed,data.captures],Vector2(20,698),12,GREEN)

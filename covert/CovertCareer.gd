@@ -19,7 +19,7 @@ static func decode(raw: Variant) -> Dictionary:
         if not result.ground.is_empty() and result.ground.get("kind","")=="prison":result.ground.kind="mission_escape"
     result.schema=3
     return result
-static func offer(planet: String,kind: String,sequence: int,difficulty: int=1) -> Dictionary:
+static func offer(planet: String,kind: String,sequence: int,difficulty: int=1,reachable_planets: Array=[]) -> Dictionary:
     var tier:=clampi(difficulty,1,5);var seed_number:=absi((planet+kind+str(sequence)+str(tier)).hash())
     var target:String=NAMES[seed_number%NAMES.size()]
     var criminal:bool=kind in ["station_hack","robbery","mug"]
@@ -30,10 +30,11 @@ static func offer(planet: String,kind: String,sequence: int,difficulty: int=1) -
     if criminal:
         base_offer["steps"]=STEPS[kind].duplicate()
         return base_offer
-    var tailored:=CaseDirector.create(base_offer,tier);tailored.id=base_offer.id;tailored.type=kind;tailored.reward=base_offer.reward
+    var tailored:=CaseDirector.create(base_offer,tier,reachable_planets);tailored.id=base_offer.id;tailored.type=kind;tailored.reward=base_offer.reward
     if kind=="investigate":
         tailored.steps.append("file_charges")
-        tailored.sites.append({"id":"site:%d:filing"%seed_number,"planet":planet,"name":"LOCAL AUTHORITY CASE DESK","type":"authority","task":"file_charges","discovered":false,"visited":false,"seed":seed_number+9973,"station":true})
+        var filing_planet:=String(tailored.sites[-1].get("planet",planet)) if not tailored.sites.is_empty() else planet
+        tailored.sites.append({"id":"site:%d:filing"%seed_number,"planet":filing_planet,"name":"LOCAL AUTHORITY CASE DESK","type":"authority","task":"file_charges","discovered":false,"visited":false,"seed":seed_number+9973,"station":true})
     return tailored
 static func next_task(job: Dictionary) -> String:
     if job.is_empty():return "port"

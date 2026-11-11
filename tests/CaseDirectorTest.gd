@@ -14,6 +14,12 @@ func _run()->void:
     check(easy.target_approach in ["space","breach"],"the final target is assigned a real space or breach encounter")
     check(easy.clues.size()==1 and easy.sites[2].lead_channels.has("illegal_terminal") and easy.sites[3].lead_channels.has("field_search"),"case dossier opens with a confidence-rated lead and multiple clue channels")
     check(easy.sites.size()==easy.steps.size() and easy.sites[0].discovered and not easy.sites[1].discovered,"case locations reveal one lead at a time")
+    var itinerary:=Cases.create(base,0,["p3","p4","p5"])
+    var itinerary_repeat:=Cases.create(base,0,["p3","p4","p5"])
+    check(itinerary.sites[0].planet=="p2" and itinerary.sites[1].planet!="p2" and itinerary.sites[1].planet==itinerary_repeat.sites[1].planet,"case leads start at the contract world then follow a deterministic cross-world itinerary")
+    check(itinerary.sites[2].planet!=itinerary.sites[1].planet and itinerary.sites[3].planet!="p2","multi-stage cases continue across reachable worlds rather than pinning every site to the contract planet")
+    var local_only:=Cases.create(base,0)
+    check(local_only.sites.all(func(site):return String(site.planet)=="p2"),"legacy and single-world cases remain local when no reachable itinerary is supplied")
     var hard_base:=base.duplicate(true);hard_base.id="gov-mastermind";hard_base.difficulty=5
     var hard:=Cases.create(hard_base,5)
     check(hard.people.size()>=4 and not hard.mastermind.is_empty() and hard.steps.count("breach")>=2 and hard.steps.count("wiretap")>=2 and hard.steps.has("target"),"high-rank case has multiple perpetrators, sites, bounty targets and a mastermind")

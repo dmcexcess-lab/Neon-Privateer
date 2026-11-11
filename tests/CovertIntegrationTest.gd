@@ -80,7 +80,9 @@ func _run() -> void:
     view.sim.interact();view._process(.02);check(view.current_task()=="rumor","armed contact refuses to talk")
     view.sim.state.drawn=false;view.sim.interact();view._process(.02)
     check(view.current_task()=="tail","contact advances actual job")
-    view.return_to_board();check(view.begin_ground("tail"),"follow lead into on-foot mission")
+    var tail_world:String=view.active_site_planet()
+    view.planet=tail_world;scene.current_planet=tail_world
+    check(view.begin_ground("tail"),"cross-world case lead becomes a playable operation after traveling to its assigned planet")
     view.sim.state.drawn=true;view.sim.state.pistol=true;view.sim.state.cool=0
     var motion:=InputEventMouseMotion.new();motion.position=Vector2(245,385)
     view._input(motion);view._process(.02)
@@ -89,7 +91,7 @@ func _run() -> void:
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2)+Vector2(-130,0);advance_time(view.sim,8.1)
     view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
     check(view.current_task()=="wiretap","extracted surveillance reveals the illegal-terminal clue")
-    view.return_to_board();check(view.begin_ground("wiretap"),"wiretap lead launches as a physical field operation")
+    view.return_to_board();view.planet=view.active_site_planet();scene.current_planet=view.planet;check(view.begin_ground("wiretap"),"wiretap lead launches as a physical field operation on its assigned world")
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2);view.sim.interact();view._process(.02)
     check(view.hack.visible and view.hack.challenge_mode,"wiretap requires the real Firewall terminal interaction")
     view.hack.set_process(false)
@@ -97,6 +99,7 @@ func _run() -> void:
     view.hack._settle_events();view._process(.02)
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
     check(view.current_task()=="breach","terminal clue reveals the off-port safehouse")
+    view.planet=view.active_site_planet();scene.current_planet=view.planet
     check(view.begin_ground("breach"),"safehouse mission opens")
     view.sim.state.pos=view.sim.center(2);view.sim.interact();view._process(.02)
     check(view.hack.visible and view.hack.challenge_mode,"actual Firewall minigame runs inside safehouse")
@@ -115,6 +118,7 @@ func _run() -> void:
     check(scene.research_credits==wallet,"challenge cannot mint arcade cash")
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
     check(view.current_task()=="target","safehouse records identify target")
+    view.planet=view.active_site_planet();scene.current_planet=view.planet
     view.begin_ground("target");view.sim.state.guards[-1].hp=0
     view.sim.state.pos=view.sim.center(6)
     for g in view.sim.state.guards:g.hp=0

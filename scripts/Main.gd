@@ -661,19 +661,23 @@ func _personal_story_style() -> String:
 
 func _active_case_context() -> Dictionary:
     var job:Dictionary=covert_profile.get("active",{})
-    if job.is_empty() or String(job.get("planet",""))!=current_planet:return {}
+    if job.is_empty():return {}
     var site:=CaseDirector.current_site(job)
     var accidental_site:Dictionary={};var accidental_person:=""
     var steps:Array=job.get("steps",[]);var sites:Array=job.get("sites",[])
     for i in range(int(job.get("stage",0))+1,steps.size()):
         if String(steps[i]) in ["target","mastermind"] and i<sites.size():
-            accidental_site=sites[i]
+            if String(sites[i].get("planet",job.get("planet","")))==current_planet:accidental_site=sites[i]
             accidental_person=String(CaseDirector.subject_for_task(job,String(steps[i])).get("id",""))
-            break
+            if not accidental_site.is_empty():break
     var task:=CovertCareer.next_task(job)
-    if task in ["rumor","wiretap"] or (bool(job.get("opening_adventure",false)) and task=="tail"):site={}
+    var site_planet:=String(site.get("planet",job.get("planet","")))
+    var is_here:=site_planet==current_planet
+    if not is_here or task in ["rumor","wiretap"] or (bool(job.get("opening_adventure",false)) and task=="tail"):site={}
     var current_subject:=CaseDirector.subject_for_task(job,task)
-    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(current_subject.get("name",job.get("target",""))),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":CovertCareer.objective(job),"dossierSummary":CaseDirector.dossier_summary(job),"clues":job.get("clues",[]).duplicate(true),"suspects":job.get("people",[]).duplicate(true),"evidence":job.get("evidence",[]).duplicate(true)}
+    var objective:=CovertCareer.objective(job)
+    if not is_here:objective="Travel to %s to continue this case. %s"%[_planet_display_name(site_planet),objective]
+    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(current_subject.get("name",job.get("target",""))),"site":site,"casePlanet":String(job.get("planet","")),"leadPlanet":site_planet,"leadPlanetName":_planet_display_name(site_planet),"leadHere":is_here,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":objective,"dossierSummary":CaseDirector.dossier_summary(job),"clues":job.get("clues",[]).duplicate(true),"suspects":job.get("people",[]).duplicate(true),"evidence":job.get("evidence",[]).duplicate(true)}
 
 func _start_first_bounty() -> bool:
     if first_adventure_state not in ["READY","CALLING"] or not active_contract.is_empty() or not covert_profile.get("active",{}).is_empty():return false
@@ -703,7 +707,8 @@ func _start_first_bounty() -> bool:
 
 func _advance_active_case(task: String,speaker: String="Field contact") -> bool:
     var job:Dictionary=covert_profile.get("active",{})
-    if job.is_empty() or String(job.get("planet",""))!=current_planet or not CovertCareer.advance(covert_profile,task,speaker):return false
+    var site:=CaseDirector.current_site(job)
+    if job.is_empty() or String(site.get("planet",job.get("planet","")))!=current_planet or not CovertCareer.advance(covert_profile,task,speaker):return false
     if CovertCareer.finished(covert_profile.active):_resolve_active_case()
     else:last_trip_summary="CASE LEAD SECURED · NEXT: %s"%CovertCareer.next_task(covert_profile.active).to_upper()
     _save_all_state();return true
@@ -752,7 +757,7 @@ func _setup_covert() -> void:
 
 func _open_covert() -> bool:
     if active_career_slot<=0 or playing or route_active or not hub_open:return false
-    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),_planet_primary_faction(current_planet),_contract_issuer_name(_planet_primary_faction(current_planet)))
+    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),_planet_primary_faction(current_planet),_contract_issuer_name(_planet_primary_faction(current_planet)),_case_reachable_planets(current_planet))
     covert_open=true;covert.visible=true;hub_open=false;_clear_control_holds();queue_redraw();return true
 
 func _covert_changed(data: Dictionary,cash: int) -> void:
@@ -793,7 +798,7 @@ func _open_justice_review(faction: String) -> bool:
     if Justice.pending(covert_profile.justice,faction).is_empty() and not serving:return false
     justice_flight_hold=playing or route_active or shop_open
     if justice_flight_hold:run_paused=true;_clear_control_holds();_save_run_snapshot()
-    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),faction,_contract_issuer_name(faction))
+    covert.configure(covert_profile,research_credits,current_planet,_planet_display_name(current_planet),firewall_profile.get("research",{}),faction,_contract_issuer_name(faction),_case_reachable_planets(current_planet))
     covert.return_to_flight=justice_flight_hold
     if not covert.data.incarcerated:covert.phase="JUSTICE"
     covert_open=true;covert.visible=true;hub_open=false
@@ -2394,6 +2399,12 @@ func _other_planets(origin: String) -> Array[String]:
             result.append(planet)
     return result
 
+func _case_reachable_planets(origin: String) -> Array[String]:
+    var result:Array[String]=[]
+    for planet_id in _other_planets(origin):
+        if not _jump_route_spec(origin,planet_id).get("path",[]).is_empty():result.append(planet_id)
+    return result
+
 func _planet_primary_faction(planet_id: String) -> String:
     if planet_id.is_empty() or not planet_names.has(planet_id):
         return ""
@@ -2804,7 +2815,8 @@ func _accept_contract(index: int) -> bool:
     var contract: Dictionary = _upgrade_contract_record(contract_board[index], current_planet)
     active_contract = contract.duplicate(true)
     if String(contract.type)=="bounty":
-        covert_profile.active=CaseDirector.create(contract,GuildProgress.rank(covert_profile.guilds,"merc"))
+        var case_origin:=String(contract.get("destination",current_planet))
+        covert_profile.active=CaseDirector.create(contract,GuildProgress.rank(covert_profile.guilds,"merc"),_case_reachable_planets(case_origin))
         CovertCareer.add_entry(covert_profile,"CASE OPENED: %s · %d linked stages · %s"%[String(covert_profile.active.target),int(covert_profile.active.steps.size()),String(contract.get("issuer_name","CLIENT"))])
     if String(contract.type) == "passenger":
         passengers += 1
@@ -3305,7 +3317,8 @@ func _arrive_at_destination() -> void:
     current_planet = destination_planet
     destination_planet = ""
     var target_case:Dictionary=covert_profile.get("active",{})
-    if bounty_completed_this_route and not target_case.is_empty() and CovertCareer.next_task(target_case)=="target" and String(target_case.get("target_approach","space"))=="space" and String(target_case.get("planet",""))==current_planet:
+    var target_site:=CaseDirector.current_site(target_case)
+    if bounty_completed_this_route and not target_case.is_empty() and CovertCareer.next_task(target_case)=="target" and String(target_case.get("target_approach","space"))=="space" and String(target_site.get("planet",target_case.get("planet","")))==current_planet:
         _advance_active_case("target","Space interception")
     var flight_bonus := maxi(0, score)
     research_credits += flight_bonus
