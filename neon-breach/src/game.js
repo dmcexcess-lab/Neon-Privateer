@@ -341,11 +341,11 @@ function interactPort(){
     announce('KEST IS WORKING · STAY SNEAKING NEARBY TO EAVESDROP, OR FOLLOW HIM TO FREIGHT CONTROL',4);return true;
   }
   if(actor.mission&&!actor.offered){
-    actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId});
+    actor.offered=true;privateerMessage('dmc-privateer-mission-offer',{...actor.mission,seed:actor.mission.seed,contact:actor.name,contactId:actor.contactId});
     announce(`${actor.name}: I HAVE A ${actor.mission.style.toUpperCase()} JOB. TALK AGAIN TO DEPLOY.`,3.5);
   }else if(actor.mission&&actor.offered){
     privateerMessage('dmc-privateer-loading',{mode:'mission',style:actor.mission.style});
-    startPrivateerMission({...actor.mission,seed:(game.world.seed^actor.id.length*7919)>>>0,contact:actor.name,contactId:actor.contactId,objective:actor.mission.kind});
+    startPrivateerMission({...actor.mission,seed:actor.mission.seed,contact:actor.name,contactId:actor.contactId,objective:actor.mission.kind});
     return true;
   }else announce(`${actor.name}: ${actor.rumor}`,4);
   privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;

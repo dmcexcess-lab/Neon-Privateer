@@ -144,7 +144,16 @@ const savedContact={[repeatActor.contactId]:{name:repeatActor.name,venue:'bar',a
 const knownNext=createSpaceportWorld({seed:12,arrivalSeed:45,planetId:'p-a',contacts:savedContact}).actors.find(a=>a.contactId===repeatActor.contactId);
 assert.deepEqual(knownNext.appearance,repeatActor.appearance,'a persistent contact keeps the same skin, clothes, hair, hat and build on later arrivals');
 assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
-assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
+const offers=port.actors.filter(a=>a.mission),sameArrivalOffers=samePort.actors.filter(a=>a.mission),nextArrivalOffers=nextArrival.actors.filter(a=>a.mission);
+assert.deepEqual(offers.map(a=>a.mission),sameArrivalOffers.map(a=>a.mission),'a shown arrival roster has stable, reproducible contact offers');
+assert.ok(new Set(offers.map(a=>a.mission.style)).size>=2,'one arrival offers more than one approach style');
+assert.ok(new Set(offers.map(a=>a.mission.kind)).size>=4,'spontaneous jobs have a varied objective mix');
+assert.ok(offers.some(a=>a.mission.contactRole==='trader'&&['cargo recovery','escort','route survey'].includes(a.mission.kind)),'trader contacts offer work suited to their role');
+assert.ok(offers.some(a=>a.mission.contactRole==='fixer'&&['wiretap','evidence theft','blackmail intercept'].includes(a.mission.kind)),'fixer contacts offer investigative work');
+assert.notDeepEqual(offers.map(a=>a.mission),nextArrivalOffers.map(a=>a.mission),'new arrivals refresh spontaneous offers');
+const trustedOffers=createSpaceportWorld({seed:7123,arrivalSeed:4101,planetId:'p-17',contacts:{'p-17:npc-1':{name:'Kest Arden',role:'trader',trust:5,bond:'BUSINESS'}}}).actors.filter(a=>a.mission);
+assert.ok(trustedOffers.find(a=>a.contactId==='p-17:npc-1').mission.personal,'trusted contacts can make personal job offers');
+assert.ok(trustedOffers.find(a=>a.contactId==='p-17:npc-1').mission.difficulty>offers.find(a=>a.contactId==='p-17:npc-1').mission.difficulty,'a deeper relationship can unlock a more demanding contact-specific job');
 assert.deepEqual(port.structures.filter(s=>!s.service).map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains social venues as walk-in buildings');
 assert.equal(port.stations.filter(s=>s.service==='venue').length,5,'each public venue has a physical social interaction');
 for(const service of ['trade','bank','contracts','upgrades','firewall_dealer','careers']){

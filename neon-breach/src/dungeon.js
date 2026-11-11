@@ -555,7 +555,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     const room=rooms[rng.int(0,rooms.length-1)],localPos={x:venue.x+venue.w*.5+((i%3)-1)*48,y:venue.y+venue.h*.75};
     const pos=saved&&walkable(world,localPos.x,localPos.y,18)?localPos:randomSpot(world,room,rng,18);
     const target=saved?{x:pos.x,y:pos.y}:randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
-    const path=saved?.path||['friendship','business','romance'][i%3];
+    const path=saved?.path||['friendship','business','romance'][i%3],role=saved?.role||['regular','trader','fixer','artist','crew'][i%5];
     const appearanceSeed=(Math.imul((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x9e3779b9),i+0x45d9f3b)>>>0);
     const savedAppearance=saved?.appearance||{};
     const appearanceValue=(key,count,fallback)=>Number.isInteger(savedAppearance[key])&&savedAppearance[key]>=0&&savedAppearance[key]<count?savedAppearance[key]:fallback;
@@ -566,10 +566,17 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     actors.push({id,contactId,kind:'civilian',name:saved?.name||names[i%names.length],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
       appearance,
       facingX:(i%2===0?1:-1),
-      connected:!!saved,trust:Number(saved?.trust)||0,bond:saved?.bond||'LOCAL',path,venue:venue.id,role:['regular','trader','fixer','artist','crew'][i%5],
-      home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:saved?.last_rumor||portDialogue(world.seed,i,faction),mission:i<6?{
-        style:['stealth','hot','choice'][i%3],kind:['evidence theft','raid','recovery'][i%3],difficulty:rng.int(1,4)
-      }:null});
+      connected:!!saved,trust:Number(saved?.trust)||0,bond:saved?.bond||'LOCAL',path,venue:venue.id,role,
+      home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:saved?.last_rumor||portDialogue(world.seed,i,faction),mission:i<6?(()=>{
+        const roleKinds={regular:['recovery','missing-person search','quiet delivery'],trader:['cargo recovery','escort','route survey'],fixer:['wiretap','evidence theft','blackmail intercept'],artist:['surveillance','social infiltration','message handoff'],crew:['crew extraction','shipyard sabotage','escort']};
+        let contactHash=2166136261;for(const char of contactId)contactHash=Math.imul(contactHash^char.charCodeAt(0),16777619)>>>0;
+        const relationshipBoost=(Number(saved?.trust)||0)>=3||['FRIEND','BUSINESS','ROMANCE'].includes(String(saved?.bond||'').toUpperCase())?1:0;
+        const offerRng=new RNG(((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x45d9f3b)^Math.imul(i+1,0x9e3779b9)^contactHash)>>>0||1);
+        const kinds=roleKinds[role]||roleKinds.regular;
+        const style=['stealth','hot','choice'][offerRng.int(0,2)];
+        const kind=kinds[offerRng.int(0,kinds.length-1)],baseDifficulty=offerRng.int(1,4);
+        return {style,kind,difficulty:Math.min(5,baseDifficulty+relationshipBoost),seed:offerRng.state>>>0,contactRole:role,personal:relationshipBoost>0};
+      })():null});
   }
   if(caseContext?.openingAdventure&&actors[0]){
     const mara=mapPortPoint(620,560),kest=mapPortPoint(1570,280);
