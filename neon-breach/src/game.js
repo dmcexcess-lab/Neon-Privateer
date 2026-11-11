@@ -229,7 +229,7 @@ function interactPort(){
     if(station.service==='terminal'){
       if(game.world.activeContract&&!station.caseContext&&!game.world.crime.intrusionReported){reportContractCrime('unauthorized_terminal_access',Math.max(1,station.difficulty||1));game.world.crime.intrusionReported=true;game.world.caseContext.shortcutTaken=true;}
       const terminalSeed=[...station.id].reduce((value,char)=>Math.imul(value^char.charCodeAt(0),16777619)>>>0,(game.world.arrivalSeed??game.world.seed)>>>0);
-      privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:!!station.hidden,difficulty:station.difficulty||1,seed:terminalSeed});
+      privateerMessage('dmc-privateer-terminal',{terminal:station.id,hidden:false,illegal:true,difficulty:station.difficulty||1,seed:terminalSeed});
     }
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
     else if(station.service==='venue'){
@@ -360,7 +360,7 @@ function discoverPortStations(){
   for(const station of game.world.stations){
     if(!station.hidden||station.discovered||Math.hypot(game.player.x-station.x,game.player.y-station.y)>135)continue;
     station.discovered=true;found=true;
-    announce(`HIDDEN ACCESS NODE FOUND · ${station.label}`,2.6);
+    announce(`UNMARKED LANDING SIGNAL LOCATED · ${station.label}`,2.6);
   }
   return found;
 }
@@ -1591,9 +1591,9 @@ function drawHQStations(){
     ctx.shadowColor=station.color;ctx.shadowBlur=near?22:9;
     if(station.building){
       ctx.strokeRect(-24-pulse/3,-20-pulse/3,48+pulse/1.5,40+pulse/1.5);ctx.shadowBlur=0;
-      ctx.fillStyle='#0b2731';ctx.fillRect(-17,-13,34,26);ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 11px ui-monospace,monospace';ctx.fillText('DOOR',0,4);
+      ctx.fillStyle='#0b2731';ctx.fillRect(-17,-13,34,26);ctx.fillStyle=station.color;ctx.textAlign='center';ctx.font='900 10px ui-monospace,monospace';ctx.fillText(station.short||'MENU',0,4);
       ctx.font='700 10px ui-monospace,monospace';ctx.fillText(station.label,0,36);
-      if(near){ctx.fillStyle='#f0ffff';ctx.fillText('PRESS E · OPEN SERVICE',0,52);}
+      if(near){ctx.fillStyle='#f0ffff';ctx.fillText(`PRESS E · OPEN ${station.short||'MENU'}`,0,52);}
     }else{
       ctx.strokeRect(-45-pulse/2,-32-pulse/2,90+pulse,64+pulse);ctx.shadowBlur=0;
       ctx.fillStyle='#0b2731';ctx.fillRect(-36,-24,72,48);

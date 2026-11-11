@@ -379,7 +379,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
   const stations=[
     {id:'return',service:'return',x:0,y:-930,label:'LANDING PAD · RETURN TO SHIP',short:'SHIP',color:'#5af0ff'},
     {id:'dossier',service:'dossier',x:-560,y:-160,label:'PERSONAL DOSSIER · CLUES & OPEN THREADS',short:'DOSSIER',color:'#b999ff'},
-    {id:'terminal',service:'terminal',x:1700,y:420,label:'RESTRICTED NETWORK TERMINAL · SECURITY D1',short:'HACK',color:'#ff60bd',difficulty:1},
+    {id:'terminal',service:'terminal',x:1700,y:420,label:'ILLEGAL TERMINAL · SECURITY D1',short:'HACK',color:'#ff60bd',difficulty:1,illegal:true,hidden:false,discovered:true},
     {id:'alley',service:'alley',x:-1080,y:850,label:'UNWATCHED BACK ALLEY',short:'ALLEY',color:'#ff627f'}
   ];
   const names=['Mara Voss','Kest Arden','Ivo Slate','Sable Quill','Rin Calder','Juno Vale','Tarn Orra','Nyx Renn','Dax Morrow','Loa Finch','Brin Sato','Sera Venn','Niko Ash','Pax Greer','Ari Sol','Mina Kade','Eli Rook','Zara Wren'];
@@ -405,10 +405,10 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     {id:'registry',name:'CAPTAIN RECORDS',kind:'service',service:'careers',room:2,x:-810,y:-320,w:330,h:250,door:'south',color:'#b6c8ff'}
   ];
   const serviceStations=structures.filter(building=>building.service).map(building=>{
-    const x=building.door==='west'?building.x-18:building.door==='east'?building.x+building.w+18:building.x+building.w/2;
-    const y=building.door==='north'?building.y-18:building.door==='south'?building.y+building.h+18:building.y+building.h/2;
+    // Service menus live at the interior counter, not on a door trigger.
+    const x=building.x+building.w*.5,y=building.y+building.h*.72;
     const short={trade:'TRADE',firewall_dealer:'DEALER',bank:'BANK',contracts:'JOBS',upgrades:'YARD',careers:'RECORDS'}[building.service];
-    return {id:`entry-${building.id}`,service:building.service,x,y,label:`${building.name} · ENTER`,short,color:building.color,building:building.id};
+    return {id:`counter-${building.id}`,service:building.service,x,y,label:`${building.name} · ${short} MENU`,short,color:building.color,building:building.id};
   });
   stations.push(...serviceStations);
   if(caseContext?.site?.id)stations.push({id:'case-site',service:'case_site',x:-300,y:-1040,
@@ -485,8 +485,8 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     let x=candidate.x+terminalRng.range(-14,14),y=candidate.y+terminalRng.range(-14,14);
     if(!walkable(world,x,y,18)){x=candidate.x;y=candidate.y;}
     const difficulty=terminalRng.int(1,5),color=['','#5af0ff','#b999ff','#ff60bd','#ff9f55','#ff627f'][difficulty];
-    stations.push({...candidate,id:`hidden-${candidate.id}`,service:'terminal',x,y,label:`${candidate.label} · SECURITY D${difficulty}`,
-      difficulty,color,hidden:true,discovered:false});
+    stations.push({...candidate,id:`illegal-${candidate.id}`,service:'terminal',x,y,label:`ILLEGAL TERMINAL · ${candidate.label} · SECURITY D${difficulty}`,
+      difficulty,color,illegal:true,hidden:false,discovered:true});
   }
   for(let i=0;i<18;i++){
     const id=`npc-${i}`,contactId=`${planetId}:${id}`,saved=contacts?.[contactId],venue=structures.find(item=>item.id===saved?.venue)||structures[i%structures.length];

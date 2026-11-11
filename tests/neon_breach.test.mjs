@@ -94,23 +94,21 @@ test('first adventure begins in the port and links named contact, courier, and r
   b.setPrivateerContext(null);
 });
 
-test('concealed spaceport terminals reroll by arrival, reveal nearby and launch distinct hacks',()=>{
-  const context={mode:'spaceport',requestId:'hidden-terminal-test',seed:881,arrivalSeed:77101,planetId:'p-hidden',planetName:'Relay Port',archetype:'FROZEN',faction:'Relay Security',loadout:{weapon:'hands'}};
+test('visible illegal spaceport terminals reroll by arrival and launch distinct hacks',()=>{
+  const context={mode:'spaceport',requestId:'illegal-terminal-test',seed:881,arrivalSeed:77101,planetId:'p-illegal',planetName:'Relay Port',archetype:'FROZEN',faction:'Relay Security',loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
-  const firstArrival=b.game.world.stations.filter(station=>station.hidden).map(station=>[station.id,station.x,station.y]);
-  const hidden=b.game.world.stations.find(station=>station.hidden);
+  const firstArrival=b.game.world.stations.filter(station=>station.service==='terminal'&&station.id!=='terminal').map(station=>[station.id,station.x,station.y]);
+  const terminal=b.game.world.stations.find(station=>station.service==='terminal'&&station.id!=='terminal');
   assert.ok(firstArrival.length>=4&&firstArrival.length<=7);
-  assert.equal(hidden.discovered,false);assert.equal(b.game.world.stations.filter(station=>station.hidden&&station.discovered).length,0);
-  b.game.player.x=hidden.x-130;b.game.player.y=hidden.y;
-  assert.equal(b.discoverPortStations(),true);assert.equal(hidden.discovered,true,'proximity reveals the concealed panel');
-  b.game.player.x=hidden.x;b.game.player.y=hidden.y;
-  assert.equal(b.nearbyStation(),hidden);assert.equal(b.interactPort(),true);
+  assert.ok(b.game.world.stations.filter(station=>station.service==='terminal').every(station=>station.illegal&&!station.hidden&&station.discovered),'illegal terminals are visible from arrival');
+  b.game.player.x=terminal.x;b.game.player.y=terminal.y;
+  assert.equal(b.nearbyStation(),terminal);assert.equal(b.interactPort(),true);
   const message=privateerMessages.at(-1);
-  assert.equal(message.type,'dmc-privateer-terminal');assert.equal(message.detail.terminal,hidden.id);assert.equal(message.detail.hidden,true);
+  assert.equal(message.type,'dmc-privateer-terminal');assert.equal(message.detail.terminal,terminal.id);assert.equal(message.detail.hidden,false);assert.equal(message.detail.illegal,true);
   assert.ok(message.detail.difficulty>=1&&message.detail.difficulty<=5,'terminal reports its randomized security difficulty');
-  assert.equal(typeof message.detail.seed,'number','every concealed node receives its own deterministic hack seed');
+  assert.equal(typeof message.detail.seed,'number','every illegal terminal receives its own deterministic hack seed');
   const nextContext={...context,arrivalSeed:77102};b.enterPrivateerPort(nextContext);
-  assert.notDeepEqual(b.game.world.stations.filter(station=>station.hidden).map(station=>[station.id,station.x,station.y]),firstArrival,'a new landing rerolls the concealed network');
+  assert.notDeepEqual(b.game.world.stations.filter(station=>station.service==='terminal'&&station.id!=='terminal').map(station=>[station.id,station.x,station.y]),firstArrival,'a new landing rerolls visible illegal terminals');
   b.setPrivateerContext(null);
 });
 

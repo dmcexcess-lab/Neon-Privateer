@@ -140,15 +140,17 @@ assert.deepEqual(port.structures.filter(s=>!s.service).map(s=>s.kind),['cafe','m
 assert.equal(port.stations.filter(s=>s.service==='venue').length,5,'each public venue has a physical social interaction');
 for(const service of ['trade','bank','contracts','upgrades','firewall_dealer','careers']){
   const building=port.structures.find(s=>s.service===service),entry=port.stations.find(s=>s.building===building?.id);
-  assert.ok(building&&entry,`${service} is a named service building with a door interaction`);
+  assert.ok(building&&entry,`${service} is a named service building with an interior menu counter`);
+  assert.ok(entry.x>building.x&&entry.x<building.x+building.w&&entry.y>building.y&&entry.y<building.y+building.h,`${service} menu is inside the building, not on a door`);
 }
 assert.ok(port.stations.some(s=>s.service==='dossier'),'the personal dossier remains an in-world interaction');
-const hiddenTerminals=port.stations.filter(s=>s.hidden);
-assert.ok(hiddenTerminals.length>=4&&hiddenTerminals.length<=7,'each arrival conceals a variable number of extra access nodes');
-assert.ok(hiddenTerminals.every(s=>s.service==='terminal'&&!s.discovered),'hidden access nodes start undiscovered but remain hackable terminals');
-assert.ok(hiddenTerminals.every(s=>s.difficulty>=1&&s.difficulty<=5&&s.label.includes(`D${s.difficulty}`)),'each concealed node exposes a randomized security tier');
-assert.deepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),samePort.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'one arrival reproduces its concealed network exactly');
-assert.notDeepEqual(hiddenTerminals.map(s=>[s.id,s.x,s.y]),nextArrival.stations.filter(s=>s.hidden).map(s=>[s.id,s.x,s.y]),'returning to the same starport rerolls concealed terminals');
+const illegalTerminals=port.stations.filter(s=>s.service==='terminal');
+const randomTerminals=illegalTerminals.filter(s=>s.id!=='terminal');
+assert.ok(randomTerminals.length>=4&&randomTerminals.length<=7,'each arrival places several illegal terminals around the port');
+assert.ok(illegalTerminals.every(s=>s.illegal&&!s.hidden&&s.discovered&&s.label.includes('ILLEGAL TERMINAL')),'all illegal terminals are visible and immediately identifiable');
+assert.ok(illegalTerminals.every(s=>s.difficulty>=1&&s.difficulty<=5&&s.label.includes(`D${s.difficulty}`)),'visible terminals retain randomized security tiers');
+assert.deepEqual(randomTerminals.map(s=>[s.id,s.x,s.y]),samePort.stations.filter(s=>s.service==='terminal'&&s.id!=='terminal').map(s=>[s.id,s.x,s.y]),'one arrival reproduces its terminal layout exactly');
+assert.notDeepEqual(randomTerminals.map(s=>[s.id,s.x,s.y]),nextArrival.stations.filter(s=>s.service==='terminal'&&s.id!=='terminal').map(s=>[s.id,s.x,s.y]),'returning to the same starport rerolls illegal-terminal placement');
 const dialogue=new Set();
 for(let seed=1;seed<=16;seed++)for(const actor of createSpaceportWorld({seed,planetId:`dialogue-${seed}`,faction:'Test Authority'}).actors.filter(a=>a.kind==='civilian'))dialogue.add(actor.rumor);
 assert.ok(dialogue.size>220,'combinatorial canned dialogue bank supplies hundreds of deterministic NPC conversations');
