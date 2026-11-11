@@ -308,7 +308,7 @@ function interactPort(){
   }
   if(!actor.metThisArrival){
     actor.metThisArrival=true;actor.connected=true;actor.trust=Math.min(20,(actor.trust||0)+1);
-    privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor});
+    privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor,appearance:{...actor.appearance}});
     announce(`${actor.name} SHARES CONTACT INFO · ${actor.bond||'NEW CONTACT'} · ${actor.venue.toUpperCase()}`,2.8);
   }
   if(actor.openingContact&&game.world.caseContext?.openingAdventure){

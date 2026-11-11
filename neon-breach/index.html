@@ -694,8 +694,14 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
     const target=saved?{x:pos.x,y:pos.y}:randomSpot(world,rooms[rng.int(0,rooms.length-1)],rng,18);
     const path=saved?.path||['friendship','business','romance'][i%3];
     const appearanceSeed=(Math.imul((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x9e3779b9),i+0x45d9f3b)>>>0);
+    const savedAppearance=saved?.appearance||{};
+    const appearanceValue=(key,count,fallback)=>Number.isInteger(savedAppearance[key])&&savedAppearance[key]>=0&&savedAppearance[key]<count?savedAppearance[key]:fallback;
+    const appearance={seed:Number.isInteger(savedAppearance.seed)?savedAppearance.seed:appearanceSeed,
+      skin:appearanceValue('skin',6,appearanceSeed%6),top:appearanceValue('top',8,(appearanceSeed>>>4)%8),
+      coat:appearanceValue('coat',6,(appearanceSeed>>>9)%6),hair:appearanceValue('hair',8,(appearanceSeed>>>13)%8),
+      hat:appearanceValue('hat',6,(appearanceSeed>>>17)%6),build:appearanceValue('build',3,(appearanceSeed>>>21)%3)};
     actors.push({id,contactId,kind:'civilian',name:saved?.name||names[i%names.length],x:pos.x,y:pos.y,r:13,hp:2,maxHp:2,
-      appearance:{seed:appearanceSeed,skin:appearanceSeed%6,top:(appearanceSeed>>>4)%8,coat:(appearanceSeed>>>9)%6,hair:(appearanceSeed>>>13)%8,hat:(appearanceSeed>>>17)%6,build:(appearanceSeed>>>21)%3},
+      appearance,
       facingX:(i%2===0?1:-1),
       connected:!!saved,trust:Number(saved?.trust)||0,bond:saved?.bond||'LOCAL',path,venue:venue.id,role:['regular','trader','fixer','artist','crew'][i%5],
       home:{x:pos.x,y:pos.y},target,speed:saved?0:rng.range(23,39),rumor:saved?.last_rumor||portDialogue(world.seed,i,faction),mission:i<6?{
@@ -1395,7 +1401,7 @@ function interactPort(){
   }
   if(!actor.metThisArrival){
     actor.metThisArrival=true;actor.connected=true;actor.trust=Math.min(20,(actor.trust||0)+1);
-    privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor});
+    privateerMessage('dmc-privateer-contact',{id:actor.contactId,name:actor.name,planet:game.world.planetId,venue:actor.venue,path:actor.path,role:actor.role,trust:1,rumor:actor.rumor,appearance:{...actor.appearance}});
     announce(`${actor.name} SHARES CONTACT INFO · ${actor.bond||'NEW CONTACT'} · ${actor.venue.toUpperCase()}`,2.8);
   }
   if(actor.openingContact&&game.world.caseContext?.openingAdventure){

@@ -59,13 +59,16 @@ static func remember_contact(profile: Dictionary, detail: Dictionary) -> Diction
     var path:=String(existing.get("path",detail.get("path","friendship")))
     if path not in ["friendship","business","romance"]:path="friendship"
     var trust:=clampi(int(existing.get("trust",0))+clampi(int(detail.get("trust",1)),0,2),0,20)
+    var appearance_value:Variant=existing.get("appearance",{})
+    if not appearance_value is Dictionary or appearance_value.is_empty():appearance_value=detail.get("appearance",{})
+    var appearance:Dictionary=appearance_value.duplicate(true) if appearance_value is Dictionary else {}
     var contact:Dictionary={
         "id":id,"name":String(existing.get("name",detail.get("name","UNKNOWN CONTACT"))),
         "planet":String(existing.get("planet",detail.get("planet",""))),
         "venue":String(existing.get("venue",detail.get("venue","bar"))),
         "path":path,"trust":trust,"meetings":int(existing.get("meetings",0))+1,
         "bond":_bond_label(path,trust),"last_rumor":String(detail.get("rumor",existing.get("last_rumor",""))),
-        "role":String(existing.get("role",detail.get("role","local")))
+        "role":String(existing.get("role",detail.get("role","local"))),"appearance":appearance
     }
     profile.contacts[id]=contact
     profile.needs.social=minf(100.0,float(profile.needs.social)+6.0)

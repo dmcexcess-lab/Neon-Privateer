@@ -145,7 +145,9 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   const known=b.game.world.actors.find(actor=>actor.contactId==='p-social:npc-8');
   assert.equal(known.connected,true);assert.equal(known.name,'Dax Morrow');assert.equal(known.speed,0,'saved contacts return to their known venue instead of becoming disposable crowds');
   b.game.player.x=known.x;b.game.player.y=known.y;b.interactPort();
-  assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-contact'&&message.detail.id===known.contactId),'talking exchanges persistent contact information');
+  const contactMessage=privateerMessages.filter(message=>message.type==='dmc-privateer-contact'&&message.detail.id===known.contactId).at(-1);
+  assert.ok(contactMessage,'talking exchanges persistent contact information');
+  assert.deepEqual(contactMessage.detail.appearance,known.appearance,'contact save payload includes the distinctive NPC appearance');
   const dealer=b.game.world.stations.find(station=>station.service==='firewall_dealer');b.game.player.x=dealer.x;b.game.player.y=dealer.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='firewall_dealer'),'hacking hardware is bought through a physical dealer');
   const guildhall=b.game.world.structures.find(building=>building.service==='contracts');
@@ -155,6 +157,8 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-venue'&&message.detail.kind==='club'),`clubs feed the needs and relationship layer: ${JSON.stringify(privateerMessages.slice(-4))}`);
   const dossier=b.game.world.stations.find(station=>station.service==='dossier');b.game.player.x=dossier.x;b.game.player.y=dossier.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-dossier'),'personal clue dossiers are available in the port world');
+  b.enterPrivateerPort({...context,arrivalSeed:9082,contacts:{...contact,[known.contactId]:{...contact[known.contactId],appearance:contactMessage.detail.appearance}}});
+  assert.deepEqual(b.game.world.actors.find(actor=>actor.contactId===known.contactId).appearance,known.appearance,'revisited known contact retains their original appearance');
   b.setPrivateerContext(null);
 });
 

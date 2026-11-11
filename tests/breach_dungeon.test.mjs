@@ -131,9 +131,12 @@ assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s
 const silhouettes=port.actors.filter(a=>a.kind==='civilian').map(a=>a.appearance);
 assert.ok(silhouettes.every(a=>Number.isInteger(a.skin)&&Number.isInteger(a.top)&&Number.isInteger(a.hair)&&Number.isInteger(a.hat)),'each local has procedural skin, clothing, hair and hat identity');
 assert.ok(new Set(silhouettes.map(a=>[a.skin,a.top,a.coat,a.hair,a.hat].join(':'))).size>12,'arrival roster has visibly varied silhouettes');
-const repeatAppearance=createSpaceportWorld({seed:12,arrivalSeed:44,planetId:'p-a'}).actors.find(a=>a.kind==='civilian').appearance;
-const nextAppearance=createSpaceportWorld({seed:12,arrivalSeed:45,planetId:'p-a'}).actors.find(a=>a.kind==='civilian').appearance;
-assert.notDeepEqual(nextAppearance,repeatAppearance,'NPC looks reroll on each arrival and remain reproducible for that arrival');
+const repeatWorld=createSpaceportWorld({seed:12,arrivalSeed:44,planetId:'p-a'}),repeatActor=repeatWorld.actors.find(a=>a.kind==='civilian');
+const nextWorld=createSpaceportWorld({seed:12,arrivalSeed:45,planetId:'p-a'}),nextAppearance=nextWorld.actors.find(a=>a.contactId===repeatActor.contactId).appearance;
+assert.notDeepEqual(nextAppearance,repeatActor.appearance,'unconnected crowd NPC looks reroll on each arrival');
+const savedContact={[repeatActor.contactId]:{name:repeatActor.name,venue:'bar',appearance:repeatActor.appearance}};
+const knownNext=createSpaceportWorld({seed:12,arrivalSeed:45,planetId:'p-a',contacts:savedContact}).actors.find(a=>a.contactId===repeatActor.contactId);
+assert.deepEqual(knownNext.appearance,repeatActor.appearance,'a persistent contact keeps the same skin, clothes, hair, hat and build on later arrivals');
 assert.ok(port.stations.some(s=>s.service==='upgrades')&&port.stations.some(s=>s.service==='careers'),'physical port replaces upgrade and career menu entries');
 assert.deepEqual(port.actors.filter(a=>a.mission).map(a=>a.mission.style),['stealth','hot','choice','stealth','hot','choice'],'spontaneous missions expose every approach throughout the port');
 assert.deepEqual(port.structures.filter(s=>!s.service).map(s=>s.kind),['cafe','market','bar','club','lodge'],'spaceport contains social venues as walk-in buildings');
