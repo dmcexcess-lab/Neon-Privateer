@@ -1,6 +1,7 @@
 extends SceneTree
 const Cases=preload("res://covert/CaseDirector.gd")
 const Career=preload("res://covert/CovertCareer.gd")
+const Political=preload("res://scripts/PoliticalWorld.gd")
 var failures:Array[String]=[]
 var checks:=0
 func check(value:bool,message:String)->void:
@@ -24,6 +25,12 @@ func _run()->void:
     var hard:=Cases.create(hard_base,5)
     check(hard.people.size()>=4 and not hard.mastermind.is_empty() and hard.steps.count("breach")>=2 and hard.steps.count("wiretap")>=2 and hard.steps.has("target"),"high-rank case has multiple perpetrators, sites, bounty targets and a mastermind")
     check(float(hard.world_effect.strength)>float(easy.world_effect.strength),"complex cases carry larger real-world consequences")
+    var political:Dictionary={"planets":[{"id":"p1","pos":Vector2(0,0)},{"id":"p2","pos":Vector2(1000,0)},{"id":"site","pos":Vector2(500,0)}],
+        "factions":[{"id":"issuer","capital_id":"p1","radius":900.0,"strength":1.1,"treasury":1400.0},{"id":"rival","capital_id":"p2","radius":900.0,"strength":1.1,"treasury":1400.0}],"routes":[],"wars":[]}
+    var impact:=Political.resolve_mastermind_case_effect(political,"issuer","site",float(hard.world_effect.destabilize))
+    var rival_after:Dictionary=Political.faction_record(political,"rival")
+    check(String(impact.get("affected_faction",""))=="rival" and float(rival_after.strength)<1.1 and float(rival_after.radius)<900.0 and political.case_impacts.size()==1,
+        "resolving a mastermind case leaves a persistent, location-linked fracture in rival territory influence")
     var profile:=Career.default_profile();profile.active=hard
     var first:=Cases.current_site(profile.active)
     check(Career.next_task(profile.active)=="rumor" and Career.advance(profile,"rumor") and Career.next_task(profile.active)=="stakeout" and Career.advance(profile,"stakeout"),"career advances from source-checked rumors into a tailored stakeout")

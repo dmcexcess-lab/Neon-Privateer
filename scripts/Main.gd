@@ -725,6 +725,7 @@ func _resolve_active_case() -> void:
     var job:Dictionary=covert_profile.get("active",{}).duplicate(true)
     if job.is_empty():return
     var issuer:=String(job.get("issuer_faction",""));var effect:Dictionary=job.get("world_effect",{})
+    var mastermind_impact:Dictionary={}
     if bool(job.get("criminal",false)):
         var victim:=_planet_primary_faction(current_planet)
         if not victim.is_empty():_record_faction_crime(victim,4+int(job.get("difficulty",1))*2,8+int(job.get("difficulty",1))*4,"criminal_merc_operation",false)
@@ -735,8 +736,17 @@ func _resolve_active_case() -> void:
             faction.strength=clampf(float(faction.get("strength",1.0))+float(effect.get("strength",0.02)),0.2,3.0)
             faction.treasury=float(faction.get("treasury",0.0))+float(active_contract.get("reward",0))*.08
             PoliticalWorld._replace_faction(political_world,issuer,faction)
+        if int(job.get("difficulty",1))>=4 and not job.get("mastermind",{}).is_empty():
+            var case_sites:Array=job.get("sites",[])
+            var impact_planet:=String(job.get("planet",current_planet))
+            if not case_sites.is_empty():impact_planet=String(case_sites[-1].get("planet",impact_planet))
+            mastermind_impact=PoliticalWorld.resolve_mastermind_case_effect(political_world,issuer,impact_planet,float(effect.get("destabilize",0.0)))
     covert_profile.completed=int(covert_profile.get("completed",0))+1
-    CovertCareer.add_entry(covert_profile,"CASE CLOSED: %s. Political and faction consequences applied."%String(job.get("target","organization")))
+    var closure_note:="CASE CLOSED: %s. Political and faction consequences applied."%String(job.get("target","organization"))
+    if not mastermind_impact.is_empty():
+        var affected:=PoliticalWorld.faction_record(political_world,String(mastermind_impact.get("affected_faction","")))
+        closure_note+=" Mastermind network exposed on %s; %s loses frontier influence and treasury reserves."%[String(mastermind_impact.get("planet",job.get("planet",current_planet))),String(affected.get("name",mastermind_impact.get("affected_faction","rival faction")))]
+    CovertCareer.add_entry(covert_profile,closure_note)
     var opening_adventure:=bool(job.get("opening_adventure",false))
     covert_profile.active={};bounty_completed_this_route=true
     var payment:=_complete_contract_if_ready();research_credits+=payment

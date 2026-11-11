@@ -694,6 +694,39 @@ static func political_context_at(world: Dictionary, pos: Vector2) -> Dictionary:
         "contesting_factions": [String(strongest.id), String(second.id)] if state == STATE_CONTESTED else []
     }
 
+static func resolve_mastermind_case_effect(world: Dictionary, issuer_id: String, planet_id: String, pressure: float) -> Dictionary:
+    # A completed top-tier investigation can expose a rival's embedded network.
+    # Keep the impact deterministic and bounded, but apply it to the same
+    # influence values used by territory and route politics.
+    var pos := planet_position(world, planet_id)
+    var ranked := _ranked_influence(world, pos)
+    var affected_id := ""
+    for influence in ranked:
+        var candidate := String(influence.get("id", ""))
+        if candidate != issuer_id:
+            affected_id = candidate
+            break
+    if affected_id.is_empty():
+        return {}
+    var faction := faction_record(world, affected_id).duplicate(true)
+    if faction.is_empty():
+        return {}
+    var bounded_pressure := clampf(pressure, 0.01, 0.05)
+    var strength_loss := bounded_pressure * 1.8
+    var radius_loss := 18.0 + bounded_pressure * 420.0
+    faction["strength"] = maxf(0.72, float(faction.get("strength", 1.0)) - strength_loss)
+    faction["radius"] = maxf(620.0, float(faction.get("radius", 900.0)) - radius_loss)
+    faction["treasury"] = maxf(0.0, float(faction.get("treasury", 0.0)) * (1.0 - bounded_pressure * 0.6))
+    _replace_faction(world, affected_id, faction)
+    var history: Array = world.get("case_impacts", [])
+    history.append({"type":"mastermind_network_exposed", "planet":planet_id, "issuer":issuer_id,
+        "affected_faction":affected_id, "strength_loss":strength_loss, "radius_loss":radius_loss})
+    while history.size() > 24:
+        history.pop_front()
+    world["case_impacts"] = history
+    refresh_route_politics(world)
+    return {"planet":planet_id, "affected_faction":affected_id, "strength_loss":strength_loss, "radius_loss":radius_loss}
+
 static func _edge_id(a: String, b: String) -> String:
     return a + "|" + b if a < b else b + "|" + a
 
