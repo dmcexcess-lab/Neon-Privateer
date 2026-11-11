@@ -37,6 +37,15 @@ func _run()->void:
     var exploration:=Cases.create(base,0);var wanted:String=String(exploration.people[-1].id);var target_index:int=exploration.steps.find("target")
     check(Cases.accidental_discovery(exploration,String(exploration.sites[target_index].id),"wrong-suspect") and exploration.stage==0 and exploration.clues[-1].kind=="location","exploring a location adds a sourced clue without falsely identifying the target")
     check(Cases.accidental_discovery(exploration,String(exploration.sites[target_index].id),wanted) and Career.next_task(exploration)=="target" and Cases.dossier_summary(exploration).contains("2/4 CLUES"),"verified target location can shortcut the clue chain while preserving its dossier trail")
+    var field_case:=Cases.create(base,1,["p3","p4"]);var discovery_sites:Array=field_case.get("discovery_sites",[]);var planned_site_ids:Array=[];var valid_intermediate_leads:=true
+    for planned_site in field_case.sites:planned_site_ids.append(String(planned_site.get("id","")))
+    for lead in discovery_sites:
+        if String(lead.get("linked_task","")) in ["target","mastermind"] or not planned_site_ids.has(String(lead.get("linked_site_id",""))):valid_intermediate_leads=false
+    check(discovery_sites.size()==2 and valid_intermediate_leads,"case-chain exploration seeds multiple intermediate field leads linked to real dossier locations")
+    var initial_stage:=int(field_case.stage);var initial_clues:=field_case.clues.size();var field_lead:Dictionary=discovery_sites[0]
+    check(Cases.accidental_discovery(field_case,String(field_lead.id)) and int(field_case.stage)==initial_stage and bool(field_case.clues[-1].side_lead) and String(field_case.clues[-1].related_site_id)==String(field_lead.linked_site_id),"finding an intermediate field lead adds a linked clue without skipping the authored mission chain")
+    var after_field_clues:=field_case.clues.size()
+    check(not Cases.accidental_discovery(field_case,String(field_lead.id)) and field_case.clues.size()==after_field_clues and after_field_clues==initial_clues+1,"revisiting an explored lead does not duplicate dossier evidence")
     var tier_three:=Cases.create(base,3);var target_subject:Dictionary=Cases.subject_for_task(tier_three,"target")
     check(target_subject.role=="enforcer" and tier_three.steps.count("target")==1,"higher rank separates a recoverable bounty from the lieutenant and mastermind")
     var pirate_base:=base.duplicate(true);pirate_base.id="pirate-9";pirate_base.guild="";pirate_base.criminal=true;pirate_base.issuer_faction="";pirate_base.issuer_name="FREE CAPTAINS"

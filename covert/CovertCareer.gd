@@ -118,7 +118,11 @@ static func advance(data: Dictionary,task: String,speaker: String="Dock contact"
     job.stage+=1;CaseDirector.reveal_current(job);return true
 static func accidental_discovery(data: Dictionary,site_id: String,person_id: String="") -> bool:
     if data.active.is_empty() or not CaseDirector.accidental_discovery(data.active,site_id,person_id):return false
-    add_entry(data,"ACCIDENTAL DISCOVERY: the target was found before the planned clue chain finished.")
+    var clues:Array=data.active.get("clues",[]);var latest:Dictionary=clues[-1] if not clues.is_empty() else {}
+    if bool(latest.get("side_lead",false)):
+        add_entry(data,"EXPLORATION LEAD: %s"%String(latest.get("text","New case lead added to the dossier.")))
+    else:
+        add_entry(data,"ACCIDENTAL DISCOVERY: the target was found before the planned clue chain finished.")
     return true
 static func finished(job: Dictionary) -> bool:return not job.is_empty() and next_task(job)=="done"
 static func settle(data: Dictionary) -> int:

@@ -62,6 +62,8 @@ static func dossier_summary(job: Dictionary) -> String:
     var open_sites:=0
     for site in job.get("sites",[]):
         if not bool(site.get("visited",false)):open_sites+=1
+    for site in job.get("discovery_sites",[]):
+        if not bool(site.get("visited",false)):open_sites+=1
     return "%s · %d/%d CLUES · %d SUSPECTS · %d LEADS · NEXT: %s"%[
         String(job.get("target","ACTIVE CASE")),clues.size(),job.get("steps",[]).size(),people.size(),open_sites,
         next]
@@ -92,8 +94,20 @@ static func create(contract: Dictionary,merc_rank: int=0,reachable_planets: Arra
         sites.append({"id":"site:%d:%d"%[seed_number,i],"planet":site_planet,
             "name":"%s %s"%[site_type.replace("_"," ").to_upper(),str(11+(seed_number+i*17)%88)],"type":site_type,"task":task,
             "discovered":i==0,"visited":false,"seed":seed_number+i*7919,"station":site_type in ["orbital_annex","freighter","relay_station"]})
+    var discovery_sites:Array=[]
+    # Seed optional field-search discoveries against intermediate stages. They
+    # add useful dossier clues without replacing the contract's authored chain.
+    for i in range(1,steps.size()-1):
+        if discovery_sites.size()>=4:break
+        var linked_site:Dictionary=sites[i]
+        var lead_type:=str(SITE_TYPES[(seed_number+i*11+5)%SITE_TYPES.size()])
+        discovery_sites.append({"id":"explore:%d:%d"%[seed_number,i],"planet":String(linked_site.planet),
+            "name":"%s %s"%[lead_type.replace("_"," ").to_upper(),str(13+(seed_number+i*23)%86)],"type":lead_type,
+            "task":"field_search","linked_step":i,"linked_site_id":String(linked_site.id),"linked_task":String(steps[i]),
+            "discovered":false,"visited":false,"seed":seed_number+i*104729})
     var result:Dictionary={"id":"case:%s"%str(contract.get("id",seed_number)),"planet":case_planet,
         "type":"criminal_merc" if criminal else "faction_case","target":str(people[-1].name),"people":people,"steps":steps,"sites":sites,"stage":0,
+        "discovery_sites":discovery_sites,
         "difficulty":tier,"guild":str(contract.get("guild","")),"required_rank":int(contract.get("required_rank",0)),"criminal":criminal,"target_approach":"space" if seed_number%2==0 else "breach",
         "reward":0,"seed":seed_number,"issuer_faction":str(contract.get("issuer_faction","")),"issuer_name":str(contract.get("issuer_name","INDEPENDENT CLIENT")),
         "mastermind":people[-1] if tier>=4 else {},"world_effect":{"strength":.015*tier,"relation":2+tier,"destabilize":.01*maxi(0,tier-2)},
@@ -121,6 +135,27 @@ static func accidental_discovery(job: Dictionary,site_id: String,person_id: Stri
     var sites:Array=job.get("sites",[]);var found:=-1
     for i in sites.size():
         if String(sites[i].get("id",""))==site_id:found=i;break
+    var discovery_sites:Array=job.get("discovery_sites",[]);var discovery_index:=-1
+    if found<0:
+        for i in discovery_sites.size():
+            if String(discovery_sites[i].get("id",""))==site_id:discovery_index=i;break
+        if discovery_index<0:return false
+        var lead:Dictionary=discovery_sites[discovery_index]
+        if bool(lead.get("visited",false)):return false
+        lead.visited=true;lead.discovered=true
+        discovery_sites[discovery_index]=lead
+        var linked_step:=int(lead.get("linked_step",0));var linked_site:Dictionary=sites[linked_step] if linked_step>=0 and linked_step<sites.size() else {}
+        var clue_id:="clue:%s:exploration:%s"%[String(job.get("id","case")),site_id]
+        var clues:Array=job.get("clues",[]);var recorded:=false
+        for clue in clues:
+            if String(clue.get("id",""))==clue_id:recorded=true;break
+        if not recorded:
+            clues.append({"id":clue_id,"kind":"location","source":"Exploration / unmarked landing",
+                "text":"Field traces at %s point toward the %s lead at %s."%[String(lead.get("name","unknown site")),String(lead.get("linked_task","case")).replace("_"," "),String(linked_site.get("name","an unknown location"))],
+                "location":String(lead.get("planet","")),"site_id":site_id,"related_site_id":String(lead.get("linked_site_id","")),
+                "related_location":String(linked_site.get("name","")),"related_task":String(lead.get("linked_task","")),"confidence":0.58,"status":"ACTIONABLE","stage":linked_step,"side_lead":true})
+        job.discovery_sites=discovery_sites;job.clues=clues
+        return true
     if found<0:return false
     var site:Dictionary=sites[found]
     var clues:Array=job.get("clues",[])

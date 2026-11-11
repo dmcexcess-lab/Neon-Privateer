@@ -191,8 +191,23 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   b.setPrivateerContext(null);
 });
 
+test('spaceport exploration can surface multiple case-linked intermediate leads',()=>{
+  const first={id:'explore:77:1',name:'LISTENING POST 27',task:'tail',linked_site_id:'site:77:1'};
+  const second={id:'explore:77:2',name:'RELAY STATION 62',task:'wiretap',linked_site_id:'site:77:2'};
+  const context={mode:'spaceport',requestId:'exploration-leads',seed:777,arrivalSeed:5,planetId:'p-leads',planetName:'Lead Port',caseContext:{id:'case:77',task:'rumor',difficulty:3,target:'Ivo Slate',accidentalSites:[{site:first,person:''},{site:second,person:''}]},loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const leads=b.game.world.stations.filter(station=>station.service==='case_site'&&station.accidental);
+  assert.equal(leads.length,2,'the port presents multiple independent exploration locations together');
+  assert.notDeepEqual(leads.map(station=>[station.x,station.y])[0],leads.map(station=>[station.x,station.y])[1],'each lead has its own map location');
+  for(const lead of leads){b.game.player.x=lead.x;b.game.player.y=lead.y;b.interactPort();}
+  const discovered=privateerMessages.filter(message=>message.type==='dmc-privateer-case-discovery').slice(-2).map(message=>message.detail.site);
+  assert.deepEqual(discovered,[first.id,second.id],'visiting each location returns its own linked clue to the main career');
+  b.setPrivateerContext(null);
+});
+
 test('Privateer dossier browses every clue with source, confidence, location and linked records',()=>{
   const clues=Array.from({length:6},(_,index)=>({id:`clue-${index}`,kind:index?'wiretap':'rumor',status:index?'VERIFIED':'UNVERIFIED',text:`Lead record ${index+1}`,source:`Contact ${index+1}`,confidence:index?.95:.25,location:`Planet ${index+1}`,site_id:`site-${index+1}`,subject_id:'suspect-a',encrypted:index===5,puzzle_type:'word_find',decoded:'Relay Station'}));
+  Object.assign(clues[0],{side_lead:true,related_task:'wiretap',related_location:'Relay Station 2',related_site_id:clues[1].site_id});
   const evidence=clues.slice(1).map((clue,index)=>({id:`evidence-${index+1}`,kind:'wiretap',site_id:clue.site_id,source:clue.source,verified:true}));
   const context={mode:'spaceport',requestId:'dossier-browser',seed:601,arrivalSeed:601,planetId:'p-dossier',planetName:'Dossier Port',caseContext:{id:'case-dossier',target:'Sera Quill',task:'wiretap',difficulty:4,dossierSummary:'6 clues · 2 suspects · next wiretap',objective:'Visit Relay Station',leadPlanetName:'Vesper',clues,suspects:[{id:'suspect-a',name:'Sera Quill',role:'Target',status:'SUSPECTED'}],evidence},loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
@@ -207,6 +222,8 @@ test('Privateer dossier browses every clue with source, confidence, location and
   assert.match(content,/href="#dossier-person-suspect-a"/,'clues link to a persistent suspect record');
   assert.match(content,/href="#dossier-evidence-evidence-1"/,'clues link to preserved evidence');
   assert.match(content,/href="#dossier-location-site-6"/,'clue locations link to the known-location index');
+  assert.match(content,/FOLLOW-UP LEAD · wiretap · Relay Station 2/,'exploration clue names the intermediate step and location it points toward');
+  assert.match(content,/href="#dossier-clue-clue-1">FOLLOW-UP · wiretap/,'when the follow-up is later recorded, the dossier links both clues');
   assert.match(content,/DECRYPTED VIA WORD FIND · Relay Station/);
   assert.match(css,/\.dossier-content\{[^}]*overflow:auto/,'dossier body has independent scrolling');
   assert.match(html,/id="caseDossier"[^>]*role="dialog"/);

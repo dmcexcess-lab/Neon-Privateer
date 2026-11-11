@@ -672,11 +672,18 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
   stations.push(...serviceStations);
   if(caseContext?.site?.id)stations.push({id:'case-site',service:'case_site',x:-300,y:-1040,
     label:`OFF-PORT LANDING · ${caseContext.site.name} · ${String(caseContext.task||'lead').toUpperCase()}`,short:'LAND',color:'#f9cc70',caseContext});
-  if(caseContext?.accidentalSite?.id){
-    const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050]],pick=(Number(arrivalSeed??seed)>>>0)%accidentalPositions.length;
-    stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
-      label:`UNMARKED LANDING · ${caseContext.accidentalSite.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext});
-  }
+  const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050],[-1510,620],[1270,-850]];
+  const accidentalLeads=Array.isArray(caseContext?.accidentalSites)&&caseContext.accidentalSites.length
+    ?caseContext.accidentalSites.map(entry=>({site:entry.site||{},person:entry.person||''}))
+    :caseContext?.accidentalSite?.id?[{site:caseContext.accidentalSite,person:caseContext.accidentalPerson||''}]:[];
+  accidentalLeads.slice(0,accidentalPositions.length).forEach((entry,index)=>{
+    if(!entry.site?.id)return;
+    const position=((Number(arrivalSeed??seed)>>>0)+index)%accidentalPositions.length;
+    const point=accidentalPositions[position%accidentalPositions.length];
+    const leadContext={...caseContext,accidentalSite:entry.site,accidentalPerson:entry.person};
+    stations.push({id:`case-accidental-${entry.site.id}`,service:'case_site',x:point[0],y:point[1],
+      label:`UNMARKED LEAD · ${entry.site.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext:leadContext});
+  });
   for(const venue of structures.filter(item=>!item.service)){
     const entry={north:[venue.x+venue.w/2,venue.y+48],south:[venue.x+venue.w/2,venue.y+venue.h-48],
       west:[venue.x+48,venue.y+venue.h/2],east:[venue.x+venue.w-48,venue.y+venue.h/2]}[venue.door]||[venue.x+venue.w/2,venue.y+venue.h/2];
@@ -1458,7 +1465,7 @@ function interactPort(){
       if(station.accidental){
         const found=lead.accidentalSite||{};
         privateerMessage('dmc-privateer-case-discovery',{site:found.id,person:lead.accidentalPerson||''});
-        announce(`ACCIDENTAL DISCOVERY · ${found.name} · TARGET DOSSIER UPDATED`,5);
+        announce(`${found.task==='field_search'?'EXPLORATION LEAD':'ACCIDENTAL DISCOVERY'} · ${found.name} · DOSSIER UPDATED`,5);
       }
       else if(task==='rumor')announce('THIS LEAD STARTS IN THE PORT · TALK TO LOCALS WITH YOUR WEAPON HOLSTERED',4);
       else if(task==='wiretap')privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
@@ -1533,7 +1540,10 @@ function openCaseDossier(){
     const personId=clue.subject_id||clue.person_id;
     if(personId&&people.some(person=>person.id===personId))links.push(`<a href="#dossier-person-${dossierSlug(personId)}">PERSON · ${dossierEscape(people.find(person=>person.id===personId)?.name||'SUBJECT')}</a>`);
     if(clue.site_id)links.push(`<a href="#dossier-location-${dossierSlug(clue.site_id)}">LOCATION · ${dossierEscape(clue.location||clue.site_id)}</a>`);
-    return `<article class="dossier-record" id="dossier-clue-${dossierSlug(clue.id||index)}"><div class="dossier-meta"><span>${String(index+1).padStart(2,'0')} · ${dossierEscape(clue.kind||'LEAD')}</span><span class="dossier-badge">${dossierEscape(clue.status||'OPEN')}</span><span>CONFIDENCE · ${Math.round(Math.max(0,Math.min(1,Number(clue.confidence)||0))*100)}%</span></div><p>${dossierEscape(clue.text||clue.source||'Evidence recorded.')}</p>${clue.encrypted?`<div class="dossier-meta">DECRYPTED VIA ${dossierEscape(String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase())} · ${dossierEscape(clue.decoded||'CODE RECORDED')}</div>`:''}<div class="dossier-meta">SOURCE · ${dossierEscape(clue.source||'CAREER RECORD')} · LOCATION · ${dossierEscape(clue.location||'UNCONFIRMED')}</div>${links.length?`<nav class="dossier-links" aria-label="Linked records">${links.join('')}</nav>`:''}</article>`;
+    const relatedLead=clue.related_site_id?clues.find(item=>item&&typeof item==='object'&&item.site_id===clue.related_site_id):null;
+    if(relatedLead)links.push(`<a href="#dossier-clue-${dossierSlug(relatedLead.id||clues.indexOf(relatedLead))}">FOLLOW-UP · ${dossierEscape(relatedLead.kind||'LEAD')}</a>`);
+    const followUp=clue.side_lead?`<div class="dossier-meta">FOLLOW-UP LEAD · ${dossierEscape(clue.related_task||'CASE')} · ${dossierEscape(clue.related_location||'LOCATION UNCONFIRMED')}</div>`:'';
+    return `<article class="dossier-record" id="dossier-clue-${dossierSlug(clue.id||index)}"><div class="dossier-meta"><span>${String(index+1).padStart(2,'0')} · ${dossierEscape(clue.kind||'LEAD')}</span><span class="dossier-badge">${dossierEscape(clue.status||'OPEN')}</span><span>CONFIDENCE · ${Math.round(Math.max(0,Math.min(1,Number(clue.confidence)||0))*100)}%</span></div><p>${dossierEscape(clue.text||clue.source||'Evidence recorded.')}</p>${clue.encrypted?`<div class="dossier-meta">DECRYPTED VIA ${dossierEscape(String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase())} · ${dossierEscape(clue.decoded||'CODE RECORDED')}</div>`:''}<div class="dossier-meta">SOURCE · ${dossierEscape(clue.source||'CAREER RECORD')} · LOCATION · ${dossierEscape(clue.location||'UNCONFIRMED')}</div>${followUp}${links.length?`<nav class="dossier-links" aria-label="Linked records">${links.join('')}</nav>`:''}</article>`;
   }).reverse().join('');
   const evidenceCards=evidence.map((item,index)=>{
     const related=clues.find(clue=>clue&&typeof clue==='object'&&clue.site_id&&clue.site_id===item.site_id);

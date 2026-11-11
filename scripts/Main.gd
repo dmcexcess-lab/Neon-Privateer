@@ -577,7 +577,8 @@ func _on_breach_web_message(args: Array) -> void:
                 firewall.notice="CASE %s // BEAT THE TRACE TO RECORD THE CHANNEL" % ("AUDIO TAP" if pending_case_hack_task=="eavesdrop" else "WIRETAP");firewall.notice_clock=5
         "dmc-privateer-case-discovery":
             if CovertCareer.accidental_discovery(covert_profile,String(detail.get("site","")),String(detail.get("person",""))):
-                last_trip_summary="ACCIDENTAL DISCOVERY · TARGET LOCATION FOUND · DOSSIER JUMPED AHEAD"
+                var latest_case:Dictionary=covert_profile.get("active",{});var clue_list:Array=latest_case.get("clues",[]);var latest_clue:Dictionary=clue_list[-1] if not clue_list.is_empty() else {}
+                last_trip_summary="EXPLORATION LEAD ADDED · CASE CHAIN CONTINUES" if bool(latest_clue.get("side_lead",false)) else "ACCIDENTAL DISCOVERY · TARGET LOCATION FOUND · DOSSIER JUMPED AHEAD"
                 _save_all_state()
         "dmc-privateer-rumor":
             var dossier:=Storyteller.observe_rumor(covert_profile,detail,_personal_story_style())
@@ -666,12 +667,17 @@ func _active_case_context() -> Dictionary:
     if job.is_empty():return {}
     var site:=CaseDirector.current_site(job)
     var accidental_site:Dictionary={};var accidental_person:=""
+    var accidental_sites:Array=[]
+    for lead in job.get("discovery_sites",[]):
+        if not bool(lead.get("visited",false)) and String(lead.get("planet",job.get("planet","")))==current_planet:
+            accidental_sites.append({"site":lead.duplicate(true),"person":""})
     var steps:Array=job.get("steps",[]);var sites:Array=job.get("sites",[])
     for i in range(int(job.get("stage",0))+1,steps.size()):
         if String(steps[i]) in ["target","mastermind"] and i<sites.size():
-            if String(sites[i].get("planet",job.get("planet","")))==current_planet:accidental_site=sites[i]
-            accidental_person=String(CaseDirector.subject_for_task(job,String(steps[i])).get("id",""))
-            if not accidental_site.is_empty():break
+            if String(sites[i].get("planet",job.get("planet","")))==current_planet:
+                accidental_site=sites[i];accidental_person=String(CaseDirector.subject_for_task(job,String(steps[i])).get("id",""))
+                accidental_sites.append({"site":sites[i].duplicate(true),"person":accidental_person})
+    accidental_sites=accidental_sites.slice(0,6)
     var task:=CovertCareer.next_task(job)
     var site_planet:=String(site.get("planet",job.get("planet","")))
     var is_here:=site_planet==current_planet
@@ -679,7 +685,7 @@ func _active_case_context() -> Dictionary:
     var current_subject:=CaseDirector.subject_for_task(job,task)
     var objective:=CovertCareer.objective(job)
     if not is_here:objective="Travel to %s to continue this case. %s"%[_planet_display_name(site_planet),objective]
-    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(current_subject.get("name",job.get("target",""))),"site":site,"casePlanet":String(job.get("planet","")),"leadPlanet":site_planet,"leadPlanetName":_planet_display_name(site_planet),"leadHere":is_here,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":objective,"dossierSummary":CaseDirector.dossier_summary(job),"clues":job.get("clues",[]).duplicate(true),"suspects":job.get("people",[]).duplicate(true),"evidence":job.get("evidence",[]).duplicate(true)}
+    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(current_subject.get("name",job.get("target",""))),"site":site,"casePlanet":String(job.get("planet","")),"leadPlanet":site_planet,"leadPlanetName":_planet_display_name(site_planet),"leadHere":is_here,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"accidentalSites":accidental_sites,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":objective,"dossierSummary":CaseDirector.dossier_summary(job),"clues":job.get("clues",[]).duplicate(true),"suspects":job.get("people",[]).duplicate(true),"evidence":job.get("evidence",[]).duplicate(true)}
 
 func _start_first_bounty() -> bool:
     if first_adventure_state not in ["READY","CALLING"] or not active_contract.is_empty() or not covert_profile.get("active",{}).is_empty():return false

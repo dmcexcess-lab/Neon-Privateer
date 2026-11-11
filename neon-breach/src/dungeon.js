@@ -438,11 +438,18 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
   stations.push(...serviceStations);
   if(caseContext?.site?.id)stations.push({id:'case-site',service:'case_site',x:-300,y:-1040,
     label:`OFF-PORT LANDING · ${caseContext.site.name} · ${String(caseContext.task||'lead').toUpperCase()}`,short:'LAND',color:'#f9cc70',caseContext});
-  if(caseContext?.accidentalSite?.id){
-    const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050]],pick=(Number(arrivalSeed??seed)>>>0)%accidentalPositions.length;
-    stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
-      label:`UNMARKED LANDING · ${caseContext.accidentalSite.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext});
-  }
+  const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050],[-1510,620],[1270,-850]];
+  const accidentalLeads=Array.isArray(caseContext?.accidentalSites)&&caseContext.accidentalSites.length
+    ?caseContext.accidentalSites.map(entry=>({site:entry.site||{},person:entry.person||''}))
+    :caseContext?.accidentalSite?.id?[{site:caseContext.accidentalSite,person:caseContext.accidentalPerson||''}]:[];
+  accidentalLeads.slice(0,accidentalPositions.length).forEach((entry,index)=>{
+    if(!entry.site?.id)return;
+    const position=((Number(arrivalSeed??seed)>>>0)+index)%accidentalPositions.length;
+    const point=accidentalPositions[position%accidentalPositions.length];
+    const leadContext={...caseContext,accidentalSite:entry.site,accidentalPerson:entry.person};
+    stations.push({id:`case-accidental-${entry.site.id}`,service:'case_site',x:point[0],y:point[1],
+      label:`UNMARKED LEAD · ${entry.site.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext:leadContext});
+  });
   for(const venue of structures.filter(item=>!item.service)){
     const entry={north:[venue.x+venue.w/2,venue.y+48],south:[venue.x+venue.w/2,venue.y+venue.h-48],
       west:[venue.x+48,venue.y+venue.h/2],east:[venue.x+venue.w-48,venue.y+venue.h/2]}[venue.door]||[venue.x+venue.w/2,venue.y+venue.h/2];

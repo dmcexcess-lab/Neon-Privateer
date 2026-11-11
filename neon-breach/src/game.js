@@ -275,7 +275,7 @@ function interactPort(){
       if(station.accidental){
         const found=lead.accidentalSite||{};
         privateerMessage('dmc-privateer-case-discovery',{site:found.id,person:lead.accidentalPerson||''});
-        announce(`ACCIDENTAL DISCOVERY · ${found.name} · TARGET DOSSIER UPDATED`,5);
+        announce(`${found.task==='field_search'?'EXPLORATION LEAD':'ACCIDENTAL DISCOVERY'} · ${found.name} · DOSSIER UPDATED`,5);
       }
       else if(task==='rumor')announce('THIS LEAD STARTS IN THE PORT · TALK TO LOCALS WITH YOUR WEAPON HOLSTERED',4);
       else if(task==='wiretap')privateerMessage('dmc-privateer-case-hack',{task,site:site.id,seed:site.seed,difficulty:lead.difficulty||1});
@@ -350,7 +350,10 @@ function openCaseDossier(){
     const personId=clue.subject_id||clue.person_id;
     if(personId&&people.some(person=>person.id===personId))links.push(`<a href="#dossier-person-${dossierSlug(personId)}">PERSON · ${dossierEscape(people.find(person=>person.id===personId)?.name||'SUBJECT')}</a>`);
     if(clue.site_id)links.push(`<a href="#dossier-location-${dossierSlug(clue.site_id)}">LOCATION · ${dossierEscape(clue.location||clue.site_id)}</a>`);
-    return `<article class="dossier-record" id="dossier-clue-${dossierSlug(clue.id||index)}"><div class="dossier-meta"><span>${String(index+1).padStart(2,'0')} · ${dossierEscape(clue.kind||'LEAD')}</span><span class="dossier-badge">${dossierEscape(clue.status||'OPEN')}</span><span>CONFIDENCE · ${Math.round(Math.max(0,Math.min(1,Number(clue.confidence)||0))*100)}%</span></div><p>${dossierEscape(clue.text||clue.source||'Evidence recorded.')}</p>${clue.encrypted?`<div class="dossier-meta">DECRYPTED VIA ${dossierEscape(String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase())} · ${dossierEscape(clue.decoded||'CODE RECORDED')}</div>`:''}<div class="dossier-meta">SOURCE · ${dossierEscape(clue.source||'CAREER RECORD')} · LOCATION · ${dossierEscape(clue.location||'UNCONFIRMED')}</div>${links.length?`<nav class="dossier-links" aria-label="Linked records">${links.join('')}</nav>`:''}</article>`;
+    const relatedLead=clue.related_site_id?clues.find(item=>item&&typeof item==='object'&&item.site_id===clue.related_site_id):null;
+    if(relatedLead)links.push(`<a href="#dossier-clue-${dossierSlug(relatedLead.id||clues.indexOf(relatedLead))}">FOLLOW-UP · ${dossierEscape(relatedLead.kind||'LEAD')}</a>`);
+    const followUp=clue.side_lead?`<div class="dossier-meta">FOLLOW-UP LEAD · ${dossierEscape(clue.related_task||'CASE')} · ${dossierEscape(clue.related_location||'LOCATION UNCONFIRMED')}</div>`:'';
+    return `<article class="dossier-record" id="dossier-clue-${dossierSlug(clue.id||index)}"><div class="dossier-meta"><span>${String(index+1).padStart(2,'0')} · ${dossierEscape(clue.kind||'LEAD')}</span><span class="dossier-badge">${dossierEscape(clue.status||'OPEN')}</span><span>CONFIDENCE · ${Math.round(Math.max(0,Math.min(1,Number(clue.confidence)||0))*100)}%</span></div><p>${dossierEscape(clue.text||clue.source||'Evidence recorded.')}</p>${clue.encrypted?`<div class="dossier-meta">DECRYPTED VIA ${dossierEscape(String(clue.puzzle_type||'CODE').replaceAll('_',' ').toUpperCase())} · ${dossierEscape(clue.decoded||'CODE RECORDED')}</div>`:''}<div class="dossier-meta">SOURCE · ${dossierEscape(clue.source||'CAREER RECORD')} · LOCATION · ${dossierEscape(clue.location||'UNCONFIRMED')}</div>${followUp}${links.length?`<nav class="dossier-links" aria-label="Linked records">${links.join('')}</nav>`:''}</article>`;
   }).reverse().join('');
   const evidenceCards=evidence.map((item,index)=>{
     const related=clues.find(clue=>clue&&typeof clue==='object'&&clue.site_id&&clue.site_id===item.site_id);
