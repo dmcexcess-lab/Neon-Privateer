@@ -1604,8 +1604,9 @@ function drawRoom(room){
     const pulse=Math.sin(now*3)*5;
     glowCircle(x,y,47+pulse,C.green,'#122e35',4,22);
     glowCircle(x,y,29,C.cyan,'#071827',3,12);
-    ctx.fillStyle='#abffdc';ctx.font='900 15px ui-monospace,monospace';ctx.fillText('UP',x,y+5);
-    ctx.font='700 12px ui-monospace,monospace';ctx.fillText('STAIRS / NEXT SECTOR',x,y+84);
+    const careerMission=privateerContext?.mode==='mission';
+    ctx.fillStyle='#abffdc';ctx.font='900 15px ui-monospace,monospace';ctx.fillText(careerMission?'EXIT':'UP',x,y+5);
+    ctx.font='700 12px ui-monospace,monospace';ctx.fillText(careerMission?'SITE EXIT / RETURN TO PORT':'STAIRS / NEXT SECTOR',x,y+84);
   }
   if(room.exfil){
     const pulse=Math.sin(now*3)*4;
