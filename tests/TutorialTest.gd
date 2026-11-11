@@ -24,6 +24,7 @@ func run() -> void:
     check(scene._start_first_bounty(),"answering the opening cinematic auto-accepts the first bounty")
     check(scene.active_contract.type=="bounty" and scene.active_contract.destination==scene.current_planet,"opening bounty belongs to the full Privateer contract ledger")
     check(scene.covert_profile.active.steps==["rumor","tail","wiretap","target"] and scene.covert_profile.active.target=="Kest Arden","opening case preserves the ask-around, tail, terminal clue and target sequence")
+    check(scene.covert_profile.active.people[0].name=="Kest Arden" and scene.covert_profile.active.clues[0].text.contains("Kest Arden"),"opening lead, named suspect and initial dossier clue remain consistent")
     check(not scene._start_first_bounty(),"the opening contract cannot be duplicated")
     check(scene._advance_active_case("rumor","Mara Voss") and CovertCareer.next_task(scene.covert_profile.active)=="tail","asking around advances the persistent career dossier")
     scene.first_adventure_state="CONTACTED"

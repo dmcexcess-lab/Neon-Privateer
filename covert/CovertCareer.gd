@@ -41,7 +41,7 @@ static func next_task(job: Dictionary) -> String:
     return String(steps[stage]) if stage<steps.size() else "done"
 static func objective(job: Dictionary) -> String:
     if job.is_empty():return "Choose work or crime. Start with courier work from ship CONTRACTS if you have no equipment."
-    var who:=String(job.target)
+    var who:=String(CaseDirector.subject_for_task(job).get("name",job.get("target","UNKNOWN SUSPECT")))
     match next_task(job):
         "rumor":return "Last known location: this port. Ask around at the Dockside Bar about %s with your weapon holstered."%who
         "tail":return "Listen at the northeast meeting for 6 seconds, unseen and holstered. Extract with the lead."
@@ -93,7 +93,25 @@ static func advance(data: Dictionary,task: String,speaker: String="Dock contact"
         "file_charges":add_entry(data,"CHARGES FILED: witness account and recovered manifest submitted against %s."%job.target)
         _:add_entry(data,"EXTRACTED: %s / %s objective confirmed."%[task,job.target])
     var site:=CaseDirector.current_site(job)
-    if not site.is_empty():site.visited=true
+    if not site.is_empty():
+        site.visited=true
+        var clue_id:="clue:%s:%d"%[String(job.get("id","case")),int(job.get("stage",0))]
+        var clues:Array=job.get("clues",[])
+        clues.append({"id":clue_id,"kind":task,"source":speaker,"text":CaseDirector.clue_text(task,job,site,speaker),
+            "location":String(site.get("planet",job.get("planet",""))),"site_id":String(site.get("id","")),
+            "confidence":.95 if task in ["wiretap","breach","target","mastermind"] else .75,
+            "status":"VERIFIED" if task in ["wiretap","breach","target","mastermind"] else "CORROBORATED","stage":int(job.get("stage",0))})
+        job.clues=clues
+        site["clue_ids"]=[clue_id]
+        var people:Array=job.get("people",[])
+        var subject:=CaseDirector.subject_for_task(job,task)
+        if not subject.is_empty():
+            subject.status="LOCATED" if task in ["target","mastermind"] else "VERIFIED" if task in ["wiretap","breach"] else "SUSPECTED" if task in ["tail","stakeout","eavesdrop"] else "IDENTIFIED"
+            job.people=people
+        if task in ["breach","wiretap","evidence"]:
+            var evidence:Array=job.get("evidence",[])
+            evidence.append({"id":"evidence:%s:%d"%[String(job.get("id","case")),int(job.get("stage",0))],"kind":task,"site_id":String(site.get("id","")),"source":speaker,"verified":true})
+            job.evidence=evidence
     job.stage+=1;CaseDirector.reveal_current(job);return true
 static func accidental_discovery(data: Dictionary,site_id: String,person_id: String="") -> bool:
     if data.active.is_empty() or not CaseDirector.accidental_discovery(data.active,site_id,person_id):return false

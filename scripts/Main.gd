@@ -602,7 +602,8 @@ func _on_breach_web_message(args: Array) -> void:
             if bool(visit.get("success",false)):research_credits-=int(visit.get("cost",0))
             last_trip_summary=String(visit.get("summary","VENUE CLOSED"));_save_all_state()
         "dmc-privateer-dossier":
-            last_trip_summary=Storyteller.dossier_summary(covert_profile)
+            var active_dossier:Dictionary=covert_profile.get("active",{})
+            last_trip_summary=CaseDirector.dossier_summary(active_dossier) if not active_dossier.is_empty() else Storyteller.dossier_summary(covert_profile)
         "dmc-privateer-mission-offer":
             contract_notice = "%s offers a %s %s operation" % [String(detail.get("contact", "LOCAL")), String(detail.get("style", "choice")).to_upper(), String(detail.get("kind", "field"))]
         "dmc-privateer-crime":
@@ -665,12 +666,14 @@ func _active_case_context() -> Dictionary:
     var accidental_site:Dictionary={};var accidental_person:=""
     var steps:Array=job.get("steps",[]);var sites:Array=job.get("sites",[])
     for i in range(int(job.get("stage",0))+1,steps.size()):
-        if String(steps[i]) in ["target","mastermind"] and i<sites.size():accidental_site=sites[i];break
-    var people:Array=job.get("people",[])
-    if not people.is_empty():accidental_person=String(people[-1].get("id",""))
+        if String(steps[i]) in ["target","mastermind"] and i<sites.size():
+            accidental_site=sites[i]
+            accidental_person=String(CaseDirector.subject_for_task(job,String(steps[i])).get("id",""))
+            break
     var task:=CovertCareer.next_task(job)
     if task in ["rumor","wiretap"] or (bool(job.get("opening_adventure",false)) and task=="tail"):site={}
-    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(job.get("target","")),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":CovertCareer.objective(job)}
+    var current_subject:=CaseDirector.subject_for_task(job,task)
+    return {"id":String(job.get("id","")),"task":task,"difficulty":int(job.get("difficulty",1)),"target":String(current_subject.get("name",job.get("target",""))),"site":site,"accidentalSite":accidental_site,"accidentalPerson":accidental_person,"openingAdventure":bool(job.get("opening_adventure",false)),"objective":CovertCareer.objective(job),"dossierSummary":CaseDirector.dossier_summary(job),"clues":job.get("clues",[]).duplicate(true),"suspects":job.get("people",[]).duplicate(true),"evidence":job.get("evidence",[]).duplicate(true)}
 
 func _start_first_bounty() -> bool:
     if first_adventure_state not in ["READY","CALLING"] or not active_contract.is_empty() or not covert_profile.get("active",{}).is_empty():return false
@@ -682,7 +685,11 @@ func _start_first_bounty() -> bool:
         "elapsed_seconds":0.0,"planned_hops":0,"planned_distance":0,"boss_archetype":"trapezoid","opening_adventure":true}
     active_contract=contract
     var opening:=CaseDirector.create(contract,1)
-    opening.id="first-bounty:%s:%d"%[current_planet,world_seed];opening.target="Kest Arden";opening.steps=["rumor","tail","wiretap","target"]
+    opening.id="first-bounty:%s:%d"%[current_planet,world_seed];opening.target="Kest Arden";opening.people=[{"id":"opening:kest-arden","name":"Kest Arden","role":"courier","status":"UNKNOWN"}];opening.steps=["rumor","tail","wiretap","target"]
+    var opening_clues:Array=opening.get("clues",[])
+    opening_clues[0]["id"]="clue:%s:0"%opening.id
+    opening_clues[0]["text"]="Kest Arden was last tied to %s. Ask locals, compare accounts, and verify the lead before acting."%current_planet
+    opening.clues=opening_clues
     opening.opening_adventure=true;opening.reward=0;opening.target_approach="breach"
     opening.sites.resize(opening.steps.size())
     var site_names:Array[String]=["DOCKSIDE BAR LAST-KNOWN SIGHTING","FREIGHT CONTROL TAIL","UNREGISTERED ROUTE TERMINAL","OFF-PORT FREIGHT RING HIDEOUT"]

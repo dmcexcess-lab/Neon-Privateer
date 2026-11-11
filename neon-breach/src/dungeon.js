@@ -416,7 +416,7 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
   if(caseContext?.accidentalSite?.id){
     const accidentalPositions=[[-1160,1060],[650,1700],[1900,500],[970,1050]],pick=(Number(arrivalSeed??seed)>>>0)%accidentalPositions.length;
     stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
-      label:`UNMARKED LANDING SIGNAL · ${caseContext.accidentalSite.name}`,short:'UNKNOWN',color:'#ff60bd',hidden:true,discovered:false,accidental:true,caseContext});
+      label:`UNMARKED LANDING · ${caseContext.accidentalSite.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext});
   }
   for(const venue of structures.filter(item=>!item.service))stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});

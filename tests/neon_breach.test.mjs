@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {performance} from 'node:perf_hooks';
 
 const html=readFileSync(new URL('../neon-breach/index.html',import.meta.url),'utf8');
+const css=readFileSync(new URL('../neon-breach/src/style.css',import.meta.url),'utf8');
 const source=html.match(/<script type="module">([\s\S]*?)<\/script>/)?.[1];
 assert.ok(source,'standalone game module is available');
 const eventTarget=()=>{
@@ -58,6 +59,12 @@ vm.runInNewContext(source+`
   setPrivateerContext(value){privateerContext=value}};
 `,vm.createContext(sandbox),{timeout:15000,filename:'neon-breach-module.js'});
 const b=sandbox.__breach;
+
+test('starport conversations wrap, preserve dossier line breaks and stay inside the viewport',()=>{
+  assert.match(css,/#toast\{[^}]*max-width:min\(680px,calc\(100vw - 28px\)\)/);
+  assert.match(css,/#toast\{[^}]*white-space:pre-line/);
+  assert.match(css,/#toast\{[^}]*overflow-wrap:anywhere/);
+});
 
 test('full spaceports support armed play and guards react to gunfire',()=>{
   const context={mode:'spaceport',requestId:'port-test',seed:731,planetId:'p-port',planetName:'Test Port',archetype:'INDUSTRIAL',faction:'Test Security',loadout:{weapon:'auto_pistol'}};
@@ -149,6 +156,7 @@ test('active cases use illegal port terminals for wiretaps and named off-port la
   const landing=b.game.world.stations.find(station=>station.service==='case_site');
   assert.ok(landing&&landing.label.includes('ORBITAL ANNEX 44'),'case creates an actual landing distinct from the main starport');
   const unknown=b.game.world.stations.find(station=>station.accidental);b.game.player.x=unknown.x;b.game.player.y=unknown.y;b.interactPort();
+  assert.ok(unknown&&!unknown.hidden&&unknown.discovered,'unmarked off-port landing signals stay visible rather than using hidden nodes');
   assert.ok(privateerMessages.some(item=>item.type==='dmc-privateer-case-discovery'&&item.detail.site===accidentalSite.id),'exploration can uncover the real target before the planned clue chain');
   b.game.player.x=landing.x;b.game.player.y=landing.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-loading'&&message.detail.mode==='case-site'),'tail landing launches a tailored field operation in the larger career');
