@@ -277,6 +277,28 @@ test('Privateer mission approaches have distinct rules and contract rewards',()=
   b.setPrivateerContext(null);
 });
 
+test('recorded surveillance survives departure and later detection but resets for each assignment',()=>{
+  for(const [task,distance,required] of [['tail',200,10],['stakeout',400,8],['eavesdrop',100,6]]){
+    b.setPrivateerContext({mode:'spaceport',requestId:'surveillance-departure',planetId:'p-case',loadout:{weapon:'hands'}});
+    b.startPrivateerMission({style:'stealth',caseTask:task,difficulty:2,seed:912});
+    assert.equal(b.game.caseObservationComplete,false,'new assignment clears recorded evidence');
+    const p=b.game.player,s=b.game.caseSubject;
+    p.x=s.x+distance;p.y=s.y;p.sneaking=true;p.moving=false;b.game.detectedThisFloor=false;
+    b.updateCaseObjective(required/2);p.sneaking=false;b.updateCaseObjective(1);
+    assert.ok(b.game.caseProgress<required/2,'unfinished observation still loses progress');
+    p.sneaking=true;b.updateCaseObjective(required);
+    assert.equal(b.game.caseObservationComplete,true);
+    p.x=s.x+2000;p.sneaking=false;p.moving=true;b.game.detectedThisFloor=true;
+    b.updateCaseObjective(30);
+    assert.equal(b.game.caseProgress,required,'leaving cannot erase the recorded lead');
+    b.finishPrivateerMission('completed');
+    const result=privateerMessages.at(-1).detail;
+    assert.equal(result.caseTask,task);assert.equal(result.approachSucceeded,true,'career accepts evidence recorded before detection');
+    assert.equal(result.detected,true);assert.equal(result.contractReward,90,'detected departure forfeits the stealth bonus');
+  }
+  b.setPrivateerContext(null);
+});
+
 test('case field objectives require actual tailing, stakeout, and target completion',()=>{
   b.setPrivateerContext({mode:'spaceport',requestId:'case-objective-test',planetId:'p-case',loadout:{weapon:'hands'}});
   b.startPrivateerMission({style:'stealth',caseTask:'tail',contact:'Mara Voss',difficulty:2,seed:912});

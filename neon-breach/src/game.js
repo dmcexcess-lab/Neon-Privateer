@@ -192,7 +192,7 @@ function advanceOpeningCall(){
 $('openingCallContinue').addEventListener('click',advanceOpeningCall);
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,caseTask:String(spec.caseTask||''),mode:'mission'};
-  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;
+  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;game.caseObservationComplete=false;
   game.loadout={...emptyLoadout(),...(privateerContext.loadout||{})};
   resetRun(Math.max(1,Number(privateerContext.difficulty)||1),(Number(privateerContext.seed)>>>0)||null);
   if(privateerContext.style==='hot'){
@@ -212,9 +212,10 @@ function finishPrivateerMission(outcome){
     announce(task==='tail'?'TAIL INCOMPLETE · KEEP THE SUBJECT IN RANGE, UNDETECTED':task==='stakeout'?'STAKEOUT INCOMPLETE · HOLD A SNEAKING OBSERVATION POSITION':'EAVESDROP INCOMPLETE · STAY CLOSE, SNEAKING AND UNDETECTED',4);game.exitClock=0;return true;
   }
   const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
-  const clean=style!=='stealth'||!game.detectedThisFloor;
+  // Recorded surveillance remains valid if the player is spotted while leaving.
+  const clean=style!=='stealth'||!game.detectedThisFloor||(['tail','stakeout','eavesdrop'].includes(task)&&game.caseObservationComplete);
   const base=completed?40+Math.max(1,Number(privateerContext.difficulty)||1)*25:0;
-  const bonus=completed&&style==='stealth'&&clean?Math.ceil(base*.75):0;
+  const bonus=completed&&style==='stealth'&&!game.detectedThisFloor?Math.ceil(base*.75):0;
   privateerMessage('dmc-privateer-mission-result',{outcome,style,approachSucceeded:clean,kills:game.kills,contact:privateerContext.contact||'',contactId:privateerContext.contactId||'',caseTask:privateerContext.caseTask||'',caseSite:privateerContext.caseSite||'',
     detected:!!game.detectedThisFloor,cash:game.runCash+base+bonus,contractReward:base+bonus,objective:privateerContext.objective||''});
   return true;
@@ -1477,6 +1478,7 @@ function update(dt){
 }
 function updateCaseObjective(dt){
   if(game.mode!=='PLAY'||!['tail','stakeout','eavesdrop'].includes(game.caseTask)||!game.caseSubject)return;
+  if(game.caseObservationComplete)return;
   const p=game.player,distance=Math.hypot(p.x-game.caseSubject.x,p.y-game.caseSubject.y);
   const valid=game.caseTask==='tail'
     ?distance>=110&&distance<=340&&p.sneaking&&!game.detectedThisFloor
@@ -1486,7 +1488,7 @@ function updateCaseObjective(dt){
   const required=game.caseTask==='tail'?10:game.caseTask==='stakeout'?8:6;
   game.caseProgress=valid?Math.min(required,game.caseProgress+dt):Math.max(0,game.caseProgress-dt*1.8);
   if(game.caseProgress>=required&&!game.caseReadyAnnounced){
-    game.caseReadyAnnounced=true;announce(game.caseTask==='tail'?'TAIL COMPLETE · SUBJECT ROUTINE CONFIRMED · EXFIL':game.caseTask==='stakeout'?'STAKEOUT COMPLETE · WINDOW RECORDED · EXFIL':'EAVESDROP COMPLETE · CONVERSATION RECORDED · EXFIL',4);
+    game.caseObservationComplete=true;game.caseReadyAnnounced=true;announce('SURVEILLANCE RECORDED · REACH THE SITE EXIT TO REPORT YOUR LEAD',4);
   }
 }
 
@@ -2017,6 +2019,7 @@ function drawCaseObjectiveHUD(){
   else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · REACH EXFIL':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
   else if(game.caseTask==='breach')label='BREACH SITE · COMPLETE THE OPERATION AND EXFIL';
   else return;
+  if(game.caseObservationComplete&&['tail','stakeout','eavesdrop'].includes(game.caseTask))label='LEAD RECORDED · REACH THE SITE EXIT';
   ctx.save();ctx.fillStyle='rgba(5,15,25,.92)';ctx.fillRect(x,y,width,36);ctx.strokeStyle='#b999ff';ctx.lineWidth=1.5;ctx.strokeRect(x,y,width,36);
   ctx.textAlign='center';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#e8dcff';ctx.fillText(label,x+width/2,y+15);
   if(progress!==null){ctx.fillStyle='#35294b';ctx.fillRect(x+14,y+23,width-28,5);ctx.fillStyle='#b999ff';ctx.fillRect(x+14,y+23,(width-28)*clamp(progress,0,1),5);}
