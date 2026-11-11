@@ -70,6 +70,7 @@ func _run() -> void:
     scene._create_new_career(1);scene.research_credits=2200;scene.bank_balance=444
     check(scene._open_covert(),"port button opens native system")
     var view=scene.covert;view.set_process(false)
+    view.job_tier=2
     check(view.buy("pistol") and view.buy("armor"),"field equipment purchases")
     check(scene.research_credits==1600 and scene.bank_balance==444,"one real wallet, protected bank")
     check(view.accept("track"),"actual career accepts investigation")
@@ -86,7 +87,15 @@ func _run() -> void:
     view.sim.state.drawn=false
     view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2)+Vector2(-130,0);advance_time(view.sim,8.1)
     view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
-    check(view.current_task()=="breach","extracted surveillance unlocks safehouse")
+    check(view.current_task()=="wiretap","extracted surveillance reveals the illegal-terminal clue")
+    view.return_to_board();check(view.begin_ground("wiretap"),"wiretap lead launches as a physical field operation")
+    view.sim.state.guards=[];view.sim.state.pos=view.sim.center(2);view.sim.interact();view._process(.02)
+    check(view.hack.visible and view.hack.challenge_mode,"wiretap requires the real Firewall terminal interaction")
+    view.hack.set_process(false)
+    for i in view.hack.sim.bricks.size():view.hack.sim.damage_brick(i,999)
+    view.hack._settle_events();view._process(.02)
+    view.sim.state.guards=[];view.sim.state.pos=view.sim.center(6);advance_time(view.sim,8.1);view._process(.02)
+    check(view.current_task()=="breach","terminal clue reveals the off-port safehouse")
     check(view.begin_ground("breach"),"safehouse mission opens")
     view.sim.state.pos=view.sim.center(2);view.sim.interact();view._process(.02)
     check(view.hack.visible and view.hack.challenge_mode,"actual Firewall minigame runs inside safehouse")
