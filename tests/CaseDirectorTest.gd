@@ -42,9 +42,9 @@ func _run()->void:
     for lead in discovery_sites:
         if String(lead.get("linked_task","")) in ["target","mastermind"] or not planned_site_ids.has(String(lead.get("linked_site_id",""))):valid_intermediate_leads=false
     check(discovery_sites.size()==2 and valid_intermediate_leads,"case-chain exploration seeds multiple intermediate field leads linked to real dossier locations")
-    var initial_stage:=int(field_case.stage);var initial_clues:=field_case.clues.size();var field_lead:Dictionary=discovery_sites[0]
+    var initial_stage:=int(field_case.stage);var initial_clues:int=field_case.clues.size();var field_lead:Dictionary=discovery_sites[0]
     check(Cases.accidental_discovery(field_case,String(field_lead.id)) and int(field_case.stage)==initial_stage and bool(field_case.clues[-1].side_lead) and String(field_case.clues[-1].related_site_id)==String(field_lead.linked_site_id),"finding an intermediate field lead adds a linked clue without skipping the authored mission chain")
-    var after_field_clues:=field_case.clues.size()
+    var after_field_clues:int=field_case.clues.size()
     check(not Cases.accidental_discovery(field_case,String(field_lead.id)) and field_case.clues.size()==after_field_clues and after_field_clues==initial_clues+1,"revisiting an explored lead does not duplicate dossier evidence")
     var tier_three:=Cases.create(base,3);var target_subject:Dictionary=Cases.subject_for_task(tier_three,"target")
     check(target_subject.role=="enforcer" and tier_three.steps.count("target")==1,"higher rank separates a recoverable bounty from the lieutenant and mastermind")
