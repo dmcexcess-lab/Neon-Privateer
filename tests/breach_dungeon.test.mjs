@@ -126,6 +126,12 @@ const nextArrival=createSpaceportWorld({seed:7123,arrivalSeed:4102,planetId:'p-1
 assert.equal(port.isSpaceport,true);assert.equal(port.rooms.length,9);assert.ok(port.stations.length>=19&&port.stations.length<=22);
 assert.equal(port.actors.filter(a=>a.kind==='civilian').length,18);assert.equal(port.actors.filter(a=>a.kind==='guard').length,6);
 assert.deepEqual(port.rooms.map(r=>[r.x,r.y,r.w,r.h]),samePort.rooms.map(r=>[r.x,r.y,r.w,r.h]),'planet seed recreates the same port');
+assert.equal(port.layoutVariant,samePort.layoutVariant,'a planet keeps its civic layout when revisited');
+assert.equal(port.layoutVariant,nextArrival.layoutVariant,'arrival-level changes do not reshuffle the starport plan');
+const layoutSamples=Array.from({length:16},(_,i)=>createSpaceportWorld({seed:9000+i,planetId:`layout-${i}`}));
+assert.ok(new Set(layoutSamples.map(w=>w.layoutVariant)).size>=12,'different planets produce a broad range of persistent layout variants');
+assert.ok(new Set(layoutSamples.map(w=>w.rooms.map(r=>`${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`).join('|'))).size>=12,'distinct starports have visibly different district arrangements and footprints');
+assert.ok(new Set(layoutSamples.map(w=>w.structures.map(s=>`${s.id}:${Math.round(s.x)},${Math.round(s.y)}`).join('|'))).size>=12,'service and social buildings shift to distinct positions within each port');
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
 const silhouettes=port.actors.filter(a=>a.kind==='civilian').map(a=>a.appearance);
@@ -172,5 +178,12 @@ for(const structure of port.structures){
 }
 for(const station of port.stations)assert.ok(walkable(port,station.x,station.y,16),`${station.id} spaceport service must be reachable`);
 for(const connection of port.links)assert.ok(walkable(port,connection.via.x,connection.via.y,18),'spaceport corridors must stay open');
+for(const variant of layoutSamples){
+  const visited=new Set([0]),todo=[0];
+  while(todo.length)for(const neighbor of variant.rooms[todo.shift()].neighbors)if(!visited.has(neighbor)){visited.add(neighbor);todo.push(neighbor);}
+  assert.equal(visited.size,variant.rooms.length,`layout ${variant.layoutVariant} keeps all districts connected`);
+  for(const station of variant.stations)assert.ok(walkable(variant,station.x,station.y,16),`layout ${variant.layoutVariant} keeps ${station.id} reachable`);
+  for(const connection of variant.links)assert.ok(walkable(variant,connection.via.x,connection.via.y,18),`layout ${variant.layoutVariant} keeps district links traversable`);
+}
 assert.ok(lateGuards>=3700 && lateZ>=3000 && lateZ<=4400,`lower maintenance should mix zombies and guards: ${lateGuards}, ${lateZ}`);
 console.log(`PASS: ${count} merged modular floors across all four strata, 1–4 open sides ${[...openSides]}, ${chests} exploration chests; gradual 3–${enemyBudget(20)} enemy budgets`);

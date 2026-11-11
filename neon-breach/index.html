@@ -552,25 +552,46 @@ function portDialogue(seed,index,faction){
 }
 function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,planetId='port',planetName='SPACEPORT',archetype='INDUSTRIAL',faction='LOCAL AUTHORITY',contacts={},needs={},story={},caseContext={}}={}){
   const rng=new RNG((Number(seed)>>>0)||1);
+  // A starport's civic plan is stable for that planet, but varies substantially
+  // between worlds: mirrored/rotated district axes plus a small footprint scale.
+  let layoutHash=2166136261;
+  for(const char of `${planetId}:${Number(seed)>>>0}`)layoutHash=Math.imul(layoutHash^char.charCodeAt(0),16777619)>>>0;
+  layoutHash=Math.imul(layoutHash^(layoutHash>>>16),0x7feb352d)>>>0;layoutHash=Math.imul(layoutHash^(layoutHash>>>15),0x846ca68b)>>>0;layoutHash^=layoutHash>>>16;
+  const layoutVariant=layoutHash&127,rotation=layoutVariant&3,reflectX=(layoutVariant&4)!==0;
+  const footprintScale=[1,1.04,1.08,1.12];
+  const scaleX=footprintScale[(layoutVariant>>>3)&3],scaleY=footprintScale[(layoutVariant>>>5)&3];
+  const mapPortPoint=(x,y)=>{
+    if(reflectX)x=-x;
+    let tx=x,ty=y;
+    if(rotation===1){tx=-y;ty=x;}else if(rotation===2){tx=-x;ty=-y;}else if(rotation===3){tx=y;ty=-x;}
+    return {x:tx*scaleX,y:ty*scaleY};
+  };
+  const mapPortDoor=door=>{
+    const vectors={north:[0,-1],east:[1,0],south:[0,1],west:[-1,0]};
+    let [x,y]=vectors[door]||vectors.north;
+    if(reflectX)x=-x;
+    if(rotation===1)[x,y]=[-y,x];else if(rotation===2)[x,y]=[-x,-y];else if(rotation===3)[x,y]=[y,-x];
+    return x===0?(y<0?'north':'south'):(x<0?'west':'east');
+  };
   const profile={
     LUSH:{id:'sewers',color:'#123b37',edge:'#75ffb0'},
     VOLCANIC:{id:'dig',color:'#3b211d',edge:'#ff8a62'},
     FROZEN:{id:'maintenance',color:'#142e3f',edge:'#79dcff'},
     INDUSTRIAL:{id:'hq',color:'#202c37',edge:'#f9cc70'}
   }[String(archetype).toUpperCase()]||{id:'hq',color:'#202c37',edge:'#5af0ff'};
-  // Keep the port recognizable per planet without allowing randomized district
-  // edges to pull apart far enough to sever a pedestrian connection.
-  const jitter=(amount=12)=>rng.range(-amount,amount);
+  // Keep district overlaps generous so each planet can shift its plan without
+  // cutting pedestrian routes between civic neighborhoods.
+  const jitter=(amount=32)=>rng.range(-amount,amount);
   const blocks=[
     {name:'landing concourse',x:-450+jitter(),y:-350+jitter(),w:900,h:700},
-    {name:'market arcade',x:350+jitter(),y:-400+jitter(),w:1000,h:800},
-    {name:'administration ward',x:-1350+jitter(),y:-400+jitter(),w:1000,h:800},
-    {name:'transit & landing ring',x:-500+jitter(),y:-1200+jitter(),w:1000,h:950},
-    {name:'service boulevard',x:-500+jitter(),y:250+jitter(),w:1000,h:1000},
-    {name:'back alleys',x:-1350+jitter(),y:250+jitter(),w:950,h:950},
-    {name:'nightlife quarter',x:400+jitter(),y:250+jitter(),w:950,h:1000},
-    {name:'freight & customs',x:1250+jitter(),y:-250+jitter(),w:800,h:900},
-    {name:'lower promenade',x:-350+jitter(),y:1150+jitter(),w:1100,h:750}
+    {name:'market arcade',x:300+jitter(),y:-400+jitter(),w:1000,h:800},
+    {name:'administration ward',x:-1300+jitter(),y:-400+jitter(),w:1000,h:800},
+    {name:'transit & landing ring',x:-500+jitter(),y:-1150+jitter(),w:1000,h:950},
+    {name:'service boulevard',x:-500+jitter(),y:200+jitter(),w:1000,h:1000},
+    {name:'back alleys',x:-1300+jitter(),y:200+jitter(),w:950,h:950},
+    {name:'nightlife quarter',x:350+jitter(),y:200+jitter(),w:1000,h:1000},
+    {name:'freight & customs',x:1150+jitter(),y:-250+jitter(),w:800,h:900},
+    {name:'lower promenade',x:-350+jitter(),y:1100+jitter(),w:1100,h:750}
   ];
   const rooms=blocks.map((b,id)=>({id,x:b.x,y:b.y,w:b.w,h:b.h,cx:b.x+b.w/2,cy:b.y+b.h/2,
     rx:b.w/2,ry:b.h/2,module:b.name,tileset:profile.id,approach:0,neighbors:[],visited:true,
@@ -603,6 +624,11 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
     {id:'shipyard',name:'SHIPYARD & EQUIPMENT LAB',kind:'service',service:'upgrades',room:4,x:0,y:520,w:360,h:330,door:'north',color:'#ff9f55'},
     {id:'registry',name:'CAPTAIN RECORDS',kind:'service',service:'careers',room:2,x:-810,y:-320,w:330,h:250,door:'south',color:'#b6c8ff'}
   ];
+  const districtOffsets=rooms.map(room=>{
+    const local=new RNG((layoutHash^Math.imul(room.id+1,0x9e3779b9))>>>0||1);
+    return {x:local.range(-58,58),y:local.range(-58,58)};
+  });
+  for(const building of structures){const offset=districtOffsets[building.room];building.x+=offset.x;building.y+=offset.y;}
   const serviceStations=structures.filter(building=>building.service).map(building=>{
     // Service menus live at the interior counter, not on a door trigger.
     const x=building.x+building.w*.5,y=building.y+building.h*.72;
@@ -617,10 +643,25 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
     stations.push({id:'case-accidental',service:'case_site',x:accidentalPositions[pick][0],y:accidentalPositions[pick][1],
       label:`UNMARKED LANDING · ${caseContext.accidentalSite.name}`,short:'LEAD',color:'#ff60bd',discovered:true,accidental:true,caseContext});
   }
-  for(const venue of structures.filter(item=>!item.service))stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:venue.x+venue.w/2,y:venue.y+venue.h/2,
+  for(const venue of structures.filter(item=>!item.service)){
+    const entry={north:[venue.x+venue.w/2,venue.y+48],south:[venue.x+venue.w/2,venue.y+venue.h-48],
+      west:[venue.x+48,venue.y+venue.h/2],east:[venue.x+venue.w-48,venue.y+venue.h/2]}[venue.door]||[venue.x+venue.w/2,venue.y+venue.h/2];
+    stations.push({id:`venue-${venue.id}`,service:'venue',venue:venue.name,venueKind:venue.kind,x:entry[0],y:entry[1],
     label:`${venue.name} · ENTER / SOCIALIZE`,short:venue.kind.toUpperCase(),color:venue.color});
+  }
+  // Transform the complete civic plan together so districts, service counters,
+  // venue entrances and off-port leads stay aligned and reachable.
+  const mapPortRect=item=>{
+    const center=mapPortPoint(item.x+item.w/2,item.y+item.h/2),swap=rotation%2===1;
+    const w=(swap?item.h:item.w)*scaleX,h=(swap?item.w:item.h)*scaleY;
+    item.x=center.x-w/2;item.y=center.y-h/2;item.w=w;item.h=h;
+    if('cx' in item){item.cx=center.x;item.cy=center.y;item.rx=w/2;item.ry=h/2;}
+    if(item.door)item.door=mapPortDoor(item.door);
+  };
+  rooms.forEach(mapPortRect);structures.forEach(mapPortRect);
+  for(const station of stations){const p=mapPortPoint(station.x,station.y);station.x=p.x;station.y=p.y;}
   const actors=[];
-  const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,contacts,needs,story,caseContext,
+  const world={floor:0,seed:Number(seed)||1,arrivalSeed:Number(arrivalSeed??seed)||1,planetId,planetName,faction,rooms,start:0,exit:null,exfil:null,contacts,needs,story,caseContext,layoutVariant,
     stratum:{id:profile.id,name:`${planetName} SPACEPORT`,color:profile.color,edge:profile.edge},rng,
     shapes:rooms.map(r=>rect(r.x,r.y,r.w,r.h,r.id)),links:[],walls:[],stations,actors,structures,isHQ:true,isSpaceport:true,securityAlert:!!securityAlert,crime:{heat:securityAlert?20:0,witnessed:!!securityAlert}};
   for(let i=0;i<rooms.length;i++)for(let j=i+1;j<rooms.length;j++){
@@ -652,9 +693,23 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
     {room:6,x:1180,y:980,w:72,h:54,kind:'club booth'},{room:8,x:120,y:1500,w:58,h:46,kind:'lodge desk'},
     {room:7,x:1700,y:120,w:74,h:58,kind:'supply crate'},{room:5,x:-850,y:650,w:62,h:52,kind:'supply crate'}
   ];
-  for(const obj of furniture)rooms[obj.room].cover.push({...obj,hp:999,maxHp:999});
-  // Hidden access changes on every landing while the major planet-seeded port
-  // layout stays familiar. Candidates cover public interiors, service corners,
+  for(const obj of furniture){const offset=districtOffsets[obj.room],p=mapPortPoint(obj.x+offset.x+obj.w/2,obj.y+offset.y+obj.h/2),swap=rotation%2===1;
+    const w=(swap?obj.h:obj.w)*scaleX,h=(swap?obj.w:obj.h)*scaleY;
+    rooms[obj.room].cover.push({...obj,x:p.x-w/2,y:p.y-h/2,w,h,hp:999,maxHp:999});
+  }
+  // Rotating a civic plan can move a building wall across a district overlap.
+  // Re-seat each connector in the nearest clear part of that shared threshold.
+  for(const link of world.links){
+    const area=overlap(rooms[link.a],rooms[link.b]),origin=link.via;
+    let best=null,bestDistance=Infinity;
+    for(let y=area.minY+20;y<=area.maxY-20;y+=16)for(let x=area.minX+20;x<=area.maxX-20;x+=16){
+      const distance=(x-origin.x)**2+(y-origin.y)**2;
+      if(distance<bestDistance&&walkable(world,x,y,18)){best={x,y};bestDistance=distance;}
+    }
+    if(best)link.via=best;
+  }
+  // Illegal terminal placements change on every landing while the major
+  // planet-seeded civic plan stays recognizable. Candidates cover interiors,
   // freight space, alleys and the landing ring; only a randomized subset is
   // installed for this arrival, with a little safe positional variation.
   const terminalRng=new RNG(((world.arrivalSeed>>>0)^Math.imul(world.seed>>>0,0x45d9f3b))>>>0||1);
@@ -677,7 +732,8 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
     {id:'landing-relay',x:300,y:180,label:'LANDING CONTROL RELAY',short:'RELAY'},
     {id:'transit-jack-a',x:-400,y:-1080,label:'TRANSIT POWER JACK',short:'JACK'},
     {id:'transit-jack-b',x:400,y:-1080,label:'PAD GUIDANCE BACKDOOR',short:'NODE'}
-  ].filter(candidate=>walkable(world,candidate.x,candidate.y,18)&&stations.every(station=>Math.hypot(candidate.x-station.x,candidate.y-station.y)>112));
+  ].map(candidate=>({...candidate,...mapPortPoint(candidate.x,candidate.y)}))
+    .filter(candidate=>walkable(world,candidate.x,candidate.y,18)&&stations.every(station=>Math.hypot(candidate.x-station.x,candidate.y-station.y)>112));
   for(let i=terminalCandidates.length-1;i>0;i--){const j=terminalRng.int(0,i);[terminalCandidates[i],terminalCandidates[j]]=[terminalCandidates[j],terminalCandidates[i]];}
   const terminalCount=Math.min(terminalCandidates.length,terminalRng.int(4,7));
   for(const candidate of terminalCandidates.slice(0,terminalCount)){
@@ -709,11 +765,11 @@ function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=false,plane
       }:null});
   }
   if(caseContext?.openingAdventure&&actors[0]){
-    const maraRoom=rooms[6],runnerRoom=rooms[7];
-    actors[0].x=actors[0].home.x=actors[0].target.x=620;actors[0].y=actors[0].home.y=actors[0].target.y=560;actors[0].venue='bar';
+    const mara=mapPortPoint(620,560),kest=mapPortPoint(1570,280);
+    actors[0].x=actors[0].home.x=actors[0].target.x=mara.x;actors[0].y=actors[0].home.y=actors[0].target.y=mara.y;actors[0].venue='bar';
     actors[0].name=String(caseContext.contactName||'Mara Voss');actors[0].openingContact=true;
     actors[0].rumor='A legal courier contract has a missing seal. Customs says to file paperwork; the runner says an unregistered terminal has the manifest.';
-    const subject=actors[1];subject.x=subject.home.x=subject.target.x=1570;subject.y=subject.home.y=subject.target.y=280;
+    const subject=actors[1];subject.x=subject.home.x=subject.target.x=kest.x;subject.y=subject.home.y=subject.target.y=kest.y;
     subject.name='Kest Arden';subject.openingSubject=true;subject.mission=null;subject.speed=24;
     subject.rumor='I am on a sealed courier route. Nothing to see here.';
   }
