@@ -112,6 +112,11 @@ function openBreachLayer(context) {
   const layer = document.createElement('div');
   layer.className = 'breach-layer';
   layer.openedAt = performance.now();
+  const expandButton = document.createElement('button');
+  expandButton.className = 'breach-fullscreen';
+  expandButton.type = 'button';
+  expandButton.textContent = '⛶ Full screen';
+  expandButton.setAttribute('aria-label', 'Expand spaceport to full screen');
   const transition = document.createElement('div');
   transition.className = 'breach-transition';
   transition.innerHTML = '<div class="breach-loading-mark">◈</div><p>NEON PRIVATEER // PORT TRANSIT</p><h3></h3><div class="breach-loading-track"><i class="breach-loading-progress"></i></div><small class="breach-loading-state">MAPPING CONCOURSE · LOCATING SERVICES</small>';
@@ -122,7 +127,11 @@ function openBreachLayer(context) {
   frame.title = 'Privateer spaceport and ground operation';
   frame.allow = 'autoplay; fullscreen';
   frame.src = './breach/game.html?privateer=' + encodeURIComponent(JSON.stringify(context));
-  layer.append(frame, transition);
+  layer.append(frame, transition, expandButton);
+  expandButton.addEventListener('click', async () => {
+    const mode = await playView.enter();
+    if (mode === 'expanded') gameStatus.textContent = 'Play area expanded. Press Escape or use the exit button to return.';
+  });
   document.querySelector('.game-stage').appendChild(layer);
   breachLayer = layer;
   let progress = 7;
@@ -204,6 +213,7 @@ const fullButton = document.getElementById('fullscreen-game');
 const playView = createPlayView({stage, doc: document, orientation: screen.orientation,
   changed(expanded) {
     stage.classList.toggle('expanded-play', expanded);
+    breachLayer?.classList.toggle('is-expanded', expanded);
     document.body.classList.toggle('playing-expanded', expanded);
     fullButton.setAttribute('aria-pressed', String(expanded));
     fullButton.textContent = expanded ? 'Exit full screen' : 'Full screen';
