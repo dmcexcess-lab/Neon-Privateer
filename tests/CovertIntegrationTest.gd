@@ -70,7 +70,7 @@ func _run() -> void:
     scene._create_new_career(1);scene.research_credits=2200;scene.bank_balance=444
     check(scene._open_covert(),"port button opens native system")
     var view=scene.covert;view.set_process(false)
-    view.job_tier=2
+    view.job_tier=2;view.data.guilds.merc=30
     check(view.buy("pistol") and view.buy("armor"),"field equipment purchases")
     check(scene.research_credits==1600 and scene.bank_balance==444,"one real wallet, protected bank")
     check(view.accept("track"),"actual career accepts investigation")
