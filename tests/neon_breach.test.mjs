@@ -66,6 +66,16 @@ test('starport conversations wrap, preserve dossier line breaks and stay inside 
   assert.match(css,/#toast\{[^}]*overflow-wrap:anywhere/);
 });
 
+test('spaceport security uses armored cyber-police gear rather than civilian hats',()=>{
+  const renderer=source.slice(source.indexOf('function drawPortActors'),source.indexOf('function drawHQDirectory'));
+  assert.match(renderer,/Broad armored shoulders and a plated, clearly marked police vest/);
+  assert.match(renderer,/ctx\.fillRect\(-8,-10,16,12\)/,'armored chest plate reads separately from the uniform');
+  assert.match(renderer,/Angular riot helmet, side comms and a broad illuminated face shield/);
+  assert.match(renderer,/ctx\.fillRect\(-14,-28,4,9\);ctx\.fillRect\(10,-28,4,9\)/,'helmet has visible radio/ear modules');
+  assert.match(renderer,/actor\.alert\?'POLICE · ALERT':'POLICE'/,'guards carry a readable police marking above the sprite');
+  assert.match(renderer,/if\(!guard\)\{\s*const hat=ap\.hat/,'random civilian hats stay confined to civilians');
+});
+
 test('full spaceports support armed play and guards react to gunfire',()=>{
   const context={mode:'spaceport',requestId:'port-test',seed:731,planetId:'p-port',planetName:'Test Port',archetype:'INDUSTRIAL',faction:'Test Security',loadout:{weapon:'auto_pistol'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
