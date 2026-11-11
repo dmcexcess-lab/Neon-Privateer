@@ -74,6 +74,7 @@ func _run() -> void:
     check(view.buy("pistol") and view.buy("armor"),"field equipment purchases")
     check(scene.research_credits==1600 and scene.bank_balance==444,"one real wallet, protected bank")
     check(view.accept("track"),"actual career accepts investigation")
+    var case_reward:int=int(view.data.active.get("reward",0))
     check(view.begin_ground("port"),"real walkable port")
     view.sim.state.pos=view.sim.state.npcs[0].pos;view.sim.state.drawn=true
     view.sim.interact();view._process(.02);check(view.current_task()=="rumor","armed contact refuses to talk")
@@ -118,7 +119,7 @@ func _run() -> void:
     view.sim.state.pos=view.sim.center(6)
     for g in view.sim.state.guards:g.hp=0
     advance_time(view.sim,8.1);view._process(.02)
-    check(view.data.completed==1 and scene.research_credits==wallet+900,"full case pays once at extraction")
+    check(view.data.completed==1 and scene.research_credits==wallet+case_reward,"full case pays its tier-scaled bounty once at extraction")
     wallet=scene.research_credits
     # Immediate sandbox crime still launches directly; commissioned assaults
     # now begin as cases and are covered by the case-chain checks above.
