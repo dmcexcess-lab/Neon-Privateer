@@ -132,6 +132,18 @@ const layoutSamples=Array.from({length:16},(_,i)=>createSpaceportWorld({seed:900
 assert.ok(new Set(layoutSamples.map(w=>w.layoutVariant)).size>=12,'different planets produce a broad range of persistent layout variants');
 assert.ok(new Set(layoutSamples.map(w=>w.rooms.map(r=>`${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`).join('|'))).size>=12,'distinct starports have visibly different district arrangements and footprints');
 assert.ok(new Set(layoutSamples.map(w=>w.structures.map(s=>`${s.id}:${Math.round(s.x)},${Math.round(s.y)}`).join('|'))).size>=12,'service and social buildings shift to distinct positions within each port');
+const openingPorts=Array.from({length:24},(_,i)=>createSpaceportWorld({seed:12000+i,planetId:`opening-layout-${i}`,caseContext:{openingAdventure:true}}));
+assert.equal(new Set(openingPorts.map(w=>w.layoutVariant&3)).size,4,'opening bounty coverage includes every port rotation');
+for(const openingPort of openingPorts){
+  const subject=openingPort.actors.find(actor=>actor.openingSubject),freight=openingPort.rooms.find(room=>room.module==='freight & customs'),destination=subject?.openingDestination;
+  assert.ok(subject&&destination,'Kest receives a generated freight-control destination');
+  assert.ok(destination.x>freight.x+18&&destination.x<freight.x+freight.w-18&&destination.y>freight.y+18&&destination.y<freight.y+freight.h-18,'Kest destination stays inside this port freight district');
+  assert.ok(walkable(openingPort,destination.x,destination.y,18),'Kest destination is walkable after buildings and furniture are placed');
+  for(let step=0;step<=12;step++){
+    const t=step/12,x=subject.x+(destination.x-subject.x)*t,y=subject.y+(destination.y-subject.y)*t;
+    assert.ok(walkable(openingPort,x,y,13),'the authored opening route remains clear in every orientation');
+  }
+}
 assert.deepEqual(port.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),samePort.actors.map(a=>[a.kind,a.name,a.x,a.y,a.rumor]),'NPC population and rumors are deterministic');
 assert.ok(port.stations.some(s=>s.service==='terminal')&&port.stations.some(s=>s.service==='alley'),'port includes physical hacking and robbery locations');
 const silhouettes=port.actors.filter(a=>a.kind==='civilian').map(a=>a.appearance);

@@ -454,7 +454,7 @@ function updatePort(dt){
         }else if(!actor.target)actor.target={...actor.lastKnown};
       }
     }else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
-      actor.target={x:1900,y:500};
+      actor.target={...(actor.openingDestination||actor.target)};
       if(!actor.routeAnnounced&&Math.hypot(p.x-actor.x,p.y-actor.y)<440){actor.routeAnnounced=true;announce('KEST IS MOVING TO FREIGHT CONTROL · SNEAK AND KEEP A GAP TO TAIL HIM',4);}
     }
     if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
@@ -470,6 +470,7 @@ function updatePort(dt){
     const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
     if(d<18){
       if(actor.kind==='guard'&&actor.alert&&!actor.seesPlayer){actor.target=portGuardSearchTarget(actor);actor.searchStep=(actor.searchStep||0)+1;}
+      else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved)actor.target={...(actor.openingDestination||actor.target)};
       else {const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};}
       actor.walking=false;
     }else{

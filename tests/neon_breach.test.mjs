@@ -151,6 +151,7 @@ test('first bounty opens with a one-shot call, auto-accepts, and teaches ask-aro
   assert.equal(b.openingCallActive(),false);assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-opening-call'&&message.detail.accepted),'the call ends with an automatic bounty acceptance');
   b.game.player.x=mara.x;b.game.player.y=mara.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-rumor'&&message.detail.openingAdventure),'opening contact delivers the authored job');
+  b.updatePort(.016);assert.deepEqual(kest.target,kest.openingDestination,'Kest follows this generated port layout to freight control');
   kest.target={x:kest.x,y:kest.y};kest.speed=0;
   b.game.player.x=kest.x+70;b.game.player.y=kest.y;
   b.inputs.sneakTouch=true;

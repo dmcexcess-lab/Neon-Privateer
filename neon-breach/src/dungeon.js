@@ -583,8 +583,12 @@ export function createSpaceportWorld({seed=1,arrivalSeed=null,securityAlert=fals
     actors[0].x=actors[0].home.x=actors[0].target.x=mara.x;actors[0].y=actors[0].home.y=actors[0].target.y=mara.y;actors[0].venue='bar';
     actors[0].name=String(caseContext.contactName||'Mara Voss');actors[0].openingContact=true;
     actors[0].rumor='A legal courier contract has a missing seal. Customs says to file paperwork; the runner says an unregistered terminal has the manifest.';
+    const plannedFreightControl=mapPortPoint(1900,500),freightRoom=rooms.find(room=>room.module==='freight & customs');
+    const freightControl=walkable(world,plannedFreightControl.x,plannedFreightControl.y,18)
+      ?plannedFreightControl:randomSpot(world,freightRoom,rng,18);
     const subject=actors[1];subject.x=subject.home.x=subject.target.x=kest.x;subject.y=subject.home.y=subject.target.y=kest.y;
     subject.name='Kest Arden';subject.openingSubject=true;subject.mission=null;subject.speed=24;
+    subject.openingDestination={...freightControl};
     subject.rumor='I am on a sealed courier route. Nothing to see here.';
   }
   for(let i=0;i<6;i++){
