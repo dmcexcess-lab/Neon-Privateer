@@ -157,6 +157,7 @@ function enterPrivateerPort(context){
   }
   hiddenScreens();game.world=createSpaceportWorld(portContext);game.mode='PORT';game.enemies=[];game.bullets=[];game.pickups=[];game.particles=[];
   game.player=makeFieldPlayer(context.loadout||{},context.needs||{});game.hqStation=null;game.portClock=0;
+  if(game.world.securityAlert)for(const guard of game.world.actors.filter(actor=>actor.kind==='guard'&&actor.alert))alertPortGuard(guard,game.player,15);
   camera.x=0;camera.y=0;show('hud',true);show('location',true);show('touchUI',true);show('aimTip',true);show('hqPrompt',false);show('hqMenuButton',false);
   // A port uses the field-combat HUD and phone aim/draw controls. HQ mode
   // deliberately hides those controls, so it must not leak into this scene.
@@ -250,6 +251,20 @@ function nearbyPortActor(){
   }
   return nearest;
 }
+const PORT_GUARD_ALERT_SECONDS=11;
+function alertPortGuard(guard,point,duration=PORT_GUARD_ALERT_SECONDS){
+  guard.alert=true;guard.lastKnown={x:point.x,y:point.y};guard.target={...guard.lastKnown};
+  guard.alertClock=Math.max(Number(guard.alertClock)||0,duration);guard.searchStep=0;guard.seesPlayer=false;
+}
+function portGuardSearchTarget(guard){
+  const center=guard.lastKnown||guard.home||guard;
+  for(let attempt=0;attempt<8;attempt++){
+    const angle=game.world.rng.range(-Math.PI,Math.PI),radius=game.world.rng.range(35,125);
+    const point={x:center.x+Math.cos(angle)*radius,y:center.y+Math.sin(angle)*radius};
+    if(walkable(game.world,point.x,point.y,18))return point;
+  }
+  return {x:center.x,y:center.y};
+}
 function reportPortCrime(offense,severity,cash=0){
   const point=game.player||{x:0,y:0},guards=game.world.actors.filter(actor=>actor.kind==='guard'&&!actor.down);
   const civilians=game.world.actors.filter(actor=>actor.kind==='civilian'&&!actor.down&&!actor.robbed);
@@ -274,7 +289,7 @@ function reportPortCrime(offense,severity,cash=0){
   if(offense==='weapons_discharge')for(const guard of guards){
     if(Math.hypot(guard.x-point.x,guard.y-point.y)<=820)responding.add(guard);
   }
-  for(const guard of responding){guard.alert=true;guard.target={x:point.x,y:point.y};}
+  for(const guard of responding)alertPortGuard(guard,point,offense==='weapons_discharge'?15:PORT_GUARD_ALERT_SECONDS);
   const detected=responding.size>0||witnesses.length>0;
   const appliedSeverity=offense==='street_robbery'&&!detected?2:severity;
   game.world.crime.heat+=appliedSeverity*4;game.world.crime.witnessed ||= detected;
@@ -421,10 +436,24 @@ function updatePort(dt){
   if(p.weapon==='shotgun')fired=triggerPress&&(p.cool<=0||p.pumpNeeded)?shootPlayer(p.facing):false;
   else if(control.shoot&&p.cool<=0)fired=shootPlayer(p.facing);
   if(fired==='fire'&&game.portClock-(game.world.crime.lastDischarge||-99)>1.5){game.world.crime.lastDischarge=game.portClock;reportPortCrime('weapons_discharge',2);}
+  const alertAtFrameStart=game.world.actors.some(actor=>actor.kind==='guard'&&actor.alert&&!actor.down);
+  let detained=false;
   for(const actor of game.world.actors){
     if(actor.down||(actor.robbed&&actor.kind==='civilian'))continue;
-    if(actor.kind==='guard'&&actor.alert)actor.target={x:p.x,y:p.y};
-    else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
+    if(actor.kind==='guard'&&actor.alert){
+      const playerDistance=Math.hypot(p.x-actor.x,p.y-actor.y);
+      actor.seesPlayer=playerDistance<=560&&clearSight(game.world,actor.x,actor.y,p.x,p.y);
+      if(actor.seesPlayer){
+        actor.lastKnown={x:p.x,y:p.y};actor.target={...actor.lastKnown};actor.alertClock=PORT_GUARD_ALERT_SECONDS;actor.searchStep=0;
+      }else{
+        actor.alertClock=Math.max(0,(Number(actor.alertClock)||PORT_GUARD_ALERT_SECONDS)-dt);
+        if(!actor.lastKnown)actor.lastKnown={x:actor.target?.x??actor.x,y:actor.target?.y??actor.y};
+        if(actor.alertClock<=0){
+          actor.alert=false;actor.lastKnown=null;actor.seesPlayer=false;actor.searchStep=0;
+          const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target=randomSpot(game.world,room,game.world.rng,18);
+        }else if(!actor.target)actor.target={...actor.lastKnown};
+      }
+    }else if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard&&!game.world.caseContext.subjectObserved){
       actor.target={x:1900,y:500};
       if(!actor.routeAnnounced&&Math.hypot(p.x-actor.x,p.y-actor.y)<440){actor.routeAnnounced=true;announce('KEST IS MOVING TO FREIGHT CONTROL · SNEAK AND KEEP A GAP TO TAIL HIM',4);}
     }
@@ -440,7 +469,8 @@ function updatePort(dt){
     }
     const dx=actor.target.x-actor.x,dy=actor.target.y-actor.y,d=Math.hypot(dx,dy);
     if(d<18){
-      const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};
+      if(actor.kind==='guard'&&actor.alert&&!actor.seesPlayer){actor.target=portGuardSearchTarget(actor);actor.searchStep=(actor.searchStep||0)+1;}
+      else {const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)];actor.target={x:room.cx+game.world.rng.range(-80,80),y:room.cy+game.world.rng.range(-65,65)};}
       actor.walking=false;
     }else{
       actor.facingX=Math.abs(dx)>3?Math.sign(dx):(actor.facingX||1);
@@ -452,15 +482,18 @@ function updatePort(dt){
       if(actor.stall>1.4){const room=game.world.rooms[game.world.rng.int(0,game.world.rooms.length-1)],spot=randomSpot(game.world,room,game.world.rng,18);actor.target=spot;actor.stall=0;}
     }
     if(actor.kind==='guard'&&actor.alert){
-      actor.cool=Math.max(0,(actor.cool||0)-dt);actor.facing=Math.atan2(p.y-actor.y,p.x-actor.x);
-      if(d<510&&d>70&&actor.cool<=0&&clearSight(game.world,actor.x,actor.y,p.x,p.y)){
+      const playerDistance=Math.hypot(p.x-actor.x,p.y-actor.y);
+      actor.cool=Math.max(0,(actor.cool||0)-dt);
+      if(actor.seesPlayer)actor.facing=Math.atan2(p.y-actor.y,p.x-actor.x);
+      if(actor.seesPlayer&&playerDistance<510&&playerDistance>70&&actor.cool<=0){
         makeBullet(actor.x,actor.y,actor.facing,'enemy',.75,440,C.cyan,4);actor.cool=1.1;weaponShot('revolver');
       }
     }
     if(actor.kind==='guard'&&actor.alert&&Math.hypot(actor.x-p.x,actor.y-p.y)<42){
-      privateerMessage('dmc-privateer-port-result',{outcome:'arrested',heat:game.world.crime.heat});actor.alert=false;announce('SECURITY DETAINED YOU · RETURNING TO LEGAL REVIEW',3);
+      privateerMessage('dmc-privateer-port-result',{outcome:'arrested',heat:game.world.crime.heat});actor.alert=false;detained=true;announce('SECURITY DETAINED YOU · RETURNING TO LEGAL REVIEW',3);
     }
   }
+  if(alertAtFrameStart&&!detained&&!game.world.actors.some(actor=>actor.kind==='guard'&&actor.alert&&!actor.down))announce('SECURITY LOST YOUR TRAIL · PATROLS RETURNING TO ROUTES',3);
   updateBullets(dt);updateParticles(dt);
   camera.x+=(p.x-camera.x)*Math.min(1,dt*8);camera.y+=(p.y-camera.y)*Math.min(1,dt*8);updateHQPrompt();
 }

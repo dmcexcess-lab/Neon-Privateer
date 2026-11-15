@@ -116,6 +116,28 @@ test('port crime detection checks line of sight and lets nearby civilians report
   assert.equal(remote.alert,false,'a distant patrol remains unaware');
 });
 
+test('spaceport police search the last seen position and stand down after losing sight',()=>{
+  const context={mode:'spaceport',requestId:'guard-search-test',seed:812,arrivalSeed:4412,planetId:'search-port',planetName:'Search Port',faction:'Search Police',loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const world=openWorld(),guard={id:'search-guard',kind:'guard',name:'SEARCH POLICE',x:0,y:0,r:16,hp:5,maxHp:5,
+    home:{x:0,y:0},target:{x:100,y:0},speed:0,alert:false,cool:99,facing:0};
+  Object.assign(world,{isSpaceport:true,planetName:'SEARCH PORT',faction:'SEARCH POLICE',actors:[guard],stations:[],crime:{heat:0,witnessed:false,lastDischarge:-99},caseContext:{}});
+  b.game.world=world;b.game.bullets=[];b.game.player.x=200;b.game.player.y=0;b.game.player.weaponDrawn=false;
+  b.reportPortCrime('test_pursuit',1);b.updatePort(.1);
+  assert.equal(guard.alert,true);assert.equal(guard.seesPlayer,true);
+  assert.equal(guard.lastKnown.x,200,'an unobstructed sighting records the current position');
+
+  world.rooms[0].cover.push({x:100,y:0,w:70,h:120,hp:999,maxHp:999});
+  b.game.player.x=280;b.updatePort(1);
+  assert.equal(guard.seesPlayer,false,'solid cover breaks police sight');
+  assert.equal(guard.lastKnown.x,200,'the officer does not receive the hidden live position');
+  assert.notEqual(guard.target.x,280,'the search target stays at or around the last known area');
+  for(let i=0;i<12;i++)b.updatePort(1);
+  assert.equal(guard.alert,false,'police eventually stand down when they cannot reacquire the player');
+  assert.equal(guard.lastKnown,null,'stale tracking data is discarded on stand-down');
+  b.setPrivateerContext(null);
+});
+
 test('first bounty opens with a one-shot call, auto-accepts, and teaches ask-around, tail, hack, and hideout clues',()=>{
   const context={mode:'spaceport',requestId:'opening-adventure',seed:73,arrivalSeed:1901,planetId:'opening-port',planetName:'New Dawn',faction:'Port Authority',firstAdventure:{active:true,step:'READY',contactName:'Mara Voss'},loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
