@@ -408,7 +408,7 @@ function interactPort(){
   if(actor.openingContact&&game.world.caseContext?.openingAdventure){
     actor.metThisArrival=true;game.world.activeContract=true;game.world.caseContext.openingLeadHeard=true;
     game.world.caseContext.task='tail';
-    privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor,openingAdventure:true});
+    privateerMessage('dmc-privateer-rumor',{speaker:actor.name,speakerId:actor.contactId,rumor:actor.rumor,openingAdventure:true});
     announce('LEGAL COURIER CONTRACT · THE MANIFEST IS MISSING. FOLLOW THE RUNNER; THE UNREGISTERED TERMINAL IS A RISKY SHORTCUT.',6);return true;
   }
   if(actor.openingSubject&&game.world.caseContext?.openingLeadHeard){
@@ -426,7 +426,7 @@ function interactPort(){
     startPrivateerMission({...actor.mission,seed:actor.mission.seed,contact:actor.name,contactId:actor.contactId,objective:actor.mission.kind});
     return true;
   }else announce(`${actor.name}: ${actor.rumor}`,4);
-  privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:actor.rumor});return true;
+  privateerMessage('dmc-privateer-rumor',{speaker:actor.name,speakerId:actor.contactId,rumor:actor.rumor});return true;
 }
 function dossierEscape(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));}
 function dossierSlug(value){return String(value??'record').replace(/[^a-zA-Z0-9_-]/g,'-');}
@@ -514,7 +514,7 @@ function updatePort(dt){
       if(actor.listenProgress>=5){
         game.world.caseContext.subjectObserved=true;game.world.caseContext.subjectName=actor.name;
         game.world.caseContext.task='wiretap';
-        privateerMessage('dmc-privateer-rumor',{speaker:actor.name,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
+        privateerMessage('dmc-privateer-rumor',{speaker:actor.name,speakerId:actor.contactId,rumor:'At freight control, the legal manifest is locked away. The maintenance terminal has the unredacted route.',openingAdventure:true,subjectObserved:true});
         announce('EAVESDROP COMPLETE · MANIFEST ROUTE IDENTIFIED · FREIGHT CONTROL',4);
       }
     }

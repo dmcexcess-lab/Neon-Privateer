@@ -4,6 +4,27 @@ extends RefCounted
 
 const NEED_KEYS := ["hunger", "energy", "morale", "social"]
 
+static func _story_key(value: Variant) -> String:
+    return String(value).strip_edges().to_lower().replace("_", " ").replace("-", " ")
+
+static func _objective_links(style: String) -> Array:
+    match style:
+        "trader":return ["cargo recovery","quiet delivery","route survey","recovery"]
+        "pirate":return ["wiretap","blackmail intercept","shipyard sabotage","surveillance"]
+        _:return ["missing person search","social infiltration","message handoff","surveillance"]
+
+static func _add_link(values: Array, value: Variant) -> void:
+    var key:=_story_key(value)
+    if not key.is_empty() and not values.has(key):values.append(key)
+
+static func _normalize_dossier_links(dossier: Dictionary) -> void:
+    if not dossier.get("people",null) is Array:dossier.people=[]
+    if not dossier.get("people_ids",null) is Array:dossier.people_ids=[]
+    if not dossier.get("locations",null) is Array:dossier.locations=[]
+    if not dossier.get("linked_objectives",null) is Array:dossier.linked_objectives=_objective_links(String(dossier.get("style","independent")))
+    _add_link(dossier.people,dossier.get("source",""))
+    _add_link(dossier.people_ids,dossier.get("source_id",""))
+
 static func defaults() -> Dictionary:
     return {
         "needs":{"hunger":82.0,"energy":84.0,"morale":62.0,"social":55.0},
@@ -20,6 +41,7 @@ static func normalize(profile: Dictionary) -> void:
     profile.story=base.story.merged(profile.story,true)
     if not profile.story.get("history",null) is Array:profile.story.history=[]
     if not profile.story.get("active_dossier",null) is Dictionary:profile.story.active_dossier={}
+    if not profile.story.active_dossier.is_empty():_normalize_dossier_links(profile.story.active_dossier)
 
 static func on_arrival(profile: Dictionary) -> void:
     normalize(profile)
@@ -81,12 +103,17 @@ static func observe_rumor(profile: Dictionary, detail: Dictionary, play_style: S
     var dossier:Dictionary=story.active_dossier
     var speaker:=String(detail.get("speaker","A local contact"))
     var rumor:=String(detail.get("rumor","An uncertain lead is circulating through the port."))
-    if dossier.is_empty() or int(dossier.get("clues",[]).size())>=4:
+    if dossier.is_empty() or String(dossier.get("status","OPEN")) in ["RESOLVED","FAILED"]:
         story.sequence=int(story.sequence)+1
         var objective:="Trace the cargo through two ports and identify who profits." if play_style=="trader" else "Identify the patrol leak without drawing faction attention." if play_style=="pirate" else "Compare local accounts and find the person connecting them."
         dossier={"id":"personal:%d"%int(story.sequence),"title":"THE %s THREAD"%speaker.to_upper(),"source":speaker,
-            "origin":"personal","guild":"","style":play_style,"clues":[],"objective":objective,"progress":0,"status":"OPEN"}
+            "source_id":String(detail.get("speakerId",detail.get("contactId",""))),"origin":"personal","guild":"","style":play_style,"clues":[],"objective":objective,
+            "people":[],"people_ids":[],"locations":[],"linked_objectives":_objective_links(play_style),"progress":0,"status":"OPEN"}
         story.active_dossier=dossier
+    _normalize_dossier_links(dossier)
+    _add_link(dossier.people,speaker)
+    _add_link(dossier.people_ids,detail.get("speakerId",detail.get("contactId","")))
+    _add_link(dossier.locations,detail.get("caseSite",detail.get("site",detail.get("location",""))))
     var clue:="%s: %s"%[speaker,rumor]
     if not dossier.clues.has(clue):dossier.clues.append(clue);dossier.progress=int(dossier.progress)+1
     if dossier.clues.size()>=3:dossier.status="ACTIONABLE"
@@ -105,10 +132,26 @@ static func observe_outcome(profile: Dictionary, detail: Dictionary) -> Dictiona
     normalize(profile)
     var dossier:Dictionary=profile.story.active_dossier
     if dossier.is_empty():return {}
+    if String(dossier.get("status","OPEN"))=="RESOLVED":return dossier
+    _normalize_dossier_links(dossier)
+    var explicit_id:=String(detail.get("storyDossierId",""))
+    var linked:=not explicit_id.is_empty() and explicit_id==String(dossier.get("id",""))
+    if explicit_id.is_empty():
+        var contact_id:=_story_key(detail.get("contactId",""))
+        var contact:=_story_key(detail.get("contact",""))
+        var location:=_story_key(detail.get("caseSite",detail.get("site",detail.get("location",""))))
+        var objective:=_story_key(detail.get("objective",detail.get("kind","")))
+        linked=(
+            (not contact_id.is_empty() and dossier.people_ids.has(contact_id))
+            or (not contact.is_empty() and dossier.people.has(contact))
+            or (not location.is_empty() and dossier.locations.has(location))
+            or (not objective.is_empty() and dossier.linked_objectives.has(objective))
+        )
+    if not linked:return dossier
     var outcome:=String(detail.get("outcome","returned"))
-    var clue:="FIELD OUTCOME: %s operation %s"%[String(detail.get("style","choice")).to_upper(),outcome.to_upper()]
-    if not dossier.clues.has(clue):dossier.clues.append(clue)
-    dossier.progress=int(dossier.get("progress",0))+1
+    var subject:=String(detail.get("contact",detail.get("objective","linked operation")))
+    var clue:="FIELD OUTCOME: %s · %s operation %s"%[subject,String(detail.get("style","choice")).to_upper(),outcome.to_upper()]
+    if not dossier.clues.has(clue):dossier.clues.append(clue);dossier.progress=int(dossier.get("progress",0))+1
     if outcome=="completed" and dossier.clues.size()>=3:
         dossier.status="RESOLVED"
         profile.story.history.push_front({"dossier":dossier.id,"resolution":clue})
