@@ -167,6 +167,7 @@ window.addEventListener('message', (event) => {
     if (event.data === 'dmc-game-ready') gameStatus.textContent = document.body.dataset.readyText;
     else if (event.data === 'dmc-game-failed') gameStatus.textContent = 'The game reported an error. Reload or send a report with your browser and what happened.';
     else if (event.data?.type === 'dmc-open-breach') openBreachLayer(event.data.detail);
+    else if (event.data?.type === 'dmc-privateer-port-sync') breachLayer?.querySelector('iframe')?.contentWindow.postMessage(event.data, location.origin);
     return;
   }
   const breachFrame = breachLayer?.querySelector('iframe');

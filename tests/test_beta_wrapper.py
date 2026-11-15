@@ -52,6 +52,7 @@ function ready() {setStatusMode('hidden');}</script></body>''')
         self.assertIn("event.data?.type === 'dmc-open-breach'", js)
         self.assertIn("dmc-privateer-terminal", js)
         self.assertIn("dmc-privateer-loading", js)
+        self.assertIn("dmc-privateer-port-sync", js)
         self.assertIn('PORT LINK ESTABLISHED', js)
 
     def test_standalone_games_have_complete_independent_pages(self):

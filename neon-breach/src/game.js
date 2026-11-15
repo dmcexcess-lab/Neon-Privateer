@@ -97,7 +97,7 @@ function updateUI(){
  if(!game.player)return;
  $('floorReadout').textContent=String(game.floor).padStart(2,'0');
  $('healthReadout').textContent=`${Math.ceil(game.player.hp)} / ${game.player.maxHp}`;
- $('cashReadout').textContent=String(game.profile.credits).padStart(3,'0');
+ $('cashReadout').textContent=String(privateerContext?.mode==='spaceport'?game.player.cash:game.profile.credits).padStart(3,'0');
  $('medkitCount').textContent=game.player.medkits||0;$('medkitButton').disabled=!game.player.medkits||game.player.hp>=game.player.maxHp;
  const w=WEAPONS[game.player.weapon];
  $('weaponReadout').textContent=w.label+(w.magazine?` · ${game.player.magazines?.[game.player.weapon]??w.magazine}/${w.magazine}`:'')+
@@ -112,8 +112,9 @@ function updateUI(){
    meter.style.width=(working?(game.player.reloadClock>0?1-game.player.reloadClock/Math.max(.1,game.player.reloadTotal):1-game.player.pumpClock/Math.max(.1,game.player.pumpTotal))*100:0)+'%';
    meter.style.background=game.player.reloadClock>0?'#f9cc70':'#ffa969';
  }
+ const needs=privateerContext?.needs||{};
  $('location').textContent=game.world.isSpaceport?
-   `${game.world.planetName} SPACEPORT · ${game.world.actors.filter(a=>!a.down).length} LOCALS · HEAT ${game.world.crime.heat}`:
+   `${game.world.planetName} SPACEPORT · H${Math.round(needs.hunger??82)} E${Math.round(needs.energy??84)} M${Math.round(needs.morale??62)} S${Math.round(needs.social??55)} · HEAT ${game.world.crime.heat}`:
    `${game.world.stratum.name}  ·  ${game.world.rooms.filter(r=>r.visited).length}/${game.world.rooms.length} AREAS  ·  ${game.enemies.length} HOSTILES`;
  show('dossierButton',!!privateerContext&&['PORT','PLAY'].includes(game.mode));
 }
@@ -138,15 +139,35 @@ function privateerMessage(type,detail={}){
   if(!privateerContext)return;
   parent.postMessage({type,detail,requestId:privateerContext.requestId||'',planetId:privateerContext.planetId||''},location.origin);
 }
+function fieldMoveSpeed(needs={}){
+  const energy=clamp(Number(needs.energy??84),0,100),hunger=clamp(Number(needs.hunger??82),0,100);
+  return 235*(energy<25?.82:1)*(hunger<20?.88:1);
+}
 function makeFieldPlayer(loadout={},needs={}){
   const weapon=WEAPONS[loadout.weapon]?loadout.weapon:'hands',armor=clamp(Number(loadout.armor)||0,0,3);
-  const energy=clamp(Number(needs.energy??84),0,100),hunger=clamp(Number(needs.hunger??82),0,100);
   return {x:0,y:0,r:16,hp:3+armor,maxHp:3+armor,cash:Number(loadout.cash)||0,weapon,weaponDrawn:false,
     armorTier:armor,map:!!loadout.map,medkits:clamp(Number(loadout.medkits)||0,0,MAX_REPAIR_KITS),spares:[],magazines:initialMagazines(),
     reloadClock:0,reloadTotal:0,reloadWeapon:null,reloadShells:0,reloadStage:null,pumpClock:0,pumpTotal:0,pumpNeeded:false,
-    swingHand:0,speed:235*(energy<25?.82:1)*(hunger<20?.88:1),damage:1,rate:1,armor:0,scavenging:1,stealth:1,sneaking:false,cool:0,invuln:0,
+    swingHand:0,speed:fieldMoveSpeed(needs),damage:1,rate:1,armor:0,scavenging:1,stealth:1,sneaking:false,cool:0,invuln:0,
     facing:-Math.PI/2,walkCycle:0,punchTimer:0,stepClock:0};
 }
+function syncPrivateerPort(detail={}){
+  if(privateerContext?.mode!=='spaceport'||game.mode!=='PORT'||!game.player)return false;
+  const needs={...(privateerContext.needs||{}),...(detail.needs||{})};
+  privateerContext.needs=needs;
+  privateerContext.loadout={...(privateerContext.loadout||{}),cash:Math.max(0,Number(detail.cash)||0)};
+  if(game.world)game.world.needs=needs;
+  game.player.cash=privateerContext.loadout.cash;
+  game.player.speed=fieldMoveSpeed(needs);
+  updateUI();
+  const summary=String(detail.summary||'VENUE CLOSED');
+  announce(detail.success?summary:`PURCHASE DECLINED · ${summary}`,4);
+  return true;
+}
+addEventListener('message',event=>{
+  if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='dmc-privateer-port-sync')return;
+  syncPrivateerPort(event.data.detail||{});
+});
 function enterPrivateerPort(context){
   const portContext={...context};
   const firstStep=String(portContext.firstAdventure?.step||'');
@@ -162,8 +183,6 @@ function enterPrivateerPort(context){
   // A port uses the field-combat HUD and phone aim/draw controls. HQ mode
   // deliberately hides those controls, so it must not leak into this scene.
   document.body?.classList.toggle('hq-mode',false);
-  const needs=context.needs||{};
-  $('location').textContent=`${game.world.planetName} SPACEPORT // ${game.world.faction} // H${Math.round(needs.hunger??82)} E${Math.round(needs.energy??84)} M${Math.round(needs.morale??62)} S${Math.round(needs.social??55)}`;
   updateUI();
   if(portContext.firstAdventure?.active&&['READY','CALLING'].includes(firstStep))beginOpeningCall();
   else announce(portContext.firstAdventure?.active?'ACTIVE BOUNTY · CHECK THE DOSSIER FOR YOUR NEXT LEAD':game.world.securityAlert?'SECURITY TRACE CONFIRMED · PORT PATROLS ARE HUNTING YOU':'SPACEPORT ACTIVE · WALK TO SERVICES OR TALK TO LOCALS · H DRAWS / HOLSTERS',6);
@@ -326,7 +345,7 @@ function interactPort(){
     else if(station.service==='alley')announce('BACK ALLEY · FIND A LONE TRAVELLER · DRAW A WEAPON TO DEMAND CREDITS',3);
     else if(station.service==='venue'){
       privateerMessage('dmc-privateer-venue',{kind:station.venueKind,venue:station.venue});
-      announce(`${station.venue} · REST, SOCIALIZE, AND MEET CONTACTS`,3);
+      announce(`${station.venue} · CHECKING TAB…`,1.5);
     }
     else if(station.service==='case_site'){
       const lead=station.caseContext||{},site=lead.site||{},task=String(lead.task||'breach');

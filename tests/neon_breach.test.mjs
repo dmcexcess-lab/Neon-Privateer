@@ -53,7 +53,7 @@ vm.runInNewContext(source+`
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
-  startPrivateerMission,finishPrivateerMission,enterPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
+  startPrivateerMission,finishPrivateerMission,enterPrivateerPort,syncPrivateerPort,updatePort,damagePortActor,reportPortCrime,updateBullets,makeBullet,
   discoverPortStations,nearbyStation,nearbyPortActor,interactPort,
   advanceOpeningCall,openingCallActive(){return openingCall.active;},
   setPrivateerContext(value){privateerContext=value}};
@@ -207,6 +207,15 @@ test('starport dealers, needs and chosen NPC contacts are physical and persisten
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-service'&&message.detail.service==='contracts'),'the guild menu opens from its building entrance');
   const venue=b.game.world.stations.find(station=>station.service==='venue'&&station.venueKind==='club');b.game.player.x=venue.x;b.game.player.y=venue.y;b.interactPort();
   assert.ok(privateerMessages.some(message=>message.type==='dmc-privateer-venue'&&message.detail.kind==='club'),`clubs feed the needs and relationship layer: ${JSON.stringify(privateerMessages.slice(-4))}`);
+  const tiredSpeed=b.game.player.speed;
+  assert.equal(b.syncPrivateerPort({success:false,summary:'CLUB NEEDS 25 CR',needs:context.needs,cash:10}),true);
+  assert.equal(b.game.player.speed,tiredSpeed,'declined venue visit does not fake a needs recovery');
+  assert.match(elements.get('toast').textContent,/PURCHASE DECLINED · CLUB NEEDS 25 CR/,'failed purchase reports the real reason');
+  b.syncPrivateerPort({success:true,summary:'CLUB · HUNGER 50 · ENERGY 52 · MORALE 66 · SOCIAL 60',needs:{hunger:50,energy:52,morale:66,social:60},cash:75});
+  assert.equal(b.game.player.cash,75);assert.equal(elements.get('cashReadout').textContent,'075','venue cost updates the active port wallet');
+  assert.ok(b.game.player.speed>tiredSpeed,'restoring needs immediately removes fatigue movement penalties');
+  assert.match(elements.get('location').textContent,/H50 E52 M66 S60/,'active port HUD refreshes all needs');
+  assert.equal(elements.get('toast').textContent,'CLUB · HUNGER 50 · ENERGY 52 · MORALE 66 · SOCIAL 60','successful venue result replaces the generic interaction message');
   assert.equal(b.game.world.stations.some(station=>station.service==='dossier'),false,'the journal is not a physical port location');
   elements.get('dossierButton').dispatch('click');
   assert.ok(b.game.dossierOpen&&privateerMessages.some(message=>message.type==='dmc-privateer-dossier'),'the player HUD button opens personal clue dossiers');

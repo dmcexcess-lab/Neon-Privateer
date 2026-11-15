@@ -621,6 +621,18 @@ func _on_breach_web_message(args: Array) -> void:
             var visit:=Storyteller.visit_venue(covert_profile,String(detail.get("kind","market")),research_credits)
             if bool(visit.get("success",false)):research_credits-=int(visit.get("cost",0))
             last_trip_summary=String(visit.get("summary","VENUE CLOSED"));_save_all_state()
+            var venue_sync := {
+                "type":"dmc-privateer-port-sync",
+                "detail":{
+                    "kind":String(detail.get("kind","market")),
+                    "venue":String(detail.get("venue","VENUE")),
+                    "success":bool(visit.get("success",false)),
+                    "summary":last_trip_summary,
+                    "needs":covert_profile.get("needs",{}),
+                    "cash":research_credits
+                }
+            }
+            JavaScriptBridge.eval("window.parent.postMessage(%s, window.location.origin);" % JSON.stringify(venue_sync), false)
         "dmc-privateer-dossier":
             var active_dossier:Dictionary=covert_profile.get("active",{})
             last_trip_summary=CaseDirector.dossier_summary(active_dossier) if not active_dossier.is_empty() else Storyteller.dossier_summary(covert_profile)
