@@ -317,7 +317,7 @@ test('recorded surveillance survives departure and later detection but resets fo
     b.startPrivateerMission({style:'stealth',caseTask:task,difficulty:2,seed:912});
     assert.equal(b.game.caseObservationComplete,false,'new assignment clears recorded evidence');
     const p=b.game.player,s=b.game.caseSubject;
-    p.x=s.x+distance;p.y=s.y;p.sneaking=true;p.moving=false;b.game.detectedThisFloor=false;
+    b.game.world=openWorld();s.x=0;s.y=0;p.x=distance;p.y=0;p.sneaking=true;p.moving=false;b.game.detectedThisFloor=false;
     b.updateCaseObjective(required/2);p.sneaking=false;b.updateCaseObjective(1);
     assert.ok(b.game.caseProgress<required/2,'unfinished observation still loses progress');
     p.sneaking=true;b.updateCaseObjective(required);
@@ -339,19 +339,25 @@ test('case field objectives require actual tailing, stakeout, and target complet
   assert.ok(b.game.caseSubject?.caseSubject,'tail mission marks a moving subject in the Breach map');
   const beforeTail=privateerMessages.length;b.finishPrivateerMission('completed');
   assert.equal(privateerMessages.length,beforeTail,'tail cannot complete before observing the moving subject');
-  b.game.player.x=b.game.caseSubject.x+200;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
-  b.updateCaseObjective(10);assert.equal(b.game.caseProgress,10,'tailing accrues only while close, sneaking, and undetected');
+  b.game.world=openWorld();b.game.caseSubject.x=0;b.game.caseSubject.y=0;
+  b.game.player.x=200;b.game.player.y=0;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  const wall={x:100,y:0,w:60,h:140,hp:999,maxHp:999};b.game.world.rooms[0].cover.push(wall);
+  assert.equal(b.clearSight(b.game.world,b.game.player.x,b.game.player.y,b.game.caseSubject.x,b.game.caseSubject.y),false);
+  b.updateCaseObjective(10);assert.equal(b.game.caseProgress,0,'solid walls block tailing progress even at the correct range');
+  wall.hp=0;b.updateCaseObjective(4);assert.equal(b.game.caseProgress,4);
+  wall.hp=999;b.updateCaseObjective(3);assert.equal(b.game.caseProgress,4,'losing sight behind a wall pauses rather than fabricating or erasing recorded observation');
+  wall.hp=0;b.updateCaseObjective(6);assert.equal(b.game.caseProgress,10,'tailing accrues only while close, sneaking, visible, and undetected');
   b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'tail','completed tail reports its correct dossier step');
 
   b.startPrivateerMission({style:'stealth',caseTask:'stakeout',contact:'Ivo Slate',difficulty:2,seed:914});
-  b.game.player.x=b.game.caseSubject.x+400;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.player.moving=false;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  b.game.world=openWorld();b.game.caseSubject.x=0;b.game.caseSubject.y=0;b.game.player.x=400;b.game.player.y=0;b.game.player.sneaking=true;b.game.player.moving=false;b.game.detectedThisFloor=false;b.game.mode='PLAY';
   b.updateCaseObjective(8);assert.equal(b.game.caseProgress,8,'stakeout requires a still, distant, concealed observation window');
   b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'stakeout','stakeout advances only after the observation window');
 
   b.startPrivateerMission({style:'stealth',caseTask:'eavesdrop',contact:'Kest Arden',difficulty:2,seed:915});
   const beforeEavesdrop=privateerMessages.length;b.finishPrivateerMission('completed');
   assert.equal(privateerMessages.length,beforeEavesdrop,'eavesdropping cannot complete before listening in the field');
-  b.game.player.x=b.game.caseSubject.x+100;b.game.player.y=b.game.caseSubject.y;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
+  b.game.world=openWorld();b.game.caseSubject.x=0;b.game.caseSubject.y=0;b.game.player.x=100;b.game.player.y=0;b.game.player.sneaking=true;b.game.detectedThisFloor=false;b.game.mode='PLAY';
   b.updateCaseObjective(6);assert.equal(b.game.caseProgress,6,'eavesdropping requires close, concealed listening');
   b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.caseTask,'eavesdrop','the overheard lead advances the dossier');
 

@@ -1617,13 +1617,15 @@ function updateCaseObjective(dt){
   if(game.mode!=='PLAY'||!['tail','stakeout','eavesdrop'].includes(game.caseTask)||!game.caseSubject)return;
   if(game.caseObservationComplete)return;
   const p=game.player,distance=Math.hypot(p.x-game.caseSubject.x,p.y-game.caseSubject.y);
-  const valid=game.caseTask==='tail'
+  const visible=clearSight(game.world,p.x,p.y,game.caseSubject.x,game.caseSubject.y);
+  const valid=visible&&(game.caseTask==='tail'
     ?distance>=110&&distance<=340&&p.sneaking&&!game.detectedThisFloor
     :game.caseTask==='stakeout'
       ?distance>=300&&distance<=620&&p.sneaking&&!p.moving&&!game.detectedThisFloor
-      :distance>=45&&distance<=190&&p.sneaking&&!game.detectedThisFloor;
+      :distance>=45&&distance<=190&&p.sneaking&&!game.detectedThisFloor);
   const required=game.caseTask==='tail'?10:game.caseTask==='stakeout'?8:6;
-  game.caseProgress=valid?Math.min(required,game.caseProgress+dt):Math.max(0,game.caseProgress-dt*1.8);
+  if(valid)game.caseProgress=Math.min(required,game.caseProgress+dt);
+  else if(visible)game.caseProgress=Math.max(0,game.caseProgress-dt*1.8);
   if(game.caseProgress>=required&&!game.caseReadyAnnounced){
     game.caseObservationComplete=true;game.caseReadyAnnounced=true;announce('SURVEILLANCE RECORDED · REACH THE SITE EXIT TO REPORT YOUR LEAD',4);
   }
