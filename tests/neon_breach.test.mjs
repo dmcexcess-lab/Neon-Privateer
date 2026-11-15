@@ -116,6 +116,49 @@ test('port crime detection checks line of sight and lets nearby civilians report
   assert.equal(remote.alert,false,'a distant patrol remains unaware');
 });
 
+test('robbery victims flee, report reachable security and do not freeze after being robbed',()=>{
+  const context={mode:'spaceport',requestId:'robbery-report-test',seed:919,arrivalSeed:2919,planetId:'report-port',planetName:'Report Port',faction:'Report Police',loadout:{weapon:'hands'}};
+  b.setPrivateerContext(context);b.enterPrivateerPort(context);
+  const victim=(x=40)=>({id:'victim',kind:'civilian',name:'MARA VENN',x,y:0,r:13,hp:2,maxHp:2,down:false,robbed:true,
+    home:{x,y:0},target:{x,y:0},speed:42,facingX:1,walking:false,appearance:{skin:1,top:2,coat:1,hair:3,build:1}});
+  const guard=(x)=>({id:'report-guard',kind:'guard',name:'REPORT POLICE',x,y:0,r:16,hp:5,maxHp:5,down:false,
+    home:{x,y:0},target:{x,y:0},speed:0,alert:false,cool:99,facing:Math.PI});
+  const install=(actors)=>{
+    const world=openWorld();Object.assign(world,{isSpaceport:true,planetName:'REPORT PORT',faction:'REPORT POLICE',actors,stations:[],structures:[],crime:{heat:0,witnessed:false,lastDischarge:-99},caseContext:{}});
+    b.game.world=world;b.game.bullets=[];b.game.player.x=0;b.game.player.y=0;b.game.player.weaponDrawn=true;
+    b.inputs.keys.clear();b.inputs.mouse.down=false;b.inputs.sneakTouch=false;
+  };
+
+  let civilian=victim(),officer=guard(700);install([civilian,officer]);
+  let response=b.reportPortCrime('street_robbery',3,25,civilian);
+  assert.equal(response.witnessed,true,'the victim reports when local security is reachable');
+  assert.equal(response.witnessCount,1,'the robbed civilian remains a valid identifying witness');
+  assert.equal(officer.alert,true,'the victim report alerts nearby police');
+  assert.equal(civilian.robberyReported,true);assert.equal(civilian.fleeing,true);
+
+  civilian=victim();officer=guard(1200);install([civilian,officer]);
+  const beforeMessages=privateerMessages.length;
+  response=b.reportPortCrime('street_robbery',3,31,civilian);
+  assert.equal(response.witnessed,false,'an isolated alley robbery is not reported instantly');
+  assert.equal(civilian.robberyPending,true,'the victim remembers the robbery while fleeing for help');
+  const beforeX=civilian.x;b.updatePort(.2);
+  assert.ok(civilian.x>beforeX,'a robbed civilian continues updating and visibly flees instead of freezing');
+  civilian.x=officer.x-50;civilian.y=officer.y;civilian.target={x:officer.x,y:officer.y};b.updatePort(.05);
+  assert.equal(civilian.robberyReported,true,'reaching an officer completes the delayed report');
+  assert.equal(officer.alert,true,'police search the recorded crime position after the delayed report');
+  const reports=privateerMessages.slice(beforeMessages).filter(message=>message.type==='dmc-privateer-crime'&&message.detail.offense==='street_robbery');
+  assert.equal(reports.length,2,'the initial theft and later witness report are both communicated');
+  assert.equal(reports[0].detail.cash,31);assert.equal(reports[1].detail.cash,0,'the delayed report cannot duplicate the robbery payout');
+  assert.equal(reports[1].detail.followUp,true);
+
+  civilian=victim();install([civilian]);response=b.reportPortCrime('street_robbery',3,19,civilian);
+  assert.equal(response.witnessed,false,'a genuinely isolated robbery remains unwitnessed when no security exists to contact');
+  assert.equal(civilian.robberyPending,false,'the victim cannot fabricate a police report without an officer in the port');
+  civilian.target={x:400,y:0};const isolatedX=civilian.x;b.updatePort(.1);
+  assert.ok(civilian.x>isolatedX,'even an isolated victim visibly flees instead of disappearing or freezing');
+  b.setPrivateerContext(null);
+});
+
 test('spaceport police search the last seen position and stand down after losing sight',()=>{
   const context={mode:'spaceport',requestId:'guard-search-test',seed:812,arrivalSeed:4412,planetId:'search-port',planetName:'Search Port',faction:'Search Police',loadout:{weapon:'hands'}};
   b.setPrivateerContext(context);b.enterPrivateerPort(context);
