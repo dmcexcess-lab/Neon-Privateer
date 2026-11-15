@@ -217,6 +217,9 @@ var firewall_profile: Dictionary = FirewallGame.default_profile()
 var breach_web_callback
 var breach_spaceport_requested := false
 var breach_arrival_serial := 0
+var breach_port_visit_active := false
+var breach_port_visit_planet := ""
+var breach_port_arrival_seed := 0
 var breach_port_security_alert := false
 var pending_case_hack_task := ""
 
@@ -487,9 +490,7 @@ func _open_breach_spaceport() -> bool:
         return false
     if not OS.has_feature("web"):
         return _open_covert()
-    breach_arrival_serial += 1
-    Storyteller.on_arrival(covert_profile)
-    var arrival_seed := int(abs(hash("%s:%d:%d" % [current_planet, Time.get_ticks_usec(), breach_arrival_serial])))
+    var arrival_seed := _ensure_breach_port_visit()
     var faction_id := _planet_primary_faction(current_planet)
     var payload := {
         "type": "dmc-open-breach",
@@ -515,6 +516,22 @@ func _open_breach_spaceport() -> bool:
     breach_port_security_alert = false
     breach_spaceport_requested = true
     return true
+
+func _ensure_breach_port_visit() -> int:
+    if breach_port_visit_active and breach_port_visit_planet == current_planet:
+        return breach_port_arrival_seed
+    breach_arrival_serial += 1
+    Storyteller.on_arrival(covert_profile)
+    breach_port_visit_active = true
+    breach_port_visit_planet = current_planet
+    breach_port_arrival_seed = int(abs(hash("%s:%d:%d" % [current_planet, Time.get_ticks_usec(), breach_arrival_serial])))
+    return breach_port_arrival_seed
+
+func _end_breach_port_visit() -> void:
+    breach_port_visit_active = false
+    breach_port_visit_planet = ""
+    breach_port_arrival_seed = 0
+    breach_spaceport_requested = false
 
 func _close_breach_spaceport_request() -> void:
     breach_spaceport_requested = false
@@ -624,7 +641,9 @@ func _on_breach_web_message(args: Array) -> void:
                 last_trip_summary = "Spaceport crime witnessed" if witnessed else "Unreported spaceport crime"
             _save_all_state()
         "dmc-privateer-mission-result":
-            _close_breach_spaceport_request()
+            # A field operation actually leaves the port. Returning from it is
+            # a new arrival; service screens and terminals are not.
+            _end_breach_port_visit()
             var outcome := String(detail.get("outcome", "returned"))
             var style := String(detail.get("style", "choice"))
             var reward := maxi(0, int(detail.get("cash", 0)))
@@ -1065,6 +1084,9 @@ func _migrate_legacy_career_if_needed() -> void:
     _save_career_index()
 
 func _reset_career_state() -> void:
+    _end_breach_port_visit()
+    breach_arrival_serial = 0
+    breach_port_security_alert = false
     justice_flight_hold=false
     covert_open=false;covert_profile=CovertCareer.default_profile()
     if is_instance_valid(covert):covert.visible=false
@@ -2929,6 +2951,7 @@ func _start_route(destination: String) -> bool:
     var route_variance := rng.randf_range(ROUTE_TIME_RANDOM_MIN, ROUTE_TIME_RANDOM_MAX)
     route_duration = _route_duration_for(route_distance, route_danger, contract_difficulty, route_variance)
     ship_fuel = maxi(0, ship_fuel - fuel_required)
+    _end_breach_port_visit()
     _start_game()
     level = _route_level_for(route_distance, route_danger, contract_difficulty)
     route_active = true
@@ -3346,6 +3369,7 @@ func _complete_contract_if_ready() -> int:
     return reward
 
 func _arrive_at_destination() -> void:
+    _end_breach_port_visit()
     _cancel_police_scan("SCAN ENDED — ARRIVAL")
     playing = false
     route_active = false
@@ -3426,6 +3450,7 @@ func _reset_destroyed_ship() -> Dictionary:
     return losses
 
 func _fail_route(reason: String, ship_destroyed: bool = false) -> void:
+    _end_breach_port_visit()
     _cancel_police_scan()
     active_route_segments.clear()
     var losses := {"cash": 0, "cargo": 0, "passengers": 0, "upgrades": 0, "weapons": 0}

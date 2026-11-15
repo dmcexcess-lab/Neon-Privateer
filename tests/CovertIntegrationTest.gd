@@ -68,6 +68,16 @@ func _run() -> void:
     var scene=load("res://main.tscn").instantiate();root.add_child(scene);scene.set_process(false)
     check(not scene._open_covert(),"career required")
     scene._create_new_career(1);scene.research_credits=2200;scene.bank_balance=444
+    var needs_before:Dictionary=scene.covert_profile.needs.duplicate(true)
+    var first_arrival_seed:int=scene._ensure_breach_port_visit()
+    var needs_after_arrival:Dictionary=scene.covert_profile.needs.duplicate(true)
+    var first_arrival_serial:int=scene.breach_arrival_serial
+    scene._close_breach_spaceport_request()
+    check(scene._ensure_breach_port_visit()==first_arrival_seed,"service return preserves the same starport layout")
+    check(scene.breach_arrival_serial==first_arrival_serial and scene.covert_profile.needs==needs_after_arrival,"service return is not another arrival and does not drain needs")
+    check(float(needs_after_arrival.hunger)==float(needs_before.hunger)-5.0,"a real arrival drains needs once")
+    scene._end_breach_port_visit();scene._ensure_breach_port_visit()
+    check(scene.breach_arrival_serial==first_arrival_serial+1 and float(scene.covert_profile.needs.hunger)==float(needs_after_arrival.hunger)-5.0,"departing and returning creates one new arrival")
     check(scene._open_covert(),"port button opens native system")
     var view=scene.covert;view.set_process(false)
     view.job_tier=2;view.data.guilds.merc=30
