@@ -49,7 +49,7 @@ vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,alertEnemy,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
   initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
-  updateExtraction,updateCaseObjective,updatePickups,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
+  updateExtraction,updateCaseObjective,updateJobObjective,updatePickups,damageFurniture,spontaneousObjectiveType,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
@@ -272,6 +272,8 @@ test('Privateer mission approaches have distinct rules and contract rewards',()=
   b.setPrivateerContext({mode:'spaceport',requestId:'test',planetId:'p-test',loadout:{weapon:'hands'}});
   b.startPrivateerMission({style:'stealth',difficulty:1,seed:919,objective:'evidence theft'});
   assert.equal(b.game.detectedThisFloor,false,'stealth missions begin quiet');
+  const evidenceRoom=b.game.world.rooms.find(room=>room.caches.some(cache=>cache.jobObjective)),evidence=evidenceRoom.caches.find(cache=>cache.jobObjective);
+  evidenceRoom.visited=true;b.game.player.x=evidence.x;b.game.player.y=evidence.y;b.updatePickups(.016);
   b.finishPrivateerMission('completed');result=privateerMessages.at(-1).detail;
   assert.equal(result.approachSucceeded,true);assert.equal(result.contractReward,114,'clean stealth completion earns a bonus');
   b.setPrivateerContext(null);
@@ -345,6 +347,35 @@ test('Privateer safehouses require records and return through their entrance wit
   assert.equal(records.opened,true);
   b.finishPrivateerMission('completed');
   assert.equal(privateerMessages.at(-1).detail.caseTask,'breach','secured records complete the safehouse lead through the career result');
+  b.setPrivateerContext(null);
+});
+
+test('spontaneous offer names launch physical recovery, delivery, escort, sabotage, and survey objectives',()=>{
+  const expected={
+    'recovery':'recover','cargo recovery':'recover','evidence theft':'recover','blackmail intercept':'recover','wiretap':'recover',
+    'quiet delivery':'delivery','message handoff':'delivery','escort':'escort','crew extraction':'escort','missing-person search':'escort','shipyard sabotage':'sabotage',
+    'route survey':'survey','surveillance':'survey','social infiltration':'survey'
+  };
+  for(const [kind,type] of Object.entries(expected))assert.equal(b.spontaneousObjectiveType(kind),type,`${kind} maps to a real ${type} objective`);
+  for(const [kind,type] of [['cargo recovery','recover'],['message handoff','delivery'],['crew extraction','escort'],['shipyard sabotage','sabotage'],['route survey','survey']]){
+    b.setPrivateerContext({mode:'spaceport',requestId:`job-${type}`,planetId:'p-jobs',loadout:{weapon:'auto_pistol'}});
+    b.startPrivateerMission({style:'choice',kind,objective:kind,difficulty:2,seed:2300+kind.length});
+    const job=b.game.jobObjective;assert.equal(job.type,type);
+    const before=privateerMessages.length;b.finishPrivateerMission('completed');
+    assert.equal(privateerMessages.length,before,`${kind} cannot pay before its objective`);
+    if(type==='recover'){
+      const room=b.game.world.rooms.find(value=>value.caches.some(cache=>cache.jobObjective)),cache=room.caches.find(value=>value.jobObjective);
+      room.visited=true;b.game.player.x=cache.x;b.game.player.y=cache.y;b.updatePickups(.016);
+    }else if(type==='delivery'){
+      b.game.player.x=job.marker.x;b.game.player.y=job.marker.y;b.updateJobObjective(.016);
+    }else if(type==='escort'){
+      b.game.player.x=job.escort.x;b.game.player.y=job.escort.y;b.updateJobObjective(.016);assert.equal(job.escort.active,true);
+      const exit=b.game.world.rooms[b.game.world.exit];job.escort.x=exit.cx;job.escort.y=exit.cy;b.game.player.x=exit.cx;b.game.player.y=exit.cy;b.updateJobObjective(.016);
+    }else if(type==='sabotage')b.damageFurniture(job.target,999);
+    else for(const point of job.points){b.game.player.x=point.x;b.game.player.y=point.y;b.updateJobObjective(.016);}
+    assert.equal(job.complete,true,`${kind} completes only through its physical activity`);
+    b.finishPrivateerMission('completed');assert.equal(privateerMessages.at(-1).detail.objective,kind);
+  }
   b.setPrivateerContext(null);
 });
 

@@ -190,9 +190,18 @@ function advanceOpeningCall(){
   return true;
 }
 $('openingCallContinue').addEventListener('click',advanceOpeningCall);
+function spontaneousObjectiveType(kind=''){
+  const value=String(kind).toLowerCase();
+  if(['escort','crew extraction','missing-person search'].includes(value))return 'escort';
+  if(['quiet delivery','message handoff'].includes(value))return 'delivery';
+  if(['shipyard sabotage'].includes(value))return 'sabotage';
+  if(['route survey','surveillance','social infiltration'].includes(value))return 'survey';
+  if(['recovery','cargo recovery','evidence theft','blackmail intercept','wiretap'].includes(value))return 'recover';
+  return '';
+}
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,caseTask:String(spec.caseTask||''),mode:'mission'};
-  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;game.caseObservationComplete=false;game.caseObjectiveComplete=false;game.caseSiteExitArmed=false;
+  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;game.caseObservationComplete=false;game.caseObjectiveComplete=false;game.caseSiteExitArmed=false;game.jobObjective=null;
   game.loadout={...emptyLoadout(),...(privateerContext.loadout||{})};
   resetRun(Math.max(1,Number(privateerContext.difficulty)||1),(Number(privateerContext.seed)>>>0)||null);
   if(privateerContext.style==='hot'){
@@ -213,6 +222,9 @@ function finishPrivateerMission(outcome){
   }
   if(outcome==='completed'&&['breach','intel','evidence'].includes(task)&&!game.caseObjectiveComplete){
     announce('SITE OBJECTIVE OPEN · RECOVER THE MARKED RECORDS BEFORE LEAVING',4);game.exitClock=0;return true;
+  }
+  if(outcome==='completed'&&game.jobObjective&&!game.jobObjective.complete){
+    announce(`JOB INCOMPLETE · ${game.jobObjective.instruction}`,4);game.exitClock=0;return true;
   }
   const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
   // Recorded surveillance remains valid if the player is spotted while leaving.
@@ -602,6 +614,22 @@ function beginFloor(){
     if(['breach','intel','evidence'].includes(String(privateerContext?.caseTask||''))){
       objectiveRoom.caches.push({x:objectiveRoom.cx,y:objectiveRoom.cy,opened:false,kind:'case_records',value:0,caseObjective:true});
     }
+    const kind=String(privateerContext?.kind||privateerContext?.objective||'').toLowerCase(),type=game.caseTask?'':spontaneousObjectiveType(kind);
+    if(type){
+      const instructions={recover:'SECURE THE MARKED PACKAGE OR DATA',delivery:'REACH THE MARKED RECIPIENT',escort:'LOCATE THE CONTACT AND BRING THEM TO THE ENTRY',sabotage:'DESTROY THE MARKED SYSTEM',survey:'VISIT EVERY MARKED SURVEY POINT'};
+      game.jobObjective={type,kind,complete:false,instruction:instructions[type],room:objectiveRoom.id,progress:0};
+      if(type==='recover')objectiveRoom.caches.push({x:objectiveRoom.cx,y:objectiveRoom.cy,opened:false,kind:'job_objective',value:0,jobObjective:true,label:kind.includes('wiretap')||kind.includes('evidence')||kind.includes('blackmail')?'DATA NODE':'MISSION PACKAGE'});
+      else if(type==='delivery')game.jobObjective.marker={x:objectiveRoom.cx,y:objectiveRoom.cy,room:objectiveRoom.id,label:kind==='message handoff'?'MESSAGE RECIPIENT':'DELIVERY RECEIVER'};
+      else if(type==='escort')game.jobObjective.escort={x:objectiveRoom.cx,y:objectiveRoom.cy,r:13,active:false,label:kind==='crew extraction'?'STRANDED CREW':kind==='missing-person search'?'MISSING PERSON':'CLIENT'};
+      else if(type==='sabotage'){
+        let target=objectiveRoom.cover.find(prop=>prop.hp>0&&!prop.structural);
+        if(!target){target={x:objectiveRoom.cx,y:objectiveRoom.cy,w:56,h:48,kind:'sabotage controller',hp:7,maxHp:7};objectiveRoom.cover.push(target);}
+        target.jobObjective=true;target.hp=Math.max(7,target.hp);target.maxHp=target.hp;game.jobObjective.target=target;
+      }else if(type==='survey'){
+        const points=game.world.rooms.filter(room=>room.id!==game.world.start).sort((a,b)=>b.depth-a.depth).slice(0,Math.min(3,game.world.rooms.length-1));
+        game.jobObjective.points=points.map(room=>({room:room.id,x:room.cx,y:room.cy,visited:false}));
+      }
+    }
   }
   if(game.floor>game.profile.unlockedFloor){game.profile.unlockedFloor=game.floor;saveProfile();}
   if(game.floor>bestFloor){bestFloor=game.floor;try{localStorage.setItem('neon-breach.best',String(bestFloor))}catch{};
@@ -898,6 +926,9 @@ function damageFurniture(prop,damage,x=prop.x,y=prop.y){
   if(prop.hp<=0){
     game.world.navigationRevision=(game.world.navigationRevision||0)+1;
     floating('DESTROYED',prop.x,prop.y,C.gold);
+    if(prop.jobObjective&&game.jobObjective?.type==='sabotage'){
+      game.jobObjective.complete=true;announce('SABOTAGE COMPLETE · RETURN TO THE SITE ENTRY',4);
+    }
     if(!game.world.isHQ&&Math.random()<.005){
       const kinds=['chest','weapon','equipment','med'];makePickup(kinds[Math.floor(Math.random()*kinds.length)],prop.x,prop.y,1);
     }
@@ -1415,6 +1446,9 @@ function updatePickups(dt){
     if(c.kind==='case_records'){
       game.caseObjectiveComplete=true;
       announce('SAFEHOUSE RECORDS SECURED · RETURN TO THE SITE ENTRY',4);
+    }else if(c.kind==='job_objective'){
+      if(game.jobObjective)game.jobObjective.complete=true;
+      announce(`${String(c.label||'MISSION OBJECTIVE').toUpperCase()} SECURED · RETURN TO THE SITE ENTRY`,4);
     }else makePickup(c.kind,c.x,c.y,c.kind==='credits'?c.value:1);
     burst(c.x,c.y,C.gold,9);playSound('pickup');
   }
@@ -1424,6 +1458,29 @@ function updatePickups(dt){
     const dist=Math.hypot(p.x-v.x,p.y-v.y);
     if(dist<70){v.x+=(p.x-v.x)*dt*3.5;v.y+=(p.y-v.y)*dt*3.5;}
     if(dist<25){if(collectPickup(v))game.pickups.splice(i,1);}
+  }
+}
+function updateJobObjective(dt){
+  const job=game.jobObjective,p=game.player;if(!job||job.complete||!p)return;
+  if(job.type==='delivery'&&job.marker&&Math.hypot(p.x-job.marker.x,p.y-job.marker.y)<48){
+    job.complete=true;announce('DELIVERY CONFIRMED · RETURN TO THE SITE ENTRY',4);
+  }else if(job.type==='escort'&&job.escort){
+    const escort=job.escort,distance=Math.hypot(p.x-escort.x,p.y-escort.y);
+    if(!escort.active&&distance<58){escort.active=true;job.trail=[];job.trailClock=0;announce(`${escort.label} FOUND · ESCORT THEM BACK TO THE ENTRY`,4);}
+    if(escort.active){
+      job.trailClock=(job.trailClock||0)+dt;
+      const last=job.trail?.at(-1);
+      if(job.trailClock>=.22&&(!last||Math.hypot(p.x-last.x,p.y-last.y)>38)){job.trail.push({x:p.x,y:p.y});job.trailClock=0;}
+      let target=job.trail?.[0]||p,targetDistance=Math.hypot(target.x-escort.x,target.y-escort.y);
+      if(job.trail?.length&&targetDistance<24){job.trail.shift();target=job.trail[0]||p;targetDistance=Math.hypot(target.x-escort.x,target.y-escort.y);}
+      if(targetDistance>4)moveWithCollisions(escort,(target.x-escort.x)/targetDistance*Math.min(targetDistance,125*dt),(target.y-escort.y)/targetDistance*Math.min(targetDistance,125*dt),escort.r);
+    }
+    const exit=game.world.rooms[game.world.exit];
+    if(escort.active&&Math.hypot(escort.x-exit.cx,escort.y-exit.cy)<82){job.complete=true;announce('ESCORT ARRIVED SAFELY · JOB COMPLETE',4);}
+  }else if(job.type==='survey'){
+    for(const point of job.points||[])if(!point.visited&&Math.hypot(p.x-point.x,p.y-point.y)<90){point.visited=true;announce(`SURVEY POINT RECORDED · ${(job.points.filter(item=>item.visited).length)}/${job.points.length}`,2.5);}
+    job.progress=(job.points||[]).filter(point=>point.visited).length;
+    if(job.points?.length&&job.progress===job.points.length){job.complete=true;announce('ROUTE SURVEY COMPLETE · RETURN TO THE SITE ENTRY',4);}
   }
 }
 function particle(x,y,color,speed=140,life=rand(.22,.60)){
@@ -1479,7 +1536,7 @@ function update(dt){
   const room=roomAt(game.world,p.x,p.y);
   if(room&&room.id!==game.activeRoom)enterRoom(room);
   if(updateExtraction(dt))return;
-  updateEnemies(dt);updateBullets(dt);updatePickups(dt);updateParticles(dt);updateCaseObjective(dt);
+  updateEnemies(dt);updateBullets(dt);updatePickups(dt);updateParticles(dt);updateCaseObjective(dt);updateJobObjective(dt);
   if(game.mode!=='PLAY')return;
   game.monsterSoundClock-=dt;
   if(game.monsterSoundClock<=0){
@@ -1494,8 +1551,9 @@ function update(dt){
     const surveillanceReady=!['tail','stakeout','eavesdrop'].includes(game.caseTask)||game.caseObservationComplete;
     const targetReady=!['target','lieutenant','mastermind'].includes(game.caseTask)||game.caseTargetCleared;
     const recordsReady=!['breach','intel','evidence'].includes(game.caseTask)||game.caseObjectiveComplete;
-    if(!surveillanceReady||!targetReady||!recordsReady){
-      if(game.exitClock===0)announce(!surveillanceReady?'SURVEILLANCE INCOMPLETE · RECORD THE LEAD BEFORE LEAVING':!targetReady?'TARGET STILL ACTIVE · COMPLETE THE ASSIGNMENT':'RECORDS NOT SECURED · FIND THE MARKED SAFEHOUSE ARCHIVE',3);
+    const jobReady=!game.jobObjective||game.jobObjective.complete;
+    if(!surveillanceReady||!targetReady||!recordsReady||!jobReady){
+      if(game.exitClock===0)announce(!surveillanceReady?'SURVEILLANCE INCOMPLETE · RECORD THE LEAD BEFORE LEAVING':!targetReady?'TARGET STILL ACTIVE · COMPLETE THE ASSIGNMENT':!recordsReady?'RECORDS NOT SECURED · FIND THE MARKED SAFEHOUSE ARCHIVE':`JOB INCOMPLETE · ${game.jobObjective.instruction}`,3);
       game.exitClock=0;
     }
     else{game.exitClock+=dt;if(game.exitClock>.75)nextFloor();}
@@ -1619,14 +1677,18 @@ function drawRoom(room){
     }
     // A chipped edge visually communicates damage taken.
     if(o.hp<o.maxHp){ctx.strokeStyle='#efba7a';line(px+5,py+4,px+12,py+11,'#efba7a',2);}
+    if(o.jobObjective){ctx.fillStyle='#ffb25f';ctx.font='900 9px ui-monospace,monospace';ctx.fillText('SABOTAGE TARGET',o.x,o.y-o.h/2-9);}
     ctx.restore();
   }
   for(const chest of room.caches)if(!chest.opened){
-    const records=chest.kind==='case_records';ctx.globalAlpha=.76+Math.sin(now*2+chest.x)*.2;
-    path([[chest.x-15,chest.y-11],[chest.x+15,chest.y-11],[chest.x+15,chest.y+11],[chest.x-15,chest.y+11]],records?'#39294f':'#483921',records?C.purple:C.gold,3,14);
-    line(chest.x-7,chest.y,chest.x+7,chest.y,records?C.purple:C.gold,2);ctx.globalAlpha=1;
-    if(records){ctx.fillStyle='#f2dcff';ctx.font='900 9px ui-monospace,monospace';ctx.fillText('SAFEHOUSE RECORDS',chest.x,chest.y-20);}
+    const records=chest.kind==='case_records',job=chest.kind==='job_objective',objective=records||job;ctx.globalAlpha=.76+Math.sin(now*2+chest.x)*.2;
+    path([[chest.x-15,chest.y-11],[chest.x+15,chest.y-11],[chest.x+15,chest.y+11],[chest.x-15,chest.y+11]],objective?'#39294f':'#483921',objective?C.purple:C.gold,3,14);
+    line(chest.x-7,chest.y,chest.x+7,chest.y,objective?C.purple:C.gold,2);ctx.globalAlpha=1;
+    if(objective){ctx.fillStyle='#f2dcff';ctx.font='900 9px ui-monospace,monospace';ctx.fillText(records?'SAFEHOUSE RECORDS':String(chest.label||'MISSION OBJECTIVE').toUpperCase(),chest.x,chest.y-20);}
   }
+  const job=game.jobObjective;
+  if(job?.marker?.room===room.id&&!job.complete){glowCircle(job.marker.x,job.marker.y,28,C.purple,'#2f1d49',3,14);ctx.fillStyle='#f2dcff';ctx.font='900 9px ui-monospace,monospace';ctx.fillText(job.marker.label,job.marker.x,job.marker.y-38);}
+  for(const point of job?.points||[])if(point.room===room.id&&!point.visited){glowCircle(point.x,point.y,22,C.cyan,'#12333d',2,9);ctx.fillStyle='#c8fbff';ctx.font='900 8px ui-monospace,monospace';ctx.fillText('SURVEY POINT',point.x,point.y-31);}
   if(room.exit){
     const pulse=Math.sin(now*3)*5;
     glowCircle(x,y,47+pulse,C.green,'#122e35',4,22);
@@ -1645,6 +1707,10 @@ function drawRoom(room){
     ctx.fillStyle=C.gold;ctx.font='900 14px ui-monospace,monospace';ctx.fillText(active?`${game.extraction.remaining}s`:'EXFIL',x,y+4);
     ctx.font='700 12px ui-monospace,monospace';ctx.fillText(active?'HOLD THE RING // ALL HOSTILES ALERT':'ENTER MARKER // HOLD 8s TO EXFIL',x,y+132);
   }
+}
+function drawJobEscort(){
+  const escort=game.jobObjective?.escort;if(!escort||game.jobObjective.complete)return;
+  ctx.save();ctx.translate(escort.x,escort.y);ctx.fillStyle=escort.active?'#75ffb0':'#b999ff';ctx.beginPath();ctx.arc(0,0,escort.r,0,TAU);ctx.fill();ctx.strokeStyle='#f4f8ff';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#f4f8ff';ctx.textAlign='center';ctx.font='900 8px ui-monospace,monospace';ctx.fillText(escort.active?'FOLLOWING':escort.label,0,-21);ctx.restore();
 }
 function drawPortStructureFloors(){
   if(!game.world?.isSpaceport)return;
@@ -2017,7 +2083,7 @@ function render(){
   const visibleEnemies=game.enemies.filter(e=>Math.abs(e.x-camera.x)<SW/(zoom*2)+350&&Math.abs(e.y-camera.y)<SH/(zoom*2)+350);
   for(const e of visibleEnemies)drawAwareness(e);
   for(const e of visibleEnemies)drawEnemy(e);
-  drawBullets();drawPlayer();drawParticles();
+  drawJobEscort();drawBullets();drawPlayer();drawParticles();
   ctx.restore();
   drawCaseObjectiveHUD();
   drawPortObjectiveHUD();
@@ -2038,10 +2104,15 @@ function drawPortObjectiveHUD(){
   ctx.textAlign='center';ctx.font='800 11px ui-monospace,monospace';ctx.fillStyle='#fff0c4';ctx.fillText(label,x+width/2,y+17);ctx.font='700 9px ui-monospace,monospace';ctx.fillStyle='#a9bdc7';ctx.fillText(lead.openingAdventure?'PRIVATEER CAREER · OPENING BOUNTY':'PRIVATEER CAREER · ACTIVE CASE',x+width/2,y+33);ctx.restore();
 }
 function drawCaseObjectiveHUD(){
-  if(game.mode!=='PLAY'||!game.caseTask)return;
+  if(game.mode!=='PLAY'||(!game.caseTask&&!game.jobObjective))return;
   const width=Math.min(440,SW-32),x=(SW-width)/2,y=SH-66;
   let label='',progress=null;
-  if(game.caseTask==='tail'){label='TAIL · FOLLOW THE MARKED SUBJECT UNDETECTED';progress=game.caseProgress/10;}
+  if(game.jobObjective){
+    const job=game.jobObjective;
+    label=job.complete?'JOB COMPLETE · RETURN TO SITE ENTRY':job.type==='escort'?(job.escort?.active?'ESCORT · BRING THE CONTACT TO THE ENTRY':'ESCORT · LOCATE THE MARKED CONTACT'):job.type==='delivery'?'DELIVERY · REACH THE MARKED RECIPIENT':job.type==='sabotage'?'SABOTAGE · DESTROY THE MARKED SYSTEM':job.type==='survey'?`SURVEY · RECORD MARKED POINTS ${job.progress||0}/${job.points?.length||0}`:job.instruction;
+    if(job.type==='survey')progress=(job.progress||0)/Math.max(1,job.points?.length||1);
+  }
+  else if(game.caseTask==='tail'){label='TAIL · FOLLOW THE MARKED SUBJECT UNDETECTED';progress=game.caseProgress/10;}
   else if(game.caseTask==='eavesdrop'){label='EAVESDROP · STAY CLOSE, SNEAKING AND UNDETECTED';progress=game.caseProgress/6;}
   else if(game.caseTask==='stakeout'){label='STAKEOUT · HOLD POSITION, SNEAKING AND STILL';progress=game.caseProgress/8;}
   else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · RETURN TO SITE ENTRY':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
