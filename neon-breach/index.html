@@ -1389,7 +1389,7 @@ function advanceOpeningCall(){
 $('openingCallContinue').addEventListener('click',advanceOpeningCall);
 function startPrivateerMission(spec){
   privateerContext={...privateerContext,...spec,caseTask:String(spec.caseTask||''),mode:'mission'};
-  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;game.caseObservationComplete=false;
+  game.caseTask=String(privateerContext.caseTask);game.caseProgress=0;game.caseSubject=null;game.caseTargetCleared=false;game.caseReadyAnnounced=false;game.caseObservationComplete=false;game.caseObjectiveComplete=false;game.caseSiteExitArmed=false;
   game.loadout={...emptyLoadout(),...(privateerContext.loadout||{})};
   resetRun(Math.max(1,Number(privateerContext.difficulty)||1),(Number(privateerContext.seed)>>>0)||null);
   if(privateerContext.style==='hot'){
@@ -1407,6 +1407,9 @@ function finishPrivateerMission(outcome){
   }
   if(outcome==='completed'&&['tail','stakeout','eavesdrop'].includes(task)&&game.caseProgress<(task==='tail'?10:task==='stakeout'?8:6)){
     announce(task==='tail'?'TAIL INCOMPLETE · KEEP THE SUBJECT IN RANGE, UNDETECTED':task==='stakeout'?'STAKEOUT INCOMPLETE · HOLD A SNEAKING OBSERVATION POSITION':'EAVESDROP INCOMPLETE · STAY CLOSE, SNEAKING AND UNDETECTED',4);game.exitClock=0;return true;
+  }
+  if(outcome==='completed'&&['breach','intel','evidence'].includes(task)&&!game.caseObjectiveComplete){
+    announce('SITE OBJECTIVE OPEN · RECOVER THE MARKED RECORDS BEFORE LEAVING',4);game.exitClock=0;return true;
   }
   const style=String(privateerContext.style||'choice'),completed=outcome==='completed';
   // Recorded surveillance remains valid if the player is spotted while leaving.
@@ -1779,11 +1782,24 @@ function resetRun(startFloor=1,runSeed=null){
     sneaking:false,cool:0,invuln:0,facing:0,walkCycle:0,punchTimer:0,stepClock:0};
   beginFloor();hiddenScreens();show('hqPrompt',false);document.body?.classList.toggle('hq-mode',false);
   game.mode='PLAY';show('hud',true);show('location',true);show('touchUI',true);show('aimTip',true);
-  announce(`SECTOR ${String(game.floor).padStart(2,'0')} // ${game.world.stratum.name} · FIND STAIRS OR EXFIL`,2.5);updateUI();playSound('start');
+  const careerMission=privateerContext?.mode==='mission';
+  announce(careerMission?`INFILTRATION SITE // ${String(privateerContext.objective||privateerContext.kind||'COMPLETE THE OBJECTIVE').toUpperCase()} · RETURN TO THE ENTRY WHEN DONE`:`SECTOR ${String(game.floor).padStart(2,'0')} // ${game.world.stratum.name} · FIND STAIRS OR EXFIL`,2.5);updateUI();playSound('start');
   show('hqMenuButton',false);
 }
 function beginFloor(){
   game.world=generateFloor(game.floor,game.seed);
+  const careerMission=privateerContext?.mode==='mission';
+  if(careerMission){
+    // Privateer sites are bounded locations. The arcade game's optional exfil
+    // ring is disabled; the original entrance becomes the return-to-port exit.
+    for(const room of game.world.rooms)room.exfil=false;
+    game.world.exfil=null;
+    const objectiveRoom=game.world.rooms[game.world.exit],entry=game.world.rooms[game.world.start];
+    game.world.caseObjectiveRoom=objectiveRoom.id;objectiveRoom.exit=false;entry.exit=true;game.world.exit=entry.id;
+    if(['breach','intel','evidence'].includes(String(privateerContext?.caseTask||''))){
+      objectiveRoom.caches.push({x:objectiveRoom.cx,y:objectiveRoom.cy,opened:false,kind:'case_records',value:0,caseObjective:true});
+    }
+  }
   if(game.floor>game.profile.unlockedFloor){game.profile.unlockedFloor=game.floor;saveProfile();}
   if(game.floor>bestFloor){bestFloor=game.floor;try{localStorage.setItem('neon-breach.best',String(bestFloor))}catch{};
     $('bestReadout').textContent=`PERSONAL BEST // SECTOR ${String(bestFloor).padStart(2,'0')}`;}
@@ -1811,7 +1827,7 @@ function enterRoom(r){
   game.activeRoom=r.id;
   const firstVisit=!r.visited;
   r.visited=true;
-  if(firstVisit)announce(r.exit?'STAIRWAY LOCATED':r.exfil?'OPTIONAL EXFIL LOCATED':'AREA DISCOVERED  //  STAY ALERT',1.2);
+  if(firstVisit)announce(r.exit?(privateerContext?.mode==='mission'?'SITE ENTRY LOCATED · RETURN HERE AFTER THE OBJECTIVE':'STAIRWAY LOCATED'):r.exfil?'OPTIONAL EXFIL LOCATED':'AREA DISCOVERED  //  STAY ALERT',1.2);
   updateUI();
 }
 function spawnFloorEnemies(){
@@ -2539,7 +2555,7 @@ function updateBullets(dt){
 function killEnemy(e){
   const i=game.enemies.indexOf(e);if(i<0)return;
   if(e.caseSubject&&['target','lieutenant','mastermind'].includes(game.caseTask)){
-    game.caseTargetCleared=true;announce(`${String(game.caseTask).toUpperCase()} LOCATED AND NEUTRALIZED · EXFIL IS CLEAR`,3.5);
+    game.caseTargetCleared=true;announce(`${String(game.caseTask).toUpperCase()} LOCATED AND NEUTRALIZED · RETURN TO THE SITE ENTRY`,3.5);
   }
   recordAlert(e);
   game.enemies.splice(i,1);
@@ -2593,7 +2609,10 @@ function updatePickups(dt){
   const p=game.player;
   for(const room of game.world.rooms)if(room.visited)for(const c of room.caches)if(!c.opened&&Math.hypot(p.x-c.x,p.y-c.y)<28){
     c.opened=true;
-    makePickup(c.kind,c.x,c.y,c.kind==='credits'?c.value:1);
+    if(c.kind==='case_records'){
+      game.caseObjectiveComplete=true;
+      announce('SAFEHOUSE RECORDS SECURED · RETURN TO THE SITE ENTRY',4);
+    }else makePickup(c.kind,c.x,c.y,c.kind==='credits'?c.value:1);
     burst(c.x,c.y,C.gold,9);playSound('pickup');
   }
   for(let i=game.pickups.length-1;i>=0;i--){
@@ -2666,9 +2685,16 @@ function update(dt){
     game.monsterSoundClock=3.8+Math.random()*5.5;
   }
   const exit=game.world.rooms[game.world.exit];
-  if(!game.extraction&&Math.hypot(p.x-exit.cx,p.y-exit.cy)<56){
-    const observationReady=!['tail','stakeout','eavesdrop'].includes(game.caseTask)||game.caseProgress>=(game.caseTask==='tail'?10:game.caseTask==='stakeout'?8:6);
-    if(!observationReady){if(game.exitClock===0)announce(game.caseTask==='tail'?'KEEP CLOSE TO THE SUBJECT WHILE SNEAKING':game.caseTask==='stakeout'?'HOLD A DISTANT, SNEAKING STAKEOUT POSITION':'STAY NEAR THE MARKED SUBJECT, SNEAKING AND UNDETECTED',3);game.exitClock=0;}
+  const exitDistance=Math.hypot(p.x-exit.cx,p.y-exit.cy),careerMission=privateerContext?.mode==='mission';
+  if(careerMission&&exitDistance>100)game.caseSiteExitArmed=true;
+  if(!game.extraction&&exitDistance<56&&(!careerMission||game.caseSiteExitArmed)){
+    const surveillanceReady=!['tail','stakeout','eavesdrop'].includes(game.caseTask)||game.caseObservationComplete;
+    const targetReady=!['target','lieutenant','mastermind'].includes(game.caseTask)||game.caseTargetCleared;
+    const recordsReady=!['breach','intel','evidence'].includes(game.caseTask)||game.caseObjectiveComplete;
+    if(!surveillanceReady||!targetReady||!recordsReady){
+      if(game.exitClock===0)announce(!surveillanceReady?'SURVEILLANCE INCOMPLETE · RECORD THE LEAD BEFORE LEAVING':!targetReady?'TARGET STILL ACTIVE · COMPLETE THE ASSIGNMENT':'RECORDS NOT SECURED · FIND THE MARKED SAFEHOUSE ARCHIVE',3);
+      game.exitClock=0;
+    }
     else{game.exitClock+=dt;if(game.exitClock>.75)nextFloor();}
   }else game.exitClock=0;
   const smooth=Math.min(1,dt*8);camera.x+=(p.x-camera.x)*smooth;camera.y+=(p.y-camera.y)*smooth;
@@ -2793,9 +2819,10 @@ function drawRoom(room){
     ctx.restore();
   }
   for(const chest of room.caches)if(!chest.opened){
-    ctx.globalAlpha=.76+Math.sin(now*2+chest.x)*.2;
-    path([[chest.x-15,chest.y-11],[chest.x+15,chest.y-11],[chest.x+15,chest.y+11],[chest.x-15,chest.y+11]],'#483921',C.gold,3,14);
-    line(chest.x-7,chest.y,chest.x+7,chest.y,C.gold,2);ctx.globalAlpha=1;
+    const records=chest.kind==='case_records';ctx.globalAlpha=.76+Math.sin(now*2+chest.x)*.2;
+    path([[chest.x-15,chest.y-11],[chest.x+15,chest.y-11],[chest.x+15,chest.y+11],[chest.x-15,chest.y+11]],records?'#39294f':'#483921',records?C.purple:C.gold,3,14);
+    line(chest.x-7,chest.y,chest.x+7,chest.y,records?C.purple:C.gold,2);ctx.globalAlpha=1;
+    if(records){ctx.fillStyle='#f2dcff';ctx.font='900 9px ui-monospace,monospace';ctx.fillText('SAFEHOUSE RECORDS',chest.x,chest.y-20);}
   }
   if(room.exit){
     const pulse=Math.sin(now*3)*5;
@@ -3214,8 +3241,8 @@ function drawCaseObjectiveHUD(){
   if(game.caseTask==='tail'){label='TAIL · FOLLOW THE MARKED SUBJECT UNDETECTED';progress=game.caseProgress/10;}
   else if(game.caseTask==='eavesdrop'){label='EAVESDROP · STAY CLOSE, SNEAKING AND UNDETECTED';progress=game.caseProgress/6;}
   else if(game.caseTask==='stakeout'){label='STAKEOUT · HOLD POSITION, SNEAKING AND STILL';progress=game.caseProgress/8;}
-  else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · REACH EXFIL':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
-  else if(game.caseTask==='breach')label='BREACH SITE · COMPLETE THE OPERATION AND EXFIL';
+  else if(['target','lieutenant','mastermind'].includes(game.caseTask))label=game.caseTargetCleared?'TARGET NEUTRALIZED · RETURN TO SITE ENTRY':`LOCATE AND NEUTRALIZE · ${game.caseSubject?.caseName||'CASE SUBJECT'}`;
+  else if(['breach','intel','evidence'].includes(game.caseTask))label=game.caseObjectiveComplete?'RECORDS SECURED · RETURN TO SITE ENTRY':'INFILTRATE · RECOVER THE MARKED RECORDS';
   else return;
   if(game.caseObservationComplete&&['tail','stakeout','eavesdrop'].includes(game.caseTask))label='LEAD RECORDED · REACH THE SITE EXIT';
   ctx.save();ctx.fillStyle='rgba(5,15,25,.92)';ctx.fillRect(x,y,width,36);ctx.strokeStyle='#b999ff';ctx.lineWidth=1.5;ctx.strokeRect(x,y,width,36);

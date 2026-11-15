@@ -49,7 +49,7 @@ vm.runInNewContext(source+`
 ;globalThis.__breach={game,generateFloor,beginFloor,updateEnemies,emitNoise,alertEnemy,
   canSpot,patrolIntent,prepareSearch,TYPE,SHOP_GEAR,VISION,enemyBudget,roomCount,
   initializeBehavior,buildPostRoute,floorPatrolCircuit,restoreFloorPatrols,planFloorPoints,chooseCircleWander,roomAt,walkable,RNG,propAt,navigationPoint,
-  updateExtraction,updateCaseObjective,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
+  updateExtraction,updateCaseObjective,updatePickups,EXTRACTION,killEnemy,floorClearAward,floorAdvanceAward,stealthAward,
   enterHQ,resetRun,saveGame,loadGame,startReload,shootPlayer,updateWeaponTimers,WEAPONS,
   toggleWeaponDraw,useMedkit,equipFromStash,collectPickup,damageFurniture,fastTravel,openTravel,nextFloor,
   getAudioSettings,setAudioSettings,unlockAudio,rangedCoverIntent,strata,clearSight,update,togglePause,purchase,captureInputs,inputs,
@@ -326,6 +326,25 @@ test('case field objectives require actual tailing, stakeout, and target complet
   assert.equal(privateerMessages.length,before,'exfil cannot complete a mastermind task before locating its marked subject');
   b.killEnemy(b.game.caseSubject);b.finishPrivateerMission('completed');
   assert.equal(privateerMessages.at(-1).detail.caseTask,'mastermind','defeating the named case subject unlocks completion');
+  b.setPrivateerContext(null);
+});
+
+test('Privateer safehouses require records and return through their entrance without arcade exfil',()=>{
+  b.setPrivateerContext({mode:'spaceport',requestId:'safehouse-flow',planetId:'p-safehouse',loadout:{weapon:'hands'}});
+  b.startPrivateerMission({style:'choice',caseTask:'breach',caseSite:'safehouse-91',contact:'Kest Arden',difficulty:3,seed:1771});
+  assert.equal(b.game.world.exfil,null,'career safehouses do not use the standalone Breach exfil ring');
+  assert.ok(b.game.world.rooms.every(room=>!room.exfil));
+  assert.equal(b.game.world.exit,b.game.world.start,'the landing entrance is the Privateer site exit');
+  const recordsRoom=b.game.world.rooms.find(room=>room.caches.some(cache=>cache.kind==='case_records'));
+  assert.ok(recordsRoom&&recordsRoom.id!==b.game.world.start,'records are placed inside the site, away from its entrance');
+  const before=privateerMessages.length;b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.length,before,'leaving before recovering records cannot finish a safehouse');
+  const records=recordsRoom.caches.find(cache=>cache.kind==='case_records');recordsRoom.visited=true;
+  b.game.player.x=records.x;b.game.player.y=records.y;b.updatePickups(.016);
+  assert.equal(b.game.caseObjectiveComplete,true,'walking to the archive secures the physical records objective');
+  assert.equal(records.opened,true);
+  b.finishPrivateerMission('completed');
+  assert.equal(privateerMessages.at(-1).detail.caseTask,'breach','secured records complete the safehouse lead through the career result');
   b.setPrivateerContext(null);
 });
 
